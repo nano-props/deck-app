@@ -1,0 +1,309 @@
+/* Launcher component styles: heading, buttons, decorative card stack,
+ * footer hints, drop-state ring. */
+
+/* ===== Content block =============================================== */
+
+.content {
+  max-width: 480px;
+  opacity: 0;
+  transform: translateY(6px);
+  animation: rise 600ms 80ms var(--ease) forwards;
+}
+
+h1 {
+  margin: 0 0 14px;
+  font-weight: 500;
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  color: var(--ink);
+}
+h1 .gradient {
+  background: linear-gradient(135deg, #0a0a0a 0%, #525252 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+p.lede {
+  margin: 0 0 32px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  max-width: 44ch;
+  letter-spacing: -0.005em;
+}
+p.lede code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 2px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink-2);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ===== Buttons =====================================================
+ * Flat, minimal pair inspired by Linear/Vercel. No gradients, one
+ * shadow layer max, equal visual weight so neither looks disabled. */
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition:
+    background-color 140ms var(--ease),
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn:active {
+  transform: scale(0.985);
+  transition-duration: 60ms;
+}
+
+.btn .kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* ---- Primary (solid black) ---- */
+
+.btn.primary {
+  background: #0a0a0a;
+  color: #fafafa;
+  border-color: #0a0a0a;
+  box-shadow: 0 1px 2px rgba(10, 10, 10, 0.12);
+}
+.btn.primary:hover {
+  background: #1f1f1f;
+  border-color: #1f1f1f;
+  box-shadow: 0 2px 6px rgba(10, 10, 10, 0.18);
+}
+.btn.primary .kbd {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* ---- Secondary (outlined) ---- */
+
+.btn.secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+.btn.secondary:hover {
+  background: #fafaf9;
+  border-color: rgba(10, 10, 10, 0.16);
+}
+.btn.secondary .kbd {
+  background: var(--bg-deep);
+  color: var(--ink-3);
+}
+
+/* ===== Decorative stack (right column) ============================= */
+
+.visual {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 4 / 3;
+  justify-self: end;
+  align-self: center;
+  opacity: 0;
+  animation: rise 900ms 220ms var(--ease) forwards;
+}
+
+.card {
+  position: absolute;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow:
+    0 1px 2px rgba(10, 10, 10, 0.03),
+    0 10px 30px -12px rgba(10, 10, 10, 0.12);
+  transition:
+    transform 500ms var(--ease),
+    box-shadow 500ms var(--ease);
+}
+
+.card .bar {
+  position: absolute;
+  left: 16px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-deep);
+}
+.card .bar.w-1 {
+  top: 18px;
+  width: 55%;
+  background: rgba(10, 10, 10, 0.14);
+}
+.card .bar.w-2 {
+  top: 30px;
+  width: 38%;
+}
+.card .bar.w-3 {
+  top: 42px;
+  width: 46%;
+}
+
+.card.c-3 {
+  inset: 24% 6% 18% 14%;
+  transform: rotate(-6deg);
+  opacity: 0.75;
+}
+.card.c-2 {
+  inset: 16% 14% 16% 6%;
+  transform: rotate(3deg);
+}
+.card.c-1 {
+  inset: 8% 8% 8% 8%;
+  transform: rotate(-1.5deg);
+  border-color: rgba(10, 10, 10, 0.1);
+  box-shadow:
+    0 2px 4px rgba(10, 10, 10, 0.04),
+    0 20px 40px -16px rgba(10, 10, 10, 0.18);
+}
+
+.card.c-1 .stage-dot {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+}
+
+.visual::after {
+  content: '.deck';
+  position: absolute;
+  left: -8px;
+  bottom: -8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+  letter-spacing: 0.04em;
+  padding: 5px 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.visual:hover .card.c-1 {
+  transform: rotate(-1.5deg) translateY(-3px);
+}
+.visual:hover .card.c-2 {
+  transform: rotate(3deg) translateY(-1px);
+}
+.visual:hover .card.c-3 {
+  transform: rotate(-6deg) translateY(1px);
+}
+
+/* ===== Language switcher ===========================================
+ * Small segmented control pinned to the top-right corner. Matches the
+ * launcher's subdued palette — not a primary action. */
+
+.lang-seg {
+  position: absolute;
+  top: 14px;
+  right: 20px;
+  z-index: 3;
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.lang-seg button {
+  appearance: none;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  padding: 0 9px;
+  height: 24px;
+  font: 500 11px var(--mono);
+  letter-spacing: 0.04em;
+  transition:
+    background-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.lang-seg button + button {
+  border-left: 1px solid var(--line);
+}
+
+.lang-seg button:hover {
+  color: var(--ink);
+}
+
+.lang-seg button.on {
+  background: var(--ink);
+  color: #fafafa;
+}
+
+/* ===== Footer kbd pills + drop state =============================== */
+
+footer .drop-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--ink-3);
+}
+
+.drop-ring {
+  position: fixed;
+  inset: 10px;
+  pointer-events: none;
+  border-radius: 14px;
+  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  background: transparent;
+  transition:
+    box-shadow 200ms var(--ease),
+    background 200ms var(--ease);
+  z-index: 3;
+}
+body.drag .drop-ring {
+  background: rgba(99, 102, 241, 0.04);
+  box-shadow:
+    0 0 0 2px rgba(99, 102, 241, 0.35),
+    0 0 0 6px rgba(99, 102, 241, 0.08);
+}

@@ -1,0 +1,73 @@
+{
+  "name": "deck-app",
+  "version": "0.1.0",
+  "description": "Desktop container for .deck presentations",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.ts",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "typecheck": "tsc --noEmit",
+    "pack:deck": "bun scripts/pack-deck.ts",
+    "build:app": "bun scripts/build.ts",
+    "build:electron": "electron-builder",
+    "clean": "bun scripts/clean.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "build": {
+    "appId": "com.deck.app",
+    "productName": "Deck",
+    "icon": "assets/icon.png",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/main/**/*.ts",
+      "src/renderer/**/*",
+      "src/preload/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dir"
+      ],
+      "identity": null
+    },
+    "fileAssociations": [
+      {
+        "ext": "deck",
+        "name": "Deck Presentation",
+        "role": "Viewer"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/adm-zip": "0.5.8",
+    "@types/node": "25.6.0",
+    "@types/serve-static": "2.2.0",
+    "electron": "41.2.2",
+    "electron-builder": "26.8.1",
+    "prettier": "3.8.3",
+    "typescript": "6.0.3"
+  },
+  "dependencies": {
+    "adm-zip": "0.5.17",
+    "serve-static": "2.2.1"
+  }
+}
