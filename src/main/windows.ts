@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog } from 'electron'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
-import { loadDeck, DeckLoadError, type DeckManifest } from '#/main/deck-loader.ts'
+import { loadDeck, DeckLoadError } from '#/main/deck-loader.ts'
+import { resolveDragMode, type DeckManifest } from '#/main/deck-types.ts'
 import { startDeckServer } from '#/main/server.ts'
 import { sessionManager } from '#/main/session-manager.ts'
+import { installDragRegions } from '#/main/player-drag.ts'
 
 // Both paths resolve inside the asar in packaged builds, so they must be
 // kept in sync with `build.files` in package.json — `src/preload/**/*`
@@ -89,13 +91,9 @@ export async function openDeckInNewWindow(deckPath: string): Promise<void> {
     loaded = await loadDeck(deckPath)
     server = await startDeckServer(loaded.rootDir)
 
-    // Player: no chrome, no traffic lights — author content is the whole
-    // window. A 12px injected drag strip along the top provides movability.
-    // Note: titleBarStyle !== 'default' already implies has_frame() == false
-    // in Electron's internals, so an explicit `frame: false` is redundant.
-    // `show: false` avoids a brief blank-window flash if loadURL fails —
-    // we surface an error dialog instead of a momentarily-visible empty
-    // Player. `ready-to-show` fires once the first frame is painted.
+    // Player: no chrome, no traffic lights — author content fills the
+    // window; drag is provided via CSS by installDragRegions below.
+    // `show: false` avoids a blank-window flash if loadURL fails.
     win = new BrowserWindow({
       show: false,
       titleBarStyle: IS_MAC ? 'hidden' : 'default',
@@ -111,7 +109,7 @@ export async function openDeckInNewWindow(deckPath: string): Promise<void> {
 
     if (IS_MAC) {
       win.setWindowButtonVisibility(false)
-      injectDragRegion(win)
+      installDragRegions(win, resolveDragMode(loaded.manifest.drag))
     }
 
     sessionManager.register({
@@ -126,7 +124,7 @@ export async function openDeckInNewWindow(deckPath: string): Promise<void> {
     await win.loadURL(server.url)
     if (!win.isDestroyed()) win.show()
   } catch (err) {
-    const message = err instanceof DeckLoadError ? err.message : (err as Error).message
+    const message = err instanceof Error ? err.message : String(err)
 
     // Unwind whatever we already allocated. If the session was
     // registered, destroying the window triggers its 'closed' handler
@@ -156,39 +154,4 @@ export async function openDeckInNewWindow(deckPath: string): Promise<void> {
       detail: `${message}\n\nPath: ${deckPath}`,
     })
   }
-}
-
-/**
- * Inject a narrow, invisible drag strip at the top of a Player window.
- * Author content doesn't know about -webkit-app-region, so without this
- * strip decks are unmovable under titleBarStyle: 'hidden'.
- *
- * `pointer-events: none` means the strip doesn't intercept clicks —
- * Electron's drag region is handled out-of-band from DOM events. Any
- * author button in the top 12px remains fully interactive.
- */
-function injectDragRegion(win: BrowserWindow): void {
-  const bootstrap = `
-    (() => {
-      if (window.__deckDragInstalled) return;
-      window.__deckDragInstalled = true;
-      const strip = document.createElement('div');
-      strip.style.cssText = [
-        'position:fixed',
-        'top:0',
-        'left:0',
-        'right:0',
-        'height:12px',
-        'z-index:2147483647',
-        'pointer-events:none',
-        '-webkit-app-region:drag',
-      ].join(';');
-      const mount = () => (document.body || document.documentElement).appendChild(strip);
-      if (document.body) mount();
-      else document.addEventListener('DOMContentLoaded', mount, { once: true });
-    })();
-  `
-  win.webContents.on('did-finish-load', () => {
-    win.webContents.executeJavaScript(bootstrap).catch(() => {})
-  })
 }

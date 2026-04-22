@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import type { DeckServer } from '#/main/server.ts'
-import type { DeckManifest } from '#/main/deck-loader.ts'
+import type { DeckManifest } from '#/main/deck-types.ts'
 
 export interface DeckSession {
   window: BrowserWindow

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { sweepStaleTempDirs } from '#/main/deck-loader.ts'
@@ -11,30 +11,37 @@ import { promptOpenDeck, promptOpenFolder } from '#/main/dialogs.ts'
 const pendingOpens: string[] = []
 
 /**
+ * Resolve an input string to an absolute deck path, or null if it isn't one.
+ * Accepts a `.deck` file, or a directory containing `deck.json`.
+ */
+function resolveDeckPath(input: string): string | null {
+  try {
+    const resolved = path.resolve(input)
+    const s = statSync(resolved)
+    if (s.isFile() && resolved.toLowerCase().endsWith('.deck')) return resolved
+    if (s.isDirectory() && existsSync(path.join(resolved, 'deck.json'))) return resolved
+  } catch {
+    // not a real path
+  }
+  return null
+}
+
+/**
  * Collect deck paths from argv.
  *
  * argv layout differs between dev and packaged:
  *   - dev:      ['electron', '<app-path>', ...userArgs]     → skip 2
  *   - packaged: ['<bundled-main>', ...userArgs]             → skip 1
  *
- * We accept either a `.deck` file or a directory with `deck.json`. Flags,
- * the literal "." (common in `electron .`), and anything that's not a real
- * path are ignored.
+ * Flags and the literal "." (common in `electron .`) are ignored.
  */
 function argvDeckPaths(argv: string[]): string[] {
-  const sliceAt = app.isPackaged ? 1 : 2
-  const userArgs = argv.slice(sliceAt)
+  const userArgs = argv.slice(app.isPackaged ? 1 : 2)
   const out: string[] = []
   for (const a of userArgs) {
     if (!a || a === '.' || a.startsWith('-')) continue
-    try {
-      const resolved = path.resolve(a)
-      const s = statSync(resolved)
-      if (s.isFile() && resolved.toLowerCase().endsWith('.deck')) out.push(resolved)
-      else if (s.isDirectory() && existsSync(path.join(resolved, 'deck.json'))) out.push(resolved)
-    } catch {
-      // not a real path; skip
-    }
+    const resolved = resolveDeckPath(a)
+    if (resolved) out.push(resolved)
   }
   return out
 }
@@ -91,6 +98,24 @@ function wireIpc(): void {
   })
   ipcMain.handle('deck:open-folder', async () => {
     await promptOpenFolder()
+  })
+  // Drag-and-drop onto the Launcher routes here. The renderer hands us an
+  // absolute path pulled from `webUtils.getPathForFile` — which returns an
+  // empty string for non-filesystem drops (e.g. browser-origin drags), in
+  // which case we silently ignore. Non-deck files get a user-facing error.
+  ipcMain.handle('deck:open-path', async (_event, input: string) => {
+    if (!input) return
+    const resolved = resolveDeckPath(input)
+    if (resolved) {
+      await openDeckInNewWindow(resolved)
+    } else {
+      void dialog.showMessageBox({
+        type: 'error',
+        title: "Can't open that",
+        message: "That doesn't look like a Deck",
+        detail: `Drop a .deck file, or a folder containing deck.json.\n\nPath: ${input}`,
+      })
+    }
   })
 }
 

@@ -4,30 +4,10 @@ import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import type { DeckManifest, LoadedDeck } from '#/main/deck-types.ts'
 
 /** Wall-clock time this process started, used to identify stale temp dirs. */
 const PROCESS_START_MS = Date.now()
-
-export interface DeckManifest {
-  name: string
-  author?: string
-  description?: string
-  cover?: string
-  version?: string
-  [key: string]: unknown
-}
-
-export interface LoadedDeck {
-  /** Absolute path to the root directory the server will host. */
-  rootDir: string
-  manifest: DeckManifest
-  /**
-   * True when `rootDir` is a temp directory this process extracted — the
-   * caller should delete it on close. False when `rootDir` is a directory
-   * the user supplied directly (editor/work-dir mode).
-   */
-  ownsRootDir: boolean
-}
 
 export class DeckLoadError extends Error {}
 

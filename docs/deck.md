@@ -78,7 +78,7 @@ See [`deck-spec.md` §3](./deck-spec.md). The Player supports both Deck Pack (ex
 
 ### 4.2 Window chrome
 
-The Player is a minimal shell. On macOS the window uses `titleBarStyle: 'hidden'` and the traffic lights are hidden — the author's content fills the whole window. A 12px invisible drag strip is injected along the top so the window remains movable; it uses `pointer-events: none`, so any author UI in the top 12px stays fully interactive.
+The Player is a minimal shell. On macOS the window uses `titleBarStyle: 'hidden'` with the traffic lights hidden — the author's content fills the whole window, and drag-to-move is provided by CSS injected per the Deck's `drag` manifest field (see [`deck-spec.md` §6](./deck-spec.md)). On Windows and Linux the window ships with a native titlebar, so the injected CSS is a no-op.
 
 _Planned UI additions:_
 

@@ -1,7 +1,7 @@
 # Deck Format Specification
 
 **Version:** v1.0
-**Date:** 2026-04-22
+**Date:** 2026-04-23
 
 > Terminology follows [`terminology.md`](./terminology.md). Key terms used here: **Deck**, **Deck Pack**, **Deck Source**, **Deck Manifest**, **Deck App**.
 
@@ -45,6 +45,7 @@ hello.deck
   "description": "A talk about Transformers",
   "cover": "cover.png",
   "version": "1.0.0", // version of this Deck (author-maintained)
+  "drag": "auto", // window drag behavior — see §6
 }
 ```
 
@@ -57,6 +58,7 @@ hello.deck
 | `description` | ✗        | Short description.                                                |
 | `cover`       | ✗        | Relative path to a cover image.                                   |
 | `version`     | ✗        | Version number of this Deck (SemVer, author-maintained).          |
+| `drag`        | ✗        | Window drag behavior: `"auto"` (default) or `"off"`. See §6.      |
 
 > The entry point is always `index.html` at the root. It is not declared in `deck.json`.
 
@@ -123,7 +125,43 @@ This gives authors full freedom to use any slide framework they like — reveal.
 
 ---
 
-## 6. Example
+## 6. Window drag behavior
+
+Because the Player has no visible titlebar, drag-to-move is provided by CSS injected into the author page. The `drag` field in `deck.json` picks the strategy.
+
+| Value    | Behavior                                                                                                                                                          |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"auto"` | **Default.** `<body>` is a drag region; common interactive elements (see list below) are carved back out as `no-drag`. Most Decks work with zero configuration.   |
+| `"off"`  | The Deck App installs no drag CSS at all. The author owns the window drag behavior entirely — e.g. a canvas-based Deck that needs every pixel for pointer events. |
+
+The `"auto"` mode's `no-drag` selector list covers:
+
+- `<a>`, `<button>`, `<input>`, `<textarea>`, `<select>`, `<label>`
+- `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`
+- Any element with `role="button" | "link" | "textbox" | "slider" | "checkbox" | "radio" | "menuitem" | "tab"`
+- Any element with `contenteditable` (except `contenteditable="false"`)
+
+**Valid values only.** `drag` must be one of `"auto"` or `"off"`. The field is optional — omit it to get the default. Values are **case-sensitive**. An invalid value (wrong case, unknown string, non-string type) is a Deck authoring error; the Deck App defaults to `"auto"` and logs a warning, but Decks must not rely on that behavior. If a future v1.x spec adds more modes, older Deck Apps will treat the new modes as invalid and fall back to `"auto"`.
+
+**Author overrides.** `-webkit-app-region` is a standard CSS property in the Electron/Chromium runtime. A leaf element's `no-drag` wins over an ancestor's `drag`, and vice versa — so authors can always override the defaults:
+
+```css
+/* opt a custom interactive element out of drag */
+.my-clickable-div {
+  -webkit-app-region: no-drag;
+}
+
+/* opt a specific zone into drag, even under `drag: "off"` */
+.my-titlebar {
+  -webkit-app-region: drag;
+}
+```
+
+**Platform.** The auto CSS is only installed on macOS; on Windows and Linux the window ships with a native titlebar that already provides drag, so `"auto"` is effectively a no-op there. `"off"` is honored on every platform (it simply means "don't install anything").
+
+---
+
+## 7. Example
 
 **deck.json**
 
@@ -180,7 +218,7 @@ Drop these two files in the same directory and you have a Deck Source. Zip them 
 
 ---
 
-## 7. Versioning
+## 8. Versioning
 
 - **v1.0** — this document.
 - **Future** — add `permissions` (network / clipboard), `theme`, signing, etc. on demand. Guiding principle: _don't add it unless you must, and if you do, it must be optional._

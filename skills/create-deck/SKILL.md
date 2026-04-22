@@ -10,6 +10,7 @@ A **Deck** is this project's presentation format. The spec is tiny:
 > **A Deck Pack is a zipped static website with a `deck.json` manifest inside.**
 
 Authoritative docs in this repo:
+
 - `docs/deck-spec.md` — the format (read before deviating from defaults).
 - `docs/terminology.md` — vocabulary (use it; don't invent synonyms).
 - `docs/deck.md` — the Deck App product doc.
@@ -20,13 +21,13 @@ Before doing anything non-trivial, skim `docs/deck-spec.md` — it is short and 
 
 ## Vocabulary (use these exact terms)
 
-| Term             | What it means                                                                       |
-| ---------------- | ----------------------------------------------------------------------------------- |
-| **Deck**         | A single presentation (the abstract thing).                                         |
-| **Deck Source**  | The unpacked directory form. `examples/<name>/` — what you author/edit.             |
-| **Deck Pack**    | The zipped `.deck` file. `examples/<name>.deck` — what you distribute.              |
-| **Deck Manifest**| `deck.json` at the root.                                                            |
-| **pack a Deck**  | Zip a Deck Source into a Deck Pack.                                                 |
+| Term              | What it means                                                           |
+| ----------------- | ----------------------------------------------------------------------- |
+| **Deck**          | A single presentation (the abstract thing).                             |
+| **Deck Source**   | The unpacked directory form. `examples/<name>/` — what you author/edit. |
+| **Deck Pack**     | The zipped `.deck` file. `examples/<name>.deck` — what you distribute.  |
+| **Deck Manifest** | `deck.json` at the root.                                                |
+| **pack a Deck**   | Zip a Deck Source into a Deck Pack.                                     |
 
 Do **not** say "deck file", "deck project", "extracted folder". See `docs/terminology.md` anti-patterns.
 
@@ -41,7 +42,7 @@ Sample decks go under `examples/<name>/` (which is gitignored). The packer scrip
 ## Authoring flow
 
 1. **Create the Deck Source directory**: `examples/<name>/`.
-2. **Write `deck.json`** — only `name` is required; `author`, `description`, `cover`, `version` are optional. No spec-version field exists in v1.
+2. **Write `deck.json`** — only `name` is required; `author`, `description`, `cover`, `version`, `drag` are optional. No spec-version field exists in v1. See `docs/deck-spec.md` §2 for the field reference and §6 for `drag` semantics.
 3. **Write `index.html`** — the entry point. Filename is fixed; not configurable. It must sit at the root of the Deck Source.
 4. **Add any assets** (CSS, JS, images, fonts, video) inside the same directory, referenced by **relative paths**. Nested folders are fine.
 5. **Preview** (optional): `bun run dev` starts the Deck App; open the `examples/<name>/` folder from the Launcher, or double-click `examples/<name>.deck` after packing.
@@ -61,15 +62,7 @@ examples/hello/
 
 Use the `templates/minimal.html` file in this skill as a starting point — it has arrow-key / Space / PageUp-Down / Home / End pagination and a slide counter already wired up. Duplicate it into `examples/<name>/index.html` and replace the `<section class="slide">` blocks with real content.
 
-A bare `deck.json`:
-
-```json
-{
-  "name": "My Deck"
-}
-```
-
-Add `author`, `description`, `version` when the user provides them. Don't invent values.
+For `deck.json`, start from `templates/deck.json` (just `{ "name": "..." }`). Add `author`, `description`, `version`, `drag` when the user provides them. Don't invent values.
 
 ---
 
@@ -77,7 +70,7 @@ Add `author`, `description`, `version` when the user provides them. Don't invent
 
 The Player applies a strict CSP and sandbox. Authoring against this by accident leads to silent failures.
 
-- **No external network requests.** The default CSP is `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'`. That means:
+- **No external network requests.** A strict CSP blocks all cross-origin fetches — see `docs/deck-spec.md` §4 for the exact header. That means:
   - No `<script src="https://cdn...">`, no Google Fonts `<link href="https://fonts...">`, no remote images, no `fetch()` to third-party APIs.
   - Vendor everything. Download fonts/libraries into the Deck Source and reference them with relative paths.
   - `data:` and `blob:` URLs are OK for images.
@@ -109,6 +102,8 @@ A Deck Pack is just a ZIP — you can unzip it with any tool and inspect it.
 - **"Use Google Fonts"** — don't link the CDN. Download the `.woff2` into `examples/<slug>/fonts/` and define `@font-face` in CSS with a relative `src:`.
 - **"Use reveal.js"** — vendor it: copy `dist/` into the Deck Source and reference `./reveal.js` / `./reveal.css` with relative paths.
 - **"Add a cover image"** — drop it into the Deck Source, reference it relatively in `deck.json` via `"cover": "cover.png"`, and use it in HTML as `<img src="cover.png">`.
+- **"Canvas / WebGL deck where clicks get swallowed"** — set `"drag": "off"` in `deck.json` so the Player injects no drag CSS; the author then owns window drag entirely (see spec §6).
+- **"Text on slides can't be selected"** — the default `drag: "auto"` makes most of `<body>` a drag region, which kills text selection on non-interactive elements. Opt specific elements out with `-webkit-app-region: no-drag` in the author CSS (e.g. `h1, p { -webkit-app-region: no-drag; }`), or flip to `drag: "off"` entirely.
 - **"Ship it"** — run `bun run pack:deck <name>` and hand the user `examples/<name>.deck`.
 
 ---
