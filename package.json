@@ -1,6 +1,6 @@
 {
   "name": "deck-app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop container for .deck presentations",
   "private": true,
   "type": "module",
@@ -54,11 +54,24 @@
         {
           "target": "portable",
           "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
         }
       ]
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-setup.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "${productName}"
     },
     "fileAssociations": [
       {
