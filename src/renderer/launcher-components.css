@@ -1,5 +1,5 @@
 /* Launcher component styles: heading, buttons, decorative card stack,
- * footer hints, drop-state ring. */
+ * language switcher, drop-state ring. */
 
 /* ===== Content block =============================================== */
 
@@ -18,30 +18,13 @@ h1 {
   letter-spacing: -0.035em;
   color: var(--ink);
 }
-h1 .gradient {
-  background: linear-gradient(135deg, #0a0a0a 0%, #525252 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
 
 p.lede {
   margin: 0 0 32px;
   font-size: 15px;
   line-height: 1.6;
   color: var(--ink-3);
-  max-width: 44ch;
   letter-spacing: -0.005em;
-}
-p.lede code {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  padding: 2px 6px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--ink-2);
-  box-shadow: var(--shadow-sm);
 }
 
 /* ===== Buttons =====================================================
@@ -97,19 +80,21 @@ p.lede code {
 /* ---- Primary (solid black) ---- */
 
 .btn.primary {
-  background: #0a0a0a;
-  color: #fafafa;
-  border-color: #0a0a0a;
-  box-shadow: 0 1px 2px rgba(10, 10, 10, 0.12);
+  background: var(--btn-solid);
+  color: var(--btn-solid-text);
+  border-color: var(--btn-solid);
+  box-shadow: var(--shadow-btn);
 }
 .btn.primary:hover {
-  background: #1f1f1f;
-  border-color: #1f1f1f;
-  box-shadow: 0 2px 6px rgba(10, 10, 10, 0.18);
+  background: var(--btn-solid-hover);
+  border-color: var(--btn-solid-hover);
+  box-shadow: var(--shadow-btn-hover);
 }
 .btn.primary .kbd {
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.92);
+  /* The pill sits on the solid button. Tint it with the button's own text color
+   * so it works in both light (white text → white tint) and dark (black text → black tint). */
+  background: rgba(var(--btn-solid-text-rgb), 0.14);
+  color: var(--btn-solid-text);
 }
 
 /* ---- Secondary (outlined) ---- */
@@ -120,8 +105,8 @@ p.lede code {
   border-color: var(--line-2);
 }
 .btn.secondary:hover {
-  background: #fafaf9;
-  border-color: rgba(10, 10, 10, 0.16);
+  background: var(--bg-deep);
+  border-color: var(--ink-4);
 }
 .btn.secondary .kbd {
   background: var(--bg-deep);
@@ -146,9 +131,7 @@ p.lede code {
   border-radius: 14px;
   background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow:
-    0 1px 2px rgba(10, 10, 10, 0.03),
-    0 10px 30px -12px rgba(10, 10, 10, 0.12);
+  box-shadow: var(--shadow-card);
   transition:
     transform 500ms var(--ease),
     box-shadow 500ms var(--ease);
@@ -159,12 +142,12 @@ p.lede code {
   left: 16px;
   height: 6px;
   border-radius: 3px;
-  background: var(--bg-deep);
+  background: var(--ink-5);
 }
 .card .bar.w-1 {
   top: 18px;
   width: 55%;
-  background: rgba(10, 10, 10, 0.14);
+  background: var(--ink-4);
 }
 .card .bar.w-2 {
   top: 30px;
@@ -187,10 +170,8 @@ p.lede code {
 .card.c-1 {
   inset: 8% 8% 8% 8%;
   transform: rotate(-1.5deg);
-  border-color: rgba(10, 10, 10, 0.1);
-  box-shadow:
-    0 2px 4px rgba(10, 10, 10, 0.04),
-    0 20px 40px -16px rgba(10, 10, 10, 0.18);
+  border-color: var(--line-2);
+  box-shadow: var(--shadow-card-lift);
 }
 
 .card.c-1 .stage-dot {
@@ -200,8 +181,8 @@ p.lede code {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
 }
 
 .visual::after {
@@ -230,15 +211,55 @@ p.lede code {
   transform: rotate(-6deg) translateY(1px);
 }
 
-/* ===== Language switcher ===========================================
- * Small segmented control pinned to the top-right corner. Matches the
- * launcher's subdued palette — not a primary action. */
+/* ===== Top-right controls (theme + language) ======================
+ * Small subdued cluster; not a primary action. Pinned absolutely so it
+ * floats over the window-drag region without affecting main layout. */
+
+.controls {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+.theme-btn:hover {
+  border-color: var(--ink-4);
+  color: var(--ink);
+}
+.theme-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+.theme-btn .icon-moon,
+html[data-theme='dark'] .theme-btn .icon-sun {
+  display: none;
+}
+html[data-theme='dark'] .theme-btn .icon-moon {
+  display: block;
+}
 
 .lang-seg {
-  position: absolute;
-  top: 14px;
-  right: 20px;
-  z-index: 3;
   display: inline-flex;
   background: var(--surface);
   border: 1px solid var(--line-2);
@@ -262,39 +283,29 @@ p.lede code {
     color 140ms var(--ease);
 }
 
-.lang-seg button + button {
-  border-left: 1px solid var(--line);
-}
-
 .lang-seg button:hover {
   color: var(--ink);
 }
 
 .lang-seg button.on {
   background: var(--ink);
-  color: #fafafa;
+  color: var(--bg);
+}
+html[data-theme='dark'] .lang-seg button.on {
+  /* On dark, a full-white `.on` button competes with the primary CTA.
+   * Use a softer foreground to stay within the "secondary control" role. */
+  background: var(--ink-2);
+  color: var(--surface);
 }
 
-/* ===== Footer kbd pills + drop state =============================== */
-
-footer .drop-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line);
-  color: var(--ink-3);
-}
+/* ===== Drop state ================================================== */
 
 .drop-ring {
   position: fixed;
   inset: 10px;
   pointer-events: none;
   border-radius: 14px;
-  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
   background: transparent;
   transition:
     box-shadow 200ms var(--ease),
@@ -302,8 +313,13 @@ footer .drop-icon {
   z-index: 3;
 }
 body.drag .drop-ring {
-  background: rgba(99, 102, 241, 0.04);
+  background: rgba(var(--accent-rgb), 0.06);
   box-shadow:
-    0 0 0 2px rgba(99, 102, 241, 0.35),
-    0 0 0 6px rgba(99, 102, 241, 0.08);
+    0 0 0 2px rgba(var(--accent-rgb), 0.4),
+    0 0 0 6px rgba(var(--accent-rgb), 0.1);
+}
+html[data-theme='dark'] body.drag .drop-ring {
+  box-shadow:
+    0 0 0 2px rgba(var(--accent-rgb), 0.28),
+    0 0 0 6px rgba(var(--accent-rgb), 0.08);
 }

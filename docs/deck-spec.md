@@ -224,3 +224,41 @@ Drop these two files in the same directory and you have a Deck Source. Zip them 
 - **Future** — add `permissions` (network / clipboard), `theme`, signing, etc. on demand. Guiding principle: _don't add it unless you must, and if you do, it must be optional._
 
 **Compatibility promise:** within v1.x, unknown fields must be ignored. An older Deck must never fail to open in a newer Deck App.
+
+---
+
+## 9. Integrity and signing — deferred design notes
+
+v1.0 does **not** specify integrity hashes or signatures. A Deck Pack is just a zip; anyone with the file can modify it. This section records the intended future direction so the format does not drift into a corner that makes it hard to add later.
+
+### 9.1 Why not in v1.0
+
+- An in-manifest hash (e.g. `deck.json` listing SHA-256 of each file) provides no real protection: an attacker who modifies a file can recompute the hash and rewrite `deck.json`. It only catches accidental corruption — which zip's own CRC32 already catches.
+- Real tamper resistance requires an **external trust anchor** — something outside the `.deck` file that the attacker cannot rewrite. Adding that (key storage, UI, trust management) is a significant surface we are not ready to commit to.
+- Per the guiding principle in §8: don't add it unless you must.
+
+### 9.2 Reference model: VSIX
+
+When signing is added, the reference is the **VSIX approach** (VS Code extensions):
+
+- The package format itself stays a plain zip — unsigned packages still open.
+- Signing is **transport / distribution concern**, not a format concern: the Marketplace (HTTPS + account-bound publishing) is the primary trust anchor.
+- A separate signing layer can be added later without changing the package format, by shipping signatures out-of-band or in a reserved file (e.g. `.signature.p7s` inside the zip) that older clients ignore.
+
+This matches §8's compatibility promise: older Deck Apps will ignore the signature file and open the Deck as usual; newer Deck Apps that understand the signature can surface trust UI.
+
+### 9.3 When to revisit
+
+Re-open this design when any of the following becomes true:
+
+- A Deck distribution channel (marketplace, gallery, share-link service) ships — at that point HTTPS + account binding is the cheapest first trust anchor.
+- Users report a real incident of a tampered Deck in the wild.
+- A use case demands author-identity continuity across versions (e.g. "this update really is from the same author as the Deck I trusted last week"). That's the point at which a TOFU + key-pinning scheme (Chrome-extension style) starts to pull its weight.
+
+### 9.4 Constraints on any future design
+
+Whatever the eventual design, it **must**:
+
+- Keep unsigned Decks openable (signing is optional, per §8).
+- Not require network access at open time for the common case.
+- Not change the rule that a Deck Pack unzipped into a directory is a valid Deck Source — i.e. signing artifacts live in files that are inert when extracted to disk and loaded by a plain browser.

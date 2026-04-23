@@ -6,25 +6,30 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self';
                  script-src 'self' 'unsafe-inline';
-                 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-                 font-src 'self' https://fonts.gstatic.com;
+                 style-src 'self' 'unsafe-inline';
+                 font-src 'self';
                  img-src 'self' data:"
     />
     <title>Deck</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600&family=Geist+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="launcher-tokens.css" />
     <link rel="stylesheet" href="launcher-layout.css" />
     <link rel="stylesheet" href="launcher-components.css" />
   </head>
   <body>
-    <div class="lang-seg" id="langSeg" data-interactive>
-      <button type="button" data-lang="zh">中</button>
-      <button type="button" data-lang="en" class="on">EN</button>
+    <div class="controls" data-interactive>
+      <button class="theme-btn" id="themeBtn" type="button" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <div class="lang-seg" id="langSeg">
+        <button type="button" data-lang="zh">中</button>
+        <button type="button" data-lang="en" class="on">EN</button>
+      </div>
     </div>
 
     <header>
@@ -33,15 +38,13 @@
 
     <main>
       <div class="content">
-        <h1><span class="gradient" data-i18n="title">Open a Deck.</span></h1>
+        <h1 data-i18n="title">Open a deck.</h1>
 
-        <p class="lede" data-i18n="lede">
-          Pick a <code>.deck</code> file, or a folder containing <code>deck.json</code>. Each opens in its own window.
-        </p>
+        <p class="lede" data-i18n="lede">Pick a file or folder. Or just drag one in.</p>
 
         <div class="actions">
           <button class="btn primary" id="open" data-interactive>
-            <span data-i18n="openFile">Open .deck file</span>
+            <span data-i18n="openFile">Open file</span>
             <span class="kbd">⌘O</span>
           </button>
           <button class="btn secondary" id="openFolder" data-interactive>
@@ -71,43 +74,43 @@
       </div>
     </main>
 
-    <footer>
-      <span class="hint">
-        <span class="drop-icon" aria-hidden="true">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path
-              d="M5 1V7M5 7L2.5 4.5M5 7L7.5 4.5"
-              stroke="currentColor"
-              stroke-width="1.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path d="M1.5 8.5H8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-          </svg>
-        </span>
-        <span data-i18n="dropHint">Or drag a file onto this window</span>
-      </span>
-    </footer>
-
     <div class="drop-ring"></div>
 
     <script>
       const I18N = {
         en: {
-          title: 'Open a Deck.',
-          lede: 'Pick a <code>.deck</code> file, or a folder containing <code>deck.json</code>. Each opens in its own window.',
-          openFile: 'Open .deck file',
+          title: 'Open a deck.',
+          lede: 'Pick a file or folder. Or just drag one in.',
+          openFile: 'Open file',
           openFolder: 'Open folder',
-          dropHint: 'Or drag a file onto this window',
         },
         zh: {
           title: '打开一份 Deck。',
-          lede: '选择一个 <code>.deck</code> 文件，或是包含 <code>deck.json</code> 的文件夹。每份都会在独立窗口中打开。',
-          openFile: '打开 .deck 文件',
+          lede: '选一个文件或文件夹，或者直接拖进来。',
+          openFile: '打开文件',
           openFolder: '打开文件夹',
-          dropHint: '或直接将文件拖拽至此窗口',
         },
       }
+
+      /* ===== Theme — follow system until user picks.
+       * Icon swap is handled purely by CSS via [data-theme='dark'] selectors. */
+      const systemDark = matchMedia('(prefers-color-scheme: dark)')
+      const themeBtn = document.getElementById('themeBtn')
+
+      function applyTheme(t, { persist = false } = {}) {
+        document.documentElement.setAttribute('data-theme', t)
+        if (persist) localStorage.setItem('theme', t)
+      }
+
+      const savedTheme = localStorage.getItem('theme')
+      applyTheme(savedTheme || (systemDark.matches ? 'dark' : 'light'))
+      systemDark.addEventListener?.('change', (e) => {
+        if (!localStorage.getItem('theme')) applyTheme(e.matches ? 'dark' : 'light')
+      })
+      themeBtn.addEventListener('click', () => {
+        const cur = document.documentElement.getAttribute('data-theme') || 'light'
+        applyTheme(cur === 'dark' ? 'light' : 'dark', { persist: true })
+      })
 
       function detectLang() {
         const saved = localStorage.getItem('lang')
