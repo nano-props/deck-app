@@ -34,7 +34,7 @@
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
+  html{scroll-behavior:smooth;overflow-x:hidden}
   body{
     background:var(--bg);
     color:var(--ink);
@@ -43,6 +43,7 @@
     line-height:1.55;
     -webkit-font-smoothing:antialiased;
     transition:background .3s ease, color .3s ease;
+    overflow-x:hidden;
   }
   html[lang="zh"] body{font-family:"PingFang SC","Noto Sans SC","Inter",system-ui,-apple-system,sans-serif}
   .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace}
@@ -264,12 +265,13 @@
   .whatis{padding-top:96px;padding-bottom:96px}
   .inside-grid{
     margin-top:56px;
-    display:grid;grid-template-columns:1.2fr 1fr;gap:18px;
+    display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px;
     align-items:stretch;
   }
   .manifest-card,.keys-card{
     background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:28px 28px 26px;display:flex;flex-direction:column;gap:18px;
+    min-width:0;
   }
   .manifest-card h3,.keys-card h3{
     font-size:20px;letter-spacing:-.015em;
@@ -282,6 +284,7 @@
     padding:16px 18px;
     font:500 13px/1.7 "JetBrains Mono",monospace;
     color:var(--ink);white-space:pre;overflow-x:auto;
+    min-width:0;max-width:100%;
   }
   .manifest-code .k{color:var(--accent)}
   .manifest-code .s{color:var(--ink-2)}
@@ -1153,7 +1156,7 @@
 
       s2Kicker:"02", s2KickerSub:"为什么",
       s2Title:"演示该有的样子。",
-      f1Title:"双击，就完了。",
+      f1Title:"双击，就好了。",
       f1Desc:"不是一个浏览器标签页。没有加载转圈。一打开就是全屏的窗口，和 Keynote 一样干脆。",
       f1Note:"Mac · Windows · Linux 都能用",
       f2Title:"AI 替你写好。",
