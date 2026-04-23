@@ -100,6 +100,7 @@
       function applyTheme(t, { persist = false } = {}) {
         document.documentElement.setAttribute('data-theme', t)
         if (persist) localStorage.setItem('theme', t)
+        window.deckApp?.setChromeTheme?.(t)
       }
 
       const savedTheme = localStorage.getItem('theme')

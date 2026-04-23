@@ -3,7 +3,7 @@ import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { sweepStaleTempDirs } from '#/main/deck-loader.ts'
 import { sessionManager } from '#/main/session-manager.ts'
-import { APP_ICON, showLauncherWindow, openDeckInNewWindow } from '#/main/windows.ts'
+import { APP_ICON, showLauncherWindow, openDeckInNewWindow, applyChromeTheme } from '#/main/windows.ts'
 import { buildMenu } from '#/main/menu.ts'
 import { promptOpenDeck, promptOpenFolder } from '#/main/dialogs.ts'
 
@@ -116,6 +116,13 @@ function wireIpc(): void {
         detail: `Drop a .deck file, or a folder containing deck.json.\n\nPath: ${input}`,
       })
     }
+  })
+  // Renderer tells us its current theme so the native title bar overlay
+  // (Windows/Linux) matches the page. macOS is a no-op inside applyChromeTheme.
+  ipcMain.handle('deck:set-chrome-theme', (event, theme: unknown) => {
+    if (theme !== 'dark' && theme !== 'light') return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) applyChromeTheme(win, theme)
   })
 }
 

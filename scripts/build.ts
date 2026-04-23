@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
-// Build and package Deck.app. With `install`, moves the resulting app
-// into ~/Applications (closing any running instance first).
+// Build and package Deck. Defaults to the host platform's target:
+//   macOS → Deck.app (via electron-builder's `mac` target)
+//   Windows target `win` → portable .exe (cross-buildable from macOS)
+// With `install`, moves the resulting macOS app into ~/Applications
+// (closing any running instance first). `install` is macOS-only.
 //
-// Usage: ./scripts/build.ts [install|i]
+// Usage: ./scripts/build.ts [install|i|win]
 import { spawnSync } from 'node:child_process'
 import { globSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import os from 'node:os'
@@ -17,6 +20,7 @@ const APP_NAME = 'Deck'
 const { positionals } = parseArgs({ allowPositionals: true })
 const mode = positionals[0]
 const shouldInstall = mode === 'install' || mode === 'i'
+const target: 'mac' | 'win' = mode === 'win' ? 'win' : 'mac'
 
 function run(cmd: string, args: string[]): void {
   const r = spawnSync(cmd, args, { stdio: 'inherit', shell: false })
@@ -26,7 +30,13 @@ function run(cmd: string, args: string[]): void {
   }
 }
 
-function findBuiltApp(): string | null {
+function findBuiltArtifact(): string | null {
+  if (target === 'win') {
+    // electron-builder's `portable` target produces a single .exe at the
+    // top level of release/. artifactName controls the filename.
+    const [match] = globSync(`release/${APP_NAME}-*-portable.exe`, { cwd: repoRoot })
+    return match ? path.join(repoRoot, match) : null
+  }
   // electron-builder picks the output dir based on arch: `mac-arm64` on
   // Apple Silicon, `mac` / `mac-x64` on Intel. Let glob find whatever
   // actually got produced.
@@ -34,18 +44,19 @@ function findBuiltApp(): string | null {
   return match ? path.join(repoRoot, match) : null
 }
 
-// Clear any prior build output so `findBuiltApp` can't pick up a stale
-// artifact if electron-builder fails partway through. A matching rm after
-// a successful install is run below.
+// Clear any prior build output so `findBuiltArtifact` can't pick up a
+// stale artifact if electron-builder fails partway through. A matching
+// rm after a successful install is run below.
 rmSync(path.join(repoRoot, 'release'), { recursive: true, force: true })
 
 run('bun', ['install'])
 run('bun', ['run', 'typecheck'])
-run('bun', ['run', 'build:electron'])
+run('bun', ['run', 'build:electron', '--', `--${target}`])
 
-const srcApp = findBuiltApp()
+const srcApp = findBuiltArtifact()
 if (!srcApp) {
-  console.error(`Error: could not find built ${APP_NAME}.app under release/`)
+  const what = target === 'win' ? 'portable .exe' : `${APP_NAME}.app`
+  console.error(`Error: could not find built ${what} under release/`)
   process.exit(1)
 }
 console.log(`Built: ${path.relative(repoRoot, srcApp)}`)

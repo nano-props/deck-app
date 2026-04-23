@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, type TitleBarOverlayOptions } from 'electron'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { loadDeck, DeckLoadError } from '#/main/deck-loader.ts'
@@ -26,6 +26,31 @@ export const APP_ICON = app.isPackaged
   : path.join(import.meta.dirname, '..', '..', 'assets', 'icon.png')
 
 const IS_MAC = process.platform === 'darwin'
+
+function overlayForTheme(dark: boolean): TitleBarOverlayOptions {
+  return dark
+    ? { color: '#000000', symbolColor: '#ffffff', height: 32 }
+    : { color: '#ffffff', symbolColor: '#000000', height: 32 }
+}
+
+function systemOverlay(): TitleBarOverlayOptions {
+  return overlayForTheme(nativeTheme.shouldUseDarkColors)
+}
+
+/**
+ * Set a window's title bar overlay to match an explicit theme. No-op on
+ * macOS (where overlay doesn't apply) and on windows that weren't created
+ * with `titleBarStyle: 'hidden'`.
+ */
+export function applyChromeTheme(win: BrowserWindow, theme: 'dark' | 'light'): void {
+  if (IS_MAC || win.isDestroyed()) return
+  try {
+    win.setTitleBarOverlay(overlayForTheme(theme === 'dark'))
+  } catch {
+    // Throws if the window wasn't created with titleBarStyle: 'hidden'.
+    // Safe to ignore — caller just doesn't get a theme swap.
+  }
+}
 
 /**
  * Secure defaults shared by all windows. `preload` is deliberately not set
@@ -56,7 +81,9 @@ export function showLauncherWindow(): BrowserWindow {
   // Launcher is app chrome, so it uses the launcher preload (exposes
   // window.deckApp) and keeps traffic lights pinned.
   const win = new BrowserWindow({
-    titleBarStyle: IS_MAC ? 'hiddenInset' : 'default',
+    titleBarStyle: IS_MAC ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: IS_MAC ? undefined : systemOverlay(),
+    autoHideMenuBar: !IS_MAC,
     trafficLightPosition: { x: 12, y: 14 },
     width: 900,
     height: 600,
@@ -72,6 +99,13 @@ export function showLauncherWindow(): BrowserWindow {
   })
   void win.loadFile(LAUNCHER_HTML)
   launcherWindow = win
+  if (!IS_MAC) {
+    const onThemeChange = () => {
+      if (!win.isDestroyed()) win.setTitleBarOverlay(systemOverlay())
+    }
+    nativeTheme.on('updated', onThemeChange)
+    win.once('closed', () => nativeTheme.off('updated', onThemeChange))
+  }
   win.once('closed', () => {
     if (launcherWindow === win) launcherWindow = null
   })
@@ -91,12 +125,15 @@ export async function openDeckInNewWindow(deckPath: string): Promise<void> {
     loaded = await loadDeck(deckPath)
     server = await startDeckServer(loaded.rootDir)
 
-    // Player: no chrome, no traffic lights — author content fills the
-    // window; drag is provided via CSS by installDragRegions below.
-    // `show: false` avoids a blank-window flash if loadURL fails.
+    // Player is a pure playback surface: the menu bar is hidden so it
+    // doesn't sandwich the slide (Launcher keeps its menu — that's where
+    // users actually need File > Open). `show: false` avoids a blank
+    // flash if loadURL fails; drag regions are installed below on macOS.
     win = new BrowserWindow({
       show: false,
-      titleBarStyle: IS_MAC ? 'hidden' : 'default',
+      titleBarStyle: 'hidden',
+      titleBarOverlay: IS_MAC ? undefined : systemOverlay(),
+      autoHideMenuBar: !IS_MAC,
       width: 1280,
       height: 800,
       minWidth: 640,
@@ -110,6 +147,13 @@ export async function openDeckInNewWindow(deckPath: string): Promise<void> {
     if (IS_MAC) {
       win.setWindowButtonVisibility(false)
       installDragRegions(win, resolveDragMode(loaded.manifest.drag))
+    } else {
+      const w = win
+      const onThemeChange = () => {
+        if (!w.isDestroyed()) w.setTitleBarOverlay(systemOverlay())
+      }
+      nativeTheme.on('updated', onThemeChange)
+      w.once('closed', () => nativeTheme.off('updated', onThemeChange))
     }
 
     sessionManager.register({

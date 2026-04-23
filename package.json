@@ -49,6 +49,17 @@
       ],
       "identity": null
     },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    },
     "fileAssociations": [
       {
         "ext": "deck",

@@ -19,6 +19,7 @@ bun run dev
 ./install.sh                 # shorthand for `bun run build:app install`
 bun run build:app install    # build + move Deck.app into ~/Applications
 bun run build:app            # build only → release/mac-<arch>/Deck.app
+bun run build:app win        # build Windows portable → release/Deck-<version>-portable.exe
 ```
 
 ## Sample decks

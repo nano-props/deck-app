@@ -225,6 +225,13 @@ p.lede {
   gap: 8px;
 }
 
+/* Windows/Linux: the title bar overlay reserves a 32px strip with the
+ * min/max/close buttons pinned top-right. Push controls below the strip
+ * so they don't collide with the system buttons. */
+html[data-chrome='overlay'] .controls {
+  top: 37px;
+}
+
 .theme-btn {
   appearance: none;
   cursor: pointer;
