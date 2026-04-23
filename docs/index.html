@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Deck — A desktop container for .deck presentations</title>
+<meta name="description" content="Deck is a desktop app that opens .deck files — a .deck is just a zipped static website. Author your slides as a web page; Deck runs them like a native app.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='12' y='20' width='76' height='60' rx='6' fill='none' stroke='%232f6bff' stroke-width='6'/%3E%3Crect x='24' y='34' width='52' height='6' rx='2' fill='%232f6bff'/%3E%3Crect x='24' y='48' width='36' height='4' rx='2' fill='%23c9cbce'/%3E%3Crect x='24' y='58' width='44' height='4' rx='2' fill='%23c9cbce'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#fafaf9;
+    --surface:#ffffff;
+    --ink:#111111;
+    --ink-2:#3a3a3a;
+    --mute:#787c82;
+    --line:#e6e6e2;
+    --line-2:#cdcdc7;
+    --accent:#2f6bff;
+    --chip:#f0f0ec;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 10px 28px rgba(0,0,0,.05);
+    --maxw:1120px;
+  }
+  html[data-theme="dark"]{
+    --bg:#0c0d0f;
+    --surface:#121417;
+    --ink:#f2f3f5;
+    --ink-2:#c9cbce;
+    --mute:#8a8e95;
+    --line:#1f2226;
+    --line-2:#2d3138;
+    --accent:#5d8dff;
+    --chip:#181b1f;
+    --shadow:0 1px 2px rgba(0,0,0,.6), 0 16px 40px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Inter","PingFang SC","Noto Sans SC",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:16px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    transition:background .3s ease, color .3s ease;
+  }
+  html[lang="zh"] body{font-family:"PingFang SC","Noto Sans SC","Inter",system-ui,-apple-system,sans-serif}
+  .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace}
+  a{color:inherit;text-decoration:none}
+  ::selection{background:var(--accent);color:#fff}
+
+  /* ===== Top Bar ===== */
+  .topbar{
+    position:sticky;top:0;z-index:30;
+    background:color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter:saturate(160%) blur(10px);
+    -webkit-backdrop-filter:saturate(160%) blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-inner{
+    max-width:var(--maxw);
+    margin:0 auto;
+    padding:14px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+    gap:16px;
+  }
+  .brand{
+    display:flex;align-items:center;gap:10px;
+    font:600 18px/1 "Inter",sans-serif;letter-spacing:-.015em;
+  }
+  .brand .v{
+    font-family:"JetBrains Mono",monospace;
+    font-size:11px;color:var(--mute);
+    padding:2px 6px;border:1px solid var(--line);border-radius:4px;
+    margin-left:4px;
+  }
+  .nav{display:flex;align-items:center;gap:4px}
+  .nav a{
+    font:500 13px/1 "Inter",sans-serif;
+    color:var(--ink-2);
+    padding:8px 12px;border-radius:8px;
+    transition:color .2s, background .2s;
+  }
+  .nav a:hover{color:var(--ink);background:var(--chip)}
+  .nav .sep{width:1px;height:16px;background:var(--line);margin:0 4px}
+  .nav .cta{
+    color:var(--bg);background:var(--ink);
+    padding:8px 14px;
+  }
+  .nav .cta:hover{color:var(--bg);background:var(--accent)}
+  .theme-btn{
+    width:34px;height:34px;border-radius:8px;
+    border:1px solid var(--line);background:var(--surface);
+    display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;color:var(--ink-2);
+    transition:border-color .2s, color .2s;
+  }
+  .theme-btn:hover{border-color:var(--line-2);color:var(--ink)}
+  .theme-btn svg{width:15px;height:15px}
+  .lang-seg{
+    display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;
+    background:var(--surface);
+  }
+  .lang-seg button{
+    border:0;background:transparent;color:var(--mute);
+    padding:0 10px;height:32px;cursor:pointer;
+    font:500 11px "JetBrains Mono",monospace;letter-spacing:.08em;
+  }
+  .lang-seg button + button{border-left:1px solid var(--line)}
+  .lang-seg button.on{background:var(--ink);color:var(--bg)}
+
+  /* ===== Section shell ===== */
+  section{padding:96px 24px;position:relative}
+  section[id]{scroll-margin-top:72px}
+  .wrap{max-width:var(--maxw);margin:0 auto}
+  .kicker{
+    display:inline-flex;align-items:center;gap:10px;
+    font-family:"JetBrains Mono",monospace;
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--mute);
+  }
+  .kicker::before{
+    content:"";width:24px;height:1px;background:var(--mute);
+  }
+  .kicker b{color:var(--accent);font-weight:500}
+  h1,h2,h3{letter-spacing:-.02em;font-weight:600}
+  .section-h2{
+    font-size:clamp(32px,4.5vw,56px);
+    line-height:1.08;margin-top:14px;
+    max-width:22ch;
+  }
+
+  /* ===== Hero ===== */
+  .hero{padding-top:72px;padding-bottom:96px;overflow:hidden;position:relative}
+  .hero::before{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(1100px 400px at 15% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+      radial-gradient(800px 340px at 92% 20%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 65%);
+  }
+  .hero .wrap{position:relative;z-index:1}
+  .hero-head{max-width:760px}
+  .hero h1{
+    font-size:clamp(44px,6.4vw,80px);
+    line-height:1.02;
+    letter-spacing:-.035em;
+    margin-top:20px;
+  }
+  .hero h1 .accent{color:var(--accent)}
+  .hero .lead{
+    font-size:clamp(16px,1.3vw,19px);
+    line-height:1.6;
+    color:var(--ink-2);
+    max-width:60ch;
+    margin-top:22px;
+  }
+  .cta-row{
+    margin-top:34px;
+    display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+  }
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    height:42px;padding:0 16px;border-radius:10px;
+    font:500 13.5px "Inter",sans-serif;letter-spacing:.01em;
+    border:1px solid transparent;cursor:pointer;
+    transition:transform .15s, border-color .2s, background .2s, color .2s, box-shadow .2s;
+  }
+  .btn.primary{background:var(--ink);color:var(--bg)}
+  .btn.primary:hover{background:var(--accent);transform:translateY(-1px);box-shadow:0 8px 20px color-mix(in srgb, var(--accent) 30%, transparent)}
+  .btn.ghost{background:var(--surface);color:var(--ink);border-color:var(--line)}
+  .btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn svg{width:14px;height:14px}
+
+  /* Hero visual: app-window mock showing what Deck opens */
+  .hero-visual{
+    margin-top:72px;
+    position:relative;
+    border:1px solid var(--line);border-radius:16px;
+    background:var(--surface);
+    overflow:hidden;
+    box-shadow:var(--shadow);
+  }
+  .hero-visual .titlebar{
+    display:flex;align-items:center;gap:8px;
+    padding:12px 14px;
+    border-bottom:1px solid var(--line);
+    background:color-mix(in srgb, var(--surface) 94%, var(--ink) 6%);
+  }
+  .hero-visual .dots{display:flex;gap:6px}
+  .hero-visual .dots i{width:11px;height:11px;border-radius:50%;display:inline-block;background:var(--line-2)}
+  .hero-visual .addr{
+    margin-left:10px;font:500 11px "JetBrains Mono",monospace;
+    color:var(--mute);letter-spacing:.04em;
+  }
+  .hero-visual .addr b{color:var(--ink-2);font-weight:500}
+  .hero-visual .body{
+    padding:clamp(32px,5vw,64px) clamp(28px,5vw,72px);
+    min-height:360px;
+    display:grid;grid-template-columns:1fr 1fr;
+    gap:clamp(24px,4vw,48px);
+    align-items:center;
+  }
+  .slide-mock h2{
+    font-size:clamp(28px,3.4vw,44px);
+    line-height:1.1;margin-bottom:12px;
+    color:var(--ink);
+  }
+  .slide-mock h2 em{font-style:normal;color:var(--accent)}
+  .slide-mock p{
+    color:var(--ink-2);font-size:15px;line-height:1.6;
+    max-width:46ch;
+  }
+  .slide-mock .count{
+    margin-top:26px;display:inline-flex;align-items:center;gap:8px;
+    font:500 11px "JetBrains Mono",monospace;color:var(--mute);
+    letter-spacing:.12em;
+  }
+  .slide-mock .count .bar{width:100px;height:3px;background:var(--line);border-radius:2px;overflow:hidden;position:relative}
+  .slide-mock .count .bar::after{content:"";position:absolute;left:0;top:0;bottom:0;width:40%;background:var(--accent);border-radius:2px}
+  .slide-figure{
+    aspect-ratio:4/3;
+    border-radius:12px;
+    background:var(--chip);border:1px solid var(--line);
+    position:relative;overflow:hidden;
+  }
+  .slide-figure .grid{
+    position:absolute;inset:20px;
+    display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  }
+  .slide-figure .tile{
+    background:var(--surface);border:1px solid var(--line-2);border-radius:8px;
+    display:flex;flex-direction:column;gap:6px;padding:12px;
+  }
+  .slide-figure .tile .th{height:6px;width:60%;background:var(--ink);border-radius:2px;opacity:.85}
+  .slide-figure .tile .ln{height:3px;background:var(--line-2);border-radius:2px}
+  .slide-figure .tile .ln.w1{width:90%}
+  .slide-figure .tile .ln.w2{width:75%}
+  .slide-figure .tile.accent{background:var(--accent);border-color:var(--accent)}
+  .slide-figure .tile.accent .th{background:#fff}
+  .slide-figure .tile.accent .ln{background:rgba(255,255,255,.4)}
+
+  /* ===== Meta strip: fast facts ===== */
+  .meta{
+    border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+    background:var(--surface);
+  }
+  .meta .wrap{
+    padding:36px 0;
+    display:grid;grid-template-columns:repeat(4,1fr);gap:0;
+  }
+  .meta .cell{
+    padding:10px 28px;display:flex;flex-direction:column;gap:8px;
+    border-left:1px solid var(--line);
+  }
+  .meta .cell:first-child{border-left:0}
+  .meta .k{font:500 11px "JetBrains Mono",monospace;letter-spacing:.1em;color:var(--mute);line-height:1.4}
+  .meta .v.stat{
+    font:600 clamp(40px,4.6vw,56px)/1 "Inter",sans-serif;
+    letter-spacing:-.04em;color:var(--ink);
+  }
+
+  /* ===== Inside: manifest fields + keyboard rules ===== */
+  .whatis{padding-top:96px;padding-bottom:96px}
+  .inside-grid{
+    margin-top:56px;
+    display:grid;grid-template-columns:1.2fr 1fr;gap:18px;
+    align-items:stretch;
+  }
+  .manifest-card,.keys-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:28px 28px 26px;display:flex;flex-direction:column;gap:18px;
+  }
+  .manifest-card h3,.keys-card h3{
+    font-size:20px;letter-spacing:-.015em;
+  }
+  .manifest-card .sub,.keys-card .sub{
+    font-size:14px;color:var(--ink-2);line-height:1.6;
+  }
+  .manifest-code{
+    background:var(--chip);border:1px solid var(--line);border-radius:10px;
+    padding:16px 18px;
+    font:500 13px/1.7 "JetBrains Mono",monospace;
+    color:var(--ink);white-space:pre;overflow-x:auto;
+  }
+  .manifest-code .k{color:var(--accent)}
+  .manifest-code .s{color:var(--ink-2)}
+  .manifest-code .c{color:var(--mute)}
+  .field-list{display:flex;flex-direction:column}
+  .field-row{
+    display:grid;grid-template-columns:140px 1fr;
+    gap:14px;padding:10px 0;
+    border-top:1px solid var(--line);
+    font-size:13.5px;line-height:1.5;
+  }
+  .field-row:first-of-type{border-top:0}
+  .field-row .name{
+    font:500 12.5px "JetBrains Mono",monospace;color:var(--ink);
+    display:flex;align-items:center;gap:6px;
+  }
+  .field-row .name .req{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--accent);
+  }
+  .field-row .name .opt{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--line-2);
+  }
+  .field-row .desc{color:var(--ink-2)}
+
+  .key-list{display:flex;flex-direction:column;gap:0}
+  .key-row{
+    display:grid;grid-template-columns:110px 1fr;gap:14px;
+    padding:10px 0;border-top:1px solid var(--line);
+    font-size:13.5px;line-height:1.5;
+    align-items:center;
+  }
+  .key-row:first-of-type{border-top:0}
+  .key-row kbd{
+    font:500 11px "JetBrains Mono",monospace;
+    border:1px solid var(--line);border-bottom-width:2px;
+    padding:2px 7px;border-radius:4px;
+    color:var(--ink);background:var(--bg);
+    letter-spacing:.02em;
+  }
+  .key-row .where{color:var(--ink-2)}
+  .key-row .where b{color:var(--ink);font-weight:500}
+  .key-legend{
+    display:flex;gap:16px;flex-wrap:wrap;
+    margin-top:auto;padding-top:16px;border-top:1px dashed var(--line);
+    font:500 11px "JetBrains Mono",monospace;color:var(--mute);letter-spacing:.06em;
+  }
+  .key-legend .dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--accent);margin-right:6px;vertical-align:middle;
+  }
+  .key-legend .dot.mute{background:var(--line-2)}
+
+  @media (max-width: 980px){
+    .inside-grid{grid-template-columns:1fr}
+  }
+
+  /* ===== Features: four tiles ===== */
+  .features{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .features .grid{
+    margin-top:48px;
+    display:grid;grid-template-columns:repeat(2,1fr);gap:14px;
+  }
+  .feat{
+    border:1px solid var(--line);border-radius:14px;
+    padding:28px 26px 26px;
+    background:var(--bg);
+    display:flex;flex-direction:column;gap:14px;
+    transition:border-color .2s, transform .2s, box-shadow .2s;
+  }
+  .feat:hover{border-color:var(--line-2);transform:translateY(-2px);box-shadow:var(--shadow)}
+  .feat .hd{display:flex;align-items:center;gap:12px}
+  .feat .ic{
+    width:36px;height:36px;border-radius:10px;
+    background:color-mix(in srgb, var(--accent) 10%, transparent);
+    border:1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    display:inline-flex;align-items:center;justify-content:center;
+    color:var(--accent);
+  }
+  .feat .ic svg{width:18px;height:18px}
+  .feat h3{font-size:20px}
+  .feat p{color:var(--ink-2);font-size:14.5px;line-height:1.6}
+  .feat .note{
+    font:500 12px "JetBrains Mono",monospace;color:var(--mute);
+    padding-top:12px;border-top:1px dashed var(--line-2);
+  }
+
+  /* ===== How it works: numbered steps ===== */
+  .how-lead{margin-top:18px;color:var(--ink-2);font-size:17px;max-width:60ch;line-height:1.65}
+  .steps{
+    margin-top:56px;
+    display:grid;grid-template-columns:repeat(3,1fr);gap:14px;
+  }
+  .step{
+    border:1px solid var(--line);border-radius:12px;
+    padding:22px 20px;background:var(--surface);
+    display:flex;flex-direction:column;gap:10px;
+    position:relative;min-height:180px;
+    transition:border-color .2s;
+  }
+  .step:hover{border-color:var(--accent)}
+  .step .n{
+    font:600 11px "JetBrains Mono",monospace;letter-spacing:.14em;
+    color:var(--accent);
+  }
+  .step h4{font-size:16px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+  .step p{font-size:13px;color:var(--ink-2);line-height:1.55}
+
+  /* ===== Skill bridge (between How and Safe) ===== */
+  .skill-bridge{padding:40px 24px}
+  .skill-bridge .wrap{
+    border:1px solid var(--line);border-radius:16px;
+    background:var(--surface);
+    padding:clamp(28px,4vw,44px) clamp(28px,5vw,56px);
+    display:grid;grid-template-columns:1.2fr 1fr;
+    gap:clamp(24px,4vw,48px);align-items:center;
+  }
+  .skill-bridge .pill{
+    display:inline-flex;align-items:center;
+    font:600 10px "JetBrains Mono",monospace;
+    letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);
+    padding:5px 10px;border:1px solid var(--accent);border-radius:999px;
+    margin-bottom:14px;
+  }
+  .skill-bridge h3{
+    font-size:clamp(22px,2.4vw,30px);line-height:1.15;
+    letter-spacing:-.02em;
+  }
+  .skill-bridge h3 .mono{font-size:.92em;color:var(--accent)}
+  .skill-bridge p{
+    margin-top:12px;font-size:15px;line-height:1.6;color:var(--ink-2);
+    max-width:52ch;
+  }
+  .skill-bridge p b{color:var(--accent);font-weight:600}
+  .skill-bridge .cta-row{margin-top:20px}
+  .skill-bridge .btn{height:38px;font-size:13px}
+  .skill-bridge .visual{
+    background:var(--chip);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;
+    font:500 12.5px/1.7 "JetBrains Mono",monospace;
+    color:var(--ink-2);
+    white-space:pre;overflow-x:auto;
+  }
+  .skill-bridge .visual .c{color:var(--mute)}
+  .skill-bridge .visual .k{color:var(--accent)}
+  .skill-bridge .visual b{color:var(--accent);font-weight:600}
+  @media (max-width: 860px){
+    .skill-bridge .wrap{grid-template-columns:1fr;gap:24px}
+  }
+
+  /* ===== Security ===== */
+  .security{padding-top:96px;padding-bottom:96px}
+  .sec-list{
+    margin-top:48px;
+    display:grid;grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+  .sec-item{
+    display:grid;grid-template-columns:auto 1fr;gap:16px;
+    padding:24px 26px;
+    border:1px solid var(--line);border-radius:14px;
+    background:var(--surface);
+    transition:border-color .2s, transform .2s, box-shadow .2s;
+  }
+  .sec-item:hover{border-color:var(--line-2);transform:translateY(-2px);box-shadow:var(--shadow)}
+  .sec-item .mk{
+    width:24px;height:24px;border-radius:6px;
+    background:color-mix(in srgb, var(--accent) 14%, transparent);
+    color:var(--accent);
+    display:inline-flex;align-items:center;justify-content:center;
+    font:600 12px "JetBrains Mono",monospace;
+    margin-top:2px;
+  }
+  .sec-item h4{font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .sec-item p{font-size:13.5px;color:var(--ink-2);line-height:1.55;margin-top:4px}
+
+  /* ===== Compare ===== */
+  .compare{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  table.compare-table{
+    width:100%;border-collapse:collapse;margin-top:40px;
+    font-size:14px;
+  }
+  .compare-table th,.compare-table td{
+    text-align:left;padding:16px 14px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  .compare-table thead th{
+    font:600 11px "JetBrains Mono",monospace;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--mute);background:var(--bg);
+    padding:14px;
+  }
+  .compare-table thead th.self{color:var(--accent);border-bottom:1px solid var(--accent)}
+  .compare-table tbody th{
+    font-weight:500;font-size:14px;color:var(--ink);width:26%;
+    background:var(--bg);
+  }
+  .compare-table td{color:var(--ink-2)}
+  .compare-table td.self{background:color-mix(in srgb, var(--accent) 5%, transparent);color:var(--ink)}
+  .compare-table td .y{color:var(--accent);font-weight:600}
+  .compare-table td .n{color:var(--mute)}
+
+  /* ===== Roadmap ===== */
+  .roadmap .lead{margin-top:18px;color:var(--ink-2);font-size:17px;max-width:60ch;line-height:1.65}
+  .rm-grid{
+    margin-top:48px;
+    display:grid;grid-template-columns:repeat(3,1fr);gap:14px;
+  }
+  .rm{
+    border:1px solid var(--line);border-radius:14px;padding:22px 22px 24px;
+    background:var(--surface);
+    display:flex;flex-direction:column;gap:12px;
+    min-height:220px;
+  }
+  .rm-head{display:flex;align-items:center;justify-content:space-between}
+  .rm-label{
+    font:600 10px "JetBrains Mono",monospace;letter-spacing:.18em;text-transform:uppercase;
+    padding:4px 8px;border-radius:4px;
+  }
+  .rm-label.shipped{color:var(--accent);border:1px solid var(--accent)}
+  .rm-label.progress{color:#fff;background:var(--accent);border:1px solid var(--accent)}
+  .rm-label.planned{color:var(--mute);border:1px dashed var(--line-2)}
+  .rm .tag{font:500 11px "JetBrains Mono",monospace;color:var(--mute);letter-spacing:.08em}
+  .rm h3{font-size:20px;letter-spacing:-.015em}
+  .rm p{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+  .rm ul{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:auto}
+  .rm ul li{
+    font:500 12.5px "JetBrains Mono",monospace;color:var(--ink-2);
+    padding-left:16px;position:relative;
+  }
+  .rm ul li::before{
+    content:"";position:absolute;left:0;top:.55em;
+    width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.8;
+  }
+  .rm.planned ul li::before{background:var(--line-2)}
+
+  /* ===== CTA ===== */
+  .endcta{padding-top:112px;padding-bottom:112px;text-align:center}
+  .endcta h2{
+    font-size:clamp(40px,6.4vw,88px);
+    line-height:1.02;letter-spacing:-.035em;
+    margin-top:8px;
+  }
+  .endcta h2 .accent{color:var(--accent)}
+  .endcta p{margin-top:22px;color:var(--ink-2);font-size:17px;max-width:52ch;margin-left:auto;margin-right:auto;line-height:1.6}
+  .endcta .cta-row{justify-content:center;margin-top:36px}
+
+  /* ===== Footer ===== */
+  footer{
+    border-top:1px solid var(--line);
+    padding:40px 24px 60px;
+    background:var(--bg);
+  }
+  footer .wrap{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;
+  }
+  footer .brand{font-size:13px}
+  footer .links{
+    display:flex;gap:6px;flex-wrap:wrap;
+  }
+  footer .links a{
+    font:500 12px "JetBrains Mono",monospace;color:var(--mute);
+    letter-spacing:.04em;padding:6px 10px;border-radius:6px;
+    transition:color .2s, background .2s;
+  }
+  footer .links a:hover{color:var(--ink);background:var(--chip)}
+  footer .fineprint{
+    font:500 11px "JetBrains Mono",monospace;color:var(--mute);
+    letter-spacing:.08em;
+  }
+
+  /* ===== Reveal on scroll ===== */
+  .reveal{opacity:0;transform:translateY(16px);transition:opacity .6s ease, transform .6s ease}
+  .reveal.on{opacity:1;transform:none}
+  /* No-JS fallback: if the IntersectionObserver never runs, show everything */
+  .no-js .reveal{opacity:1;transform:none}
+  @media (prefers-reduced-motion: reduce){
+    .reveal{opacity:1;transform:none;transition:none}
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 980px){
+    section{padding:72px 20px}
+    .hero{padding-top:48px;padding-bottom:72px}
+    .hero-visual .body{grid-template-columns:1fr;padding:36px 28px;gap:32px}
+    .slide-figure{max-width:360px}
+    .meta .wrap{grid-template-columns:repeat(2,1fr);gap:8px 0}
+    .meta .cell{padding:10px 16px}
+    .meta .cell:nth-child(3){border-left:0;border-top:1px solid var(--line)}
+    .meta .cell:nth-child(4){border-top:1px solid var(--line)}
+    .features .grid{grid-template-columns:1fr}
+    .steps{grid-template-columns:repeat(2,1fr)}
+    .sec-list{grid-template-columns:1fr}
+    .rm-grid{grid-template-columns:1fr}
+    table.compare-table,.compare-table thead,.compare-table tbody,.compare-table tr,.compare-table th,.compare-table td{
+      display:block;
+    }
+    .compare-table thead{display:none}
+    .compare-table tr{margin-bottom:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+    .compare-table td,.compare-table tbody th{border-bottom:1px solid var(--line);padding:10px 14px}
+    .compare-table td:last-child{border-bottom:0}
+    .compare-table td::before{
+      content:attr(data-label);display:block;
+      font:600 10px "JetBrains Mono",monospace;letter-spacing:.14em;text-transform:uppercase;
+      color:var(--mute);margin-bottom:4px;
+    }
+  }
+  @media (max-width: 640px){
+    .nav a:not(.cta){display:none}
+    .steps{grid-template-columns:1fr}
+    .hero h1{font-size:clamp(38px,10vw,56px)}
+    .endcta h2{font-size:clamp(36px,10vw,64px)}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Top Bar ===== -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top">
+      <span>Deck</span>
+    </a>
+    <nav class="nav">
+      <a href="#whatis" data-i18n="navWhat">What's a Deck</a>
+      <a href="#how" data-i18n="navHow">How</a>
+      <a href="#roadmap" data-i18n="navRoadmap">What's next</a>
+      <span class="sep"></span>
+      <div class="lang-seg" id="langSeg">
+        <button data-lang="zh">中</button>
+        <button data-lang="en" class="on">EN</button>
+      </div>
+      <button class="theme-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+      <a class="cta" href="https://github.com/nano-props/deck-app" target="_blank" rel="noreferrer" data-i18n="navCta">GitHub →</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ===== Hero ===== -->
+<section class="hero" id="top">
+  <div class="wrap">
+    <div class="hero-head">
+      <h1 class="reveal" data-i18n="heroTitle">Slides, reinvented.</h1>
+      <p class="lead reveal" data-i18n="heroLead">You talk. AI builds. Double-click to present.</p>
+      <div class="cta-row reveal">
+        <a class="btn primary" href="https://github.com/nano-props/deck-app" target="_blank" rel="noreferrer">
+          <span data-i18n="heroCta1">Get Deck</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="btn ghost" href="#how" data-i18n="heroCta2">
+          Learn more
+        </a>
+      </div>
+    </div>
+
+    <div class="hero-visual reveal">
+      <div class="titlebar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="addr mono"><b>q3-review.deck</b></div>
+      </div>
+      <div class="body">
+        <div class="slide-mock">
+          <h2 data-i18n="mockTitle">Q3 <em>Board Review</em>.</h2>
+          <p data-i18n="mockBody">Where we stood, where we're going — 12 slides from a single prompt.</p>
+          <div class="count"><span class="mono">01 / 12</span><span class="bar"></span></div>
+        </div>
+        <div class="slide-figure" aria-hidden="true">
+          <div class="grid">
+            <div class="tile"><span class="th"></span><span class="ln w1"></span><span class="ln w2"></span></div>
+            <div class="tile accent"><span class="th"></span><span class="ln w1"></span><span class="ln w2"></span></div>
+            <div class="tile"><span class="th"></span><span class="ln w1"></span><span class="ln w2"></span></div>
+            <div class="tile"><span class="th"></span><span class="ln w1"></span><span class="ln w2"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Meta strip — 4 facts ===== -->
+<section class="meta" style="padding:0">
+  <div class="wrap">
+    <div class="cell"><span class="v stat">1</span><span class="k" data-i18n="metaK1">file to share</span></div>
+    <div class="cell"><span class="v stat">0</span><span class="k" data-i18n="metaK2">accounts needed</span></div>
+    <div class="cell"><span class="v stat">∞</span><span class="k" data-i18n="metaK3">works offline, forever</span></div>
+    <div class="cell"><span class="v stat">3</span><span class="k" data-i18n="metaK4">platforms · Mac, Windows, Linux</span></div>
+  </div>
+</section>
+
+<!-- ===== What's inside ===== -->
+<section class="whatis" id="whatis">
+  <div class="wrap">
+    <div class="inside-grid">
+      <div class="manifest-card reveal">
+        <div>
+          <div class="kicker" style="margin-bottom:14px"><b data-i18n="insideKicker">What's inside</b></div>
+          <h3 data-i18n="insideTitle">Two files. That's the minimum.</h3>
+          <p class="sub" data-i18n="insideSub">A <span class="mono">.deck</span> is a folder, zipped. It needs <span class="mono">deck.json</span> to name itself, and <span class="mono">index.html</span> to show itself. Everything else — images, fonts, scripts — is up to you.</p>
+        </div>
+<pre class="manifest-code"><span class="c">// deck.json — the manifest</span>
+{
+  <span class="k">"name"</span>: <span class="s">"My Talk"</span>,
+  <span class="k">"author"</span>: <span class="s">"Ada"</span>,
+  <span class="k">"description"</span>: <span class="s">"A talk about Transformers"</span>,
+  <span class="k">"cover"</span>: <span class="s">"cover.png"</span>,
+  <span class="k">"version"</span>: <span class="s">"1.0.0"</span>
+}</pre>
+        <div class="field-list">
+          <div class="field-row"><span class="name"><span class="req"></span>name</span><span class="desc" data-i18n="fName">The title. Shown in lists and the window.</span></div>
+          <div class="field-row"><span class="name"><span class="opt"></span>author</span><span class="desc" data-i18n="fAuthor">Who made it.</span></div>
+          <div class="field-row"><span class="name"><span class="opt"></span>description</span><span class="desc" data-i18n="fDesc">One line about what it's for.</span></div>
+          <div class="field-row"><span class="name"><span class="opt"></span>cover</span><span class="desc" data-i18n="fCover">Thumbnail image, for previews.</span></div>
+          <div class="field-row"><span class="name"><span class="opt"></span>version</span><span class="desc" data-i18n="fVersion">Your deck's version number.</span></div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px;font:500 11px 'JetBrains Mono',monospace;color:var(--mute);letter-spacing:.06em">
+          <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:middle"></span><span data-i18n="fReq">required</span></span>
+          <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--line-2);margin-right:6px;vertical-align:middle"></span><span data-i18n="fOpt">optional</span></span>
+        </div>
+      </div>
+
+      <div class="keys-card reveal">
+        <div>
+          <div class="kicker" style="margin-bottom:14px"><b data-i18n="keysKicker">Keyboard</b></div>
+          <h3 data-i18n="keysTitle">Every key reaches your deck.</h3>
+          <p class="sub" data-i18n="keysSub">No arrow keys hijacked. No space bar stolen. Deck stays out of your way — you decide what each key does. Only a handful stay with the window itself.</p>
+        </div>
+        <div class="key-list">
+          <div class="key-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span class="where" data-i18n="k1"><b>Your deck</b> · page through, or whatever you wire them to.</span></div>
+          <div class="key-row"><span><kbd>Space</kbd></span><span class="where" data-i18n="k2"><b>Your deck</b> · next slide, play a video, trigger an animation.</span></div>
+          <div class="key-row"><span><kbd>A</kbd>–<kbd>Z</kbd></span><span class="where" data-i18n="k3"><b>Your deck</b> · shortcuts are yours. Every letter key is forwarded.</span></div>
+          <div class="key-row"><span><kbd>Esc</kbd></span><span class="where" data-i18n="k4"><b>Deck App</b> · exits full-screen. Always.</span></div>
+          <div class="key-row"><span><kbd>F11</kbd></span><span class="where" data-i18n="k5"><b>Deck App</b> · toggles full-screen.</span></div>
+        </div>
+        <div class="key-legend">
+          <span><span class="dot"></span><span data-i18n="kL1">goes to your deck</span></span>
+          <span><span class="dot mute"></span><span data-i18n="kL2">handled by the app</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Features ===== -->
+<section class="features" id="features">
+  <div class="wrap">
+    <div class="kicker reveal"><b data-i18n="s2Kicker">02</b> <span data-i18n="s2KickerSub">Why</span></div>
+    <h2 class="reveal section-h2" data-i18n="s2Title">A deck should feel like a deck.</h2>
+
+    <div class="grid">
+      <div class="feat reveal">
+        <div class="hd">
+          <span class="ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+          </span>
+        </div>
+        <h3 data-i18n="f1Title">Double-click. Done.</h3>
+        <p data-i18n="f1Desc">No browser tab. No loading spinner. It opens in its own window, full-screen ready, just like Keynote.</p>
+        <div class="note" data-i18n="f1Note">Mac · Windows · Linux</div>
+      </div>
+
+      <div class="feat reveal">
+        <div class="hd">
+          <span class="ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>
+          </span>
+        </div>
+        <h3 data-i18n="f2Title">AI writes it for you.</h3>
+        <p data-i18n="f2Desc">Describe your talk, upload your notes, paste an outline. Your AI turns it into real slides you can actually give.</p>
+        <div class="note" data-i18n="f2Note">Works with Claude, ChatGPT, and more</div>
+      </div>
+
+      <div class="feat reveal">
+        <div class="hd">
+          <span class="ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          </span>
+        </div>
+        <h3 data-i18n="f3Title">Anything you can imagine.</h3>
+        <p data-i18n="f3Desc">Animations, videos, live charts, 3D models, tiny games — if the web can do it, your deck can do it.</p>
+        <div class="note" data-i18n="f3Note">Not boxed into "slides"</div>
+      </div>
+
+      <div class="feat reveal">
+        <div class="hd">
+          <span class="ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4z"/></svg>
+          </span>
+        </div>
+        <h3 data-i18n="f4Title">Your files stay yours.</h3>
+        <p data-i18n="f4Desc">No account. No upload. No one watching. Your deck sits on your disk — like a document should.</p>
+        <div class="note" data-i18n="f4Note">Private by default</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== How it works ===== -->
+<section class="how" id="how">
+  <div class="wrap">
+    <div class="kicker reveal"><b data-i18n="s3Kicker">03</b> <span data-i18n="s3KickerSub">How it works</span></div>
+    <h2 class="reveal section-h2" data-i18n="s3Title">Three steps, from idea to stage.</h2>
+    <p class="how-lead reveal" data-i18n="s3Lead">Nothing to learn. Nothing to set up. Tell your AI what you want — and you're done.</p>
+
+    <div class="steps">
+      <div class="step reveal">
+        <span class="n" data-i18n="s3S1N">STEP 01</span>
+        <h4 data-i18n="s3S1Title">Say what you want.</h4>
+        <p data-i18n="s3S1Desc">"Turn these Q3 numbers into a board deck." Or drop in your notes, your script, your outline — whatever you've got.</p>
+      </div>
+      <div class="step reveal">
+        <span class="n" data-i18n="s3S2N">STEP 02</span>
+        <h4 data-i18n="s3S2Title">AI builds the deck.</h4>
+        <p data-i18n="s3S2Desc">Minutes later, a real <span class="mono">.deck</span> file lands on your computer. Not a link. Not a web page. A file.</p>
+      </div>
+      <div class="step reveal">
+        <span class="n" data-i18n="s3S3N">STEP 03</span>
+        <h4 data-i18n="s3S3Title">Double-click. Present.</h4>
+        <p data-i18n="s3S3Desc">Full-screen window. Arrow keys to move. Esc to exit. The same file works on your laptop, your phone, or a friend's Mac.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Skill bridge ===== -->
+<section class="skill-bridge" id="skill">
+  <div class="wrap reveal">
+    <div>
+      <span class="pill" data-i18n="skillPill">The skill behind it</span>
+      <h3 data-i18n="skillTitle">Your AI knows how to do it, because of the <span class="mono">create-deck</span> skill.</h3>
+      <p data-i18n="skillDesc">A small set of instructions that teaches any AI tool the Deck format — pagination, sandbox rules, what to avoid. Just say <b>deck</b> and your AI picks it up automatically.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="https://github.com/nano-props/deck-app/tree/main/skills/create-deck" target="_blank" rel="noreferrer">
+          <span data-i18n="skillCta1">Get the skill</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+    </div>
+    <div class="visual" data-i18n="skillVisual"><span class="c">// you</span>
+"Make me a <b>deck</b> for our
+ new coffee app. 10 slides."
+
+<span class="c">// your AI — picks up "deck",</span>
+<span class="c">// runs the create-deck skill</span>
+<span class="k">→</span> scaffolds deck.json
+<span class="k">→</span> writes index.html
+<span class="k">→</span> packs coffee.deck
+
+<span class="c">// you, 3 minutes later</span>
+<span class="k">$</span> open coffee.deck</div>
+  </div>
+</section>
+
+<!-- ===== Safe & private ===== -->
+<section class="security" id="security">
+  <div class="wrap">
+    <div class="kicker reveal"><b data-i18n="s4Kicker">04</b> <span data-i18n="s4KickerSub">Safe &amp; private</span></div>
+    <h2 class="reveal section-h2" data-i18n="s4Title" style="max-width:24ch">Built to be trusted, by default.</h2>
+
+    <div class="sec-list reveal">
+      <div class="sec-item">
+        <span class="mk">1</span>
+        <div>
+          <h4 data-i18n="sec1Title">It stays on your computer.</h4>
+          <p data-i18n="sec1Desc">No uploads. No servers. No analytics. Your deck never leaves your machine unless you send it yourself.</p>
+        </div>
+      </div>
+      <div class="sec-item">
+        <span class="mk">2</span>
+        <div>
+          <h4 data-i18n="sec2Title">Opens in its own box.</h4>
+          <p data-i18n="sec2Desc">Each deck runs in an isolated window. It can't read your files or peek at other apps — even if someone sends you a shady one.</p>
+        </div>
+      </div>
+      <div class="sec-item">
+        <span class="mk">3</span>
+        <div>
+          <h4 data-i18n="sec3Title">No network, unless you ask.</h4>
+          <p data-i18n="sec3Desc">By default, a deck can't phone home. Period. If it ever needs to, you'll know, and you'll be the one to decide.</p>
+        </div>
+      </div>
+      <div class="sec-item">
+        <span class="mk">4</span>
+        <div>
+          <h4 data-i18n="sec4Title">Open and inspectable.</h4>
+          <p data-i18n="sec4Desc">A <span class="mono">.deck</span> is not a black box — it's the web, zipped. You can always look inside and see exactly what it does.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Compare ===== -->
+<section class="compare" id="compare">
+  <div class="wrap">
+    <div class="kicker reveal"><b data-i18n="s5Kicker">05</b> <span data-i18n="s5KickerSub">How we're different</span></div>
+    <h2 class="reveal section-h2" data-i18n="s5Title">The best of every world.</h2>
+
+    <table class="compare-table reveal">
+      <thead>
+        <tr>
+          <th></th>
+          <th data-i18n="cmpH1">Gamma / Tome</th>
+          <th data-i18n="cmpH2">Keynote / PPT</th>
+          <th class="self" data-i18n="cmpH4">Deck</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row" data-i18n="cmpR1">Made by AI</th>
+          <td data-label-i18n="cmpH1"><span class="y" data-i18n="cmpYes">Yes</span></td>
+          <td data-label-i18n="cmpH2"><span class="n" data-i18n="cmpNo">No</span></td>
+          <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
+        </tr>
+        <tr>
+          <th scope="row" data-i18n="cmpR2">Your file, your disk</th>
+          <td data-label-i18n="cmpH1"><span class="n" data-i18n="cmpNo">No</span></td>
+          <td data-label-i18n="cmpH2"><span class="y" data-i18n="cmpYes">Yes</span></td>
+          <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
+        </tr>
+        <tr>
+          <th scope="row" data-i18n="cmpR3">Double-click to open</th>
+          <td data-label-i18n="cmpH1"><span class="n" data-i18n="cmpNo">No</span></td>
+          <td data-label-i18n="cmpH2"><span class="y" data-i18n="cmpYes">Yes</span></td>
+          <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
+        </tr>
+        <tr>
+          <th scope="row" data-i18n="cmpR4">Animations, video, anything</th>
+          <td data-label-i18n="cmpH1" data-i18n="cmpLow">Limited</td>
+          <td data-label-i18n="cmpH2" data-i18n="cmpLow">Limited</td>
+          <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== Roadmap ===== -->
+<section class="roadmap" id="roadmap">
+  <div class="wrap">
+    <div class="kicker reveal"><b data-i18n="s6Kicker">06</b> <span data-i18n="s6KickerSub">What's next</span></div>
+    <h2 class="reveal section-h2" data-i18n="s6Title">Today, tomorrow, and after.</h2>
+    <p class="lead reveal" data-i18n="s6Lead">Here's what you can do right now — and where we're going next.</p>
+
+    <div class="rm-grid">
+      <div class="rm reveal">
+        <div class="rm-head">
+          <span class="tag" data-i18n="rm1Tag">Today</span>
+          <span class="rm-label shipped" data-i18n="rmLShipped">Ready</span>
+        </div>
+        <h3 data-i18n="rm1Title">Open and present.</h3>
+        <p data-i18n="rm1Desc">Double-click any <span class="mono">.deck</span>. It opens full-screen, in its own window, ready to go.</p>
+        <ul>
+          <li data-i18n="rm1L1">Double-click to open</li>
+          <li data-i18n="rm1L2">Drag-and-drop files in</li>
+          <li data-i18n="rm1L3">Works offline, forever</li>
+        </ul>
+      </div>
+      <div class="rm reveal">
+        <div class="rm-head">
+          <span class="tag" data-i18n="rm2Tag">Tomorrow</span>
+          <span class="rm-label progress" data-i18n="rmLProgress">Soon</span>
+        </div>
+        <h3 data-i18n="rm2Title">Talk to it. Change it.</h3>
+        <p data-i18n="rm2Desc">Ask for edits in plain words — watch the slide update, live. No re-prompting the whole deck, no leaving the window.</p>
+        <ul>
+          <li data-i18n="rm2L1">Built-in AI chat</li>
+          <li data-i18n="rm2L2">Live preview as you talk</li>
+          <li data-i18n="rm2L3">Starter templates</li>
+        </ul>
+      </div>
+      <div class="rm planned reveal">
+        <div class="rm-head">
+          <span class="tag" data-i18n="rm3Tag">After</span>
+          <span class="rm-label planned" data-i18n="rmLPlanned">Later</span>
+        </div>
+        <h3 data-i18n="rm3Title">Export anywhere.</h3>
+        <p data-i18n="rm3Desc">Need a PDF? A video? A plain web page? One deck, every format — with a click.</p>
+        <ul>
+          <li data-i18n="rm3L1">PDF export</li>
+          <li data-i18n="rm3L2">Video recording</li>
+          <li data-i18n="rm3L3">Publish to the web</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== End CTA ===== -->
+<section class="endcta">
+  <div class="wrap">
+    <h2 class="reveal" data-i18n="endTitle">Ready when you are.</h2>
+    <div class="cta-row reveal">
+      <a class="btn primary" href="https://github.com/nano-props/deck-app" target="_blank" rel="noreferrer">
+        <span data-i18n="endCta1">Get Deck</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn ghost" href="https://github.com/nano-props/deck-app/tree/main/skills/create-deck" target="_blank" rel="noreferrer" data-i18n="endCta2">
+        Get the skill
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer>
+  <div class="wrap">
+    <div class="brand">
+      <span>Deck</span>
+      <span class="v mono">v0.1</span>
+    </div>
+    <div class="links">
+      <a href="#whatis" data-i18n="footWhat">What's a Deck</a>
+      <a href="#how" data-i18n="footHow">How it works</a>
+      <a href="#skill" data-i18n="footSkill">The skill</a>
+      <a href="#security" data-i18n="footSafe">Safe &amp; private</a>
+      <a href="https://github.com/nano-props/deck-app" target="_blank" rel="noreferrer">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.documentElement.classList.remove("no-js");
+
+  /* ===== i18n ===== */
+  const I18N = {
+    en: {
+      navWhat:"What's a Deck", navHow:"How", navRoadmap:"What's next",
+      navCta:"GitHub →",
+      heroTitle:"Slides, reinvented.",
+      heroLead:"You talk. AI builds. Double-click to present.",
+      heroCta1:"Get Deck",
+      heroCta2:"Learn more",
+      mockTitle:"Q3 <em>Board Review</em>.",
+      mockBody:"Where we stood, where we're going — 12 slides from a single prompt.",
+
+      metaK1:"file to share",
+      metaK2:"accounts needed",
+      metaK3:"works offline, forever",
+      metaK4:"platforms · Mac, Windows, Linux",
+
+      insideKicker:"What's inside",
+      insideTitle:"Two files. That's the minimum.",
+      insideSub:'A <span class="mono">.deck</span> is a folder, zipped. It needs <span class="mono">deck.json</span> to name itself, and <span class="mono">index.html</span> to show itself. Everything else — images, fonts, scripts — is up to you.',
+      fName:"The title. Shown in lists and the window.",
+      fAuthor:"Who made it.",
+      fDesc:"One line about what it's for.",
+      fCover:"Thumbnail image, for previews.",
+      fVersion:"Your deck's version number.",
+      fReq:"required", fOpt:"optional",
+      keysKicker:"Keyboard",
+      keysTitle:"Every key reaches your deck.",
+      keysSub:"No arrow keys hijacked. No space bar stolen. Deck stays out of your way — you decide what each key does. Only a handful stay with the window itself.",
+      k1:"<b>Your deck</b> · page through, or whatever you wire them to.",
+      k2:"<b>Your deck</b> · next slide, play a video, trigger an animation.",
+      k3:"<b>Your deck</b> · shortcuts are yours. Every letter key is forwarded.",
+      k4:"<b>Deck App</b> · exits full-screen. Always.",
+      k5:"<b>Deck App</b> · toggles full-screen.",
+      kL1:"goes to your deck", kL2:"handled by the app",
+
+      s2Kicker:"02", s2KickerSub:"Why",
+      s2Title:"A deck should feel like a deck.",
+      f1Title:"Double-click. Done.",
+      f1Desc:"No browser tab. No loading spinner. It opens in its own window, full-screen ready, just like Keynote.",
+      f1Note:"Mac · Windows · Linux",
+      f2Title:"AI writes it for you.",
+      f2Desc:"Describe your talk, upload your notes, paste an outline. Your AI turns it into real slides you can actually give.",
+      f2Note:"Works with Claude, ChatGPT, and more",
+      f3Title:"Anything you can imagine.",
+      f3Desc:"Animations, videos, live charts, 3D models, tiny games — if the web can do it, your deck can do it.",
+      f3Note:'Not boxed into "slides"',
+      f4Title:"Your files stay yours.",
+      f4Desc:"No account. No upload. No one watching. Your deck sits on your disk — like a document should.",
+      f4Note:"Private by default",
+
+      s3Kicker:"03", s3KickerSub:"How it works",
+      s3Title:"Three steps, from idea to stage.",
+      s3Lead:"Nothing to learn. Nothing to set up. Tell your AI what you want — and you're done.",
+      s3S1N:"STEP 01", s3S1Title:"Say what you want.",
+      s3S1Desc:'"Turn these Q3 numbers into a board deck." Or drop in your notes, your script, your outline — whatever you\'ve got.',
+      s3S2N:"STEP 02", s3S2Title:"AI builds the deck.",
+      s3S2Desc:'Minutes later, a real <span class="mono">.deck</span> file lands on your computer. Not a link. Not a web page. A file.',
+      s3S3N:"STEP 03", s3S3Title:"Double-click. Present.",
+      s3S3Desc:"Full-screen window. Arrow keys to move. Esc to exit. The same file works on your laptop, your phone, or a friend's Mac.",
+
+      skillPill:"The skill behind it",
+      skillTitle:'Your AI knows how to do it, because of the <span class="mono">create-deck</span> skill.',
+      skillDesc:'A small set of instructions that teaches any AI tool the Deck format — pagination, sandbox rules, what to avoid. Just say <b>deck</b> and your AI picks it up automatically.',
+      skillCta1:"Get the skill",
+      skillVisual:'<span class="c">// you</span>\n"Make me a <b>deck</b> for our\n new coffee app. 10 slides."\n\n<span class="c">// your AI — picks up "deck",</span>\n<span class="c">// runs the create-deck skill</span>\n<span class="k">→</span> scaffolds deck.json\n<span class="k">→</span> writes index.html\n<span class="k">→</span> packs coffee.deck\n\n<span class="c">// you, 3 minutes later</span>\n<span class="k">$</span> open coffee.deck',
+
+      s4Kicker:"04", s4KickerSub:"Safe & private",
+      s4Title:"Built to be trusted, by default.",
+      sec1Title:"It stays on your computer.",
+      sec1Desc:"No uploads. No servers. No analytics. Your deck never leaves your machine unless you send it yourself.",
+      sec2Title:"Opens in its own box.",
+      sec2Desc:"Each deck runs in an isolated window. It can't read your files or peek at other apps — even if someone sends you a shady one.",
+      sec3Title:"No network, unless you ask.",
+      sec3Desc:"By default, a deck can't phone home. Period. If it ever needs to, you'll know, and you'll be the one to decide.",
+      sec4Title:"Open and inspectable.",
+      sec4Desc:'A <span class="mono">.deck</span> is not a black box — it\'s the web, zipped. You can always look inside and see exactly what it does.',
+
+      s5Kicker:"05", s5KickerSub:"How we're different",
+      s5Title:"The best of every world.",
+      cmpH1:"Gamma / Tome", cmpH2:"Keynote / PPT", cmpH4:"Deck",
+      cmpR1:"Made by AI", cmpR2:"Your file, your disk", cmpR3:"Double-click to open",
+      cmpR4:"Animations, video, anything",
+      cmpYes:"Yes", cmpNo:"No", cmpLow:"Limited",
+
+      s6Kicker:"06", s6KickerSub:"What's next",
+      s6Title:"Today, tomorrow, and after.",
+      s6Lead:"Here's what you can do right now — and where we're going next.",
+      rm1Tag:"Today",    rmLShipped:"Ready",
+      rm1Title:"Open and present.",
+      rm1Desc:'Double-click any <span class="mono">.deck</span>. It opens full-screen, in its own window, ready to go.',
+      rm1L1:"Double-click to open", rm1L2:"Drag-and-drop files in", rm1L3:"Works offline, forever",
+      rm2Tag:"Tomorrow", rmLProgress:"Soon",
+      rm2Title:"Talk to it. Change it.",
+      rm2Desc:"Ask for edits in plain words — watch the slide update, live. No re-prompting the whole deck, no leaving the window.",
+      rm2L1:"Built-in AI chat", rm2L2:"Live preview as you talk", rm2L3:"Starter templates",
+      rm3Tag:"After",    rmLPlanned:"Later",
+      rm3Title:"Export anywhere.",
+      rm3Desc:"Need a PDF? A video? A plain web page? One deck, every format — with a click.",
+      rm3L1:"PDF export", rm3L2:"Video recording", rm3L3:"Publish to the web",
+
+      endTitle:"Ready when you are.",
+      endCta1:"Get Deck",
+      endCta2:"Get the skill",
+
+      footWhat:"What's a Deck", footHow:"How it works", footSkill:"The skill", footSafe:"Safe & private"
+    },
+    zh: {
+      navWhat:"什么是 Deck", navHow:"怎么用", navRoadmap:"未来",
+      navCta:"GitHub →",
+      heroTitle:"幻灯片，重新发明。",
+      heroLead:"你说，AI 做。双击开讲。",
+      heroCta1:"获取 Deck",
+      heroCta2:"了解更多",
+      mockTitle:"Q3 <em>董事会汇报</em>。",
+      mockBody:"我们走到哪了，下一步去哪 —— 12 页，一个 prompt 做出来。",
+
+      metaK1:"个文件，发给谁都能打开",
+      metaK2:"个账号，什么都不用注册",
+      metaK3:"离线可用，没有过期",
+      metaK4:"个平台 · Mac、Windows、Linux",
+
+      insideKicker:"里面有什么",
+      insideTitle:"两个文件，就够了。",
+      insideSub:'一份 <span class="mono">.deck</span> 就是一个压缩后的文件夹。只要 <span class="mono">deck.json</span> 告诉它叫什么、<span class="mono">index.html</span> 告诉它怎么显示，其他的（图片、字体、脚本）随你放。',
+      fName:"标题。会显示在列表和窗口上。",
+      fAuthor:"作者是谁。",
+      fDesc:"一句话说明这份 Deck 是做什么的。",
+      fCover:"封面图，用于预览。",
+      fVersion:"你这份 Deck 的版本号。",
+      fReq:"必填", fOpt:"可选",
+      keysKicker:"键盘",
+      keysTitle:"每一个键，都是你的。",
+      keysSub:"方向键不会被劫持，空格键不会被吞掉。Deck 不挡你的路 —— 每个键要做什么，你自己决定。只有少数几个键留给窗口本身。",
+      k1:"<b>你的 Deck</b> · 翻页，或者任何你接上去的逻辑。",
+      k2:"<b>你的 Deck</b> · 下一页、播视频、触发动画都行。",
+      k3:"<b>你的 Deck</b> · 快捷键是你的。每一个字母都会交给你。",
+      k4:"<b>Deck App</b> · 退出全屏，永远。",
+      k5:"<b>Deck App</b> · 切换全屏。",
+      kL1:"交给你的 Deck", kL2:"由 App 处理",
+
+      s2Kicker:"02", s2KickerSub:"为什么",
+      s2Title:"演示该有的样子。",
+      f1Title:"双击，就完了。",
+      f1Desc:"不是一个浏览器标签页。没有加载转圈。一打开就是全屏的窗口，和 Keynote 一样干脆。",
+      f1Note:"Mac · Windows · Linux 都能用",
+      f2Title:"AI 替你写好。",
+      f2Desc:"说一下你的主题、把笔记贴进去、丢一份大纲过去 —— AI 帮你变成能上台讲的幻灯片。",
+      f2Note:"支持 Claude、ChatGPT 等",
+      f3Title:"你能想到的，它都能做。",
+      f3Desc:"动画、视频、实时图表、3D 模型、小游戏 —— 网页能做的，你的 Deck 都能做。",
+      f3Note:"不只是「一页一页」",
+      f4Title:"文件永远是你自己的。",
+      f4Desc:"不用账号、不会上传、没人在盯着。你的 Deck 就躺在你硬盘里 —— 本该如此。",
+      f4Note:"默认就是私密的",
+
+      s3Kicker:"03", s3KickerSub:"怎么用",
+      s3Title:"三步，从想法到讲台。",
+      s3Lead:"什么都不用学，也什么都不用装。告诉 AI 你要什么 —— 就完事了。",
+      s3S1N:"STEP 01", s3S1Title:"说一句话。",
+      s3S1Desc:"「把这份 Q3 数据做成一份董事会 Deck」。或者直接把笔记、讲稿、大纲丢过去 —— 你手头有什么都行。",
+      s3S2N:"STEP 02", s3S2Title:"AI 做好整份 Deck。",
+      s3S2Desc:'几分钟后，一个真实的 <span class="mono">.deck</span> 文件落在你电脑里。不是链接，不是一个网页，是一个文件。',
+      s3S3N:"STEP 03", s3S3Title:"双击开讲。",
+      s3S3Desc:"全屏的窗口。方向键翻页，Esc 退出。同一个文件，自己的电脑、朋友的 Mac，都能直接打开。",
+
+      skillPill:"背后的那个 Skill",
+      skillTitle:'AI 能做，是因为有 <span class="mono">create-deck</span> skill。',
+      skillDesc:'一份小小的说明书，教会任何 AI 工具怎么按 Deck 的格式来做 —— 分页、沙盒规则、哪些坑要避。你只要说一句 <b>Deck</b>，AI 就会自动调用这个 Skill。',
+      skillCta1:"获取 Skill",
+      skillVisual:'<span class="c">// 你</span>\n「帮我给新的咖啡 App\n 做一份 10 页的 <b>deck</b>。」\n\n<span class="c">// 你的 AI —— 抓到「deck」，</span>\n<span class="c">// 自动启用 create-deck skill</span>\n<span class="k">→</span> 生成 deck.json\n<span class="k">→</span> 写 index.html\n<span class="k">→</span> 打包成 coffee.deck\n\n<span class="c">// 3 分钟后，你</span>\n<span class="k">$</span> open coffee.deck',
+
+      s4Kicker:"04", s4KickerSub:"安全 & 私密",
+      s4Title:"默认就值得信任。",
+      sec1Title:"它就在你电脑里。",
+      sec1Desc:"不上传、不回传、不埋点。除非你自己发给别人，否则你的 Deck 不会离开你的设备。",
+      sec2Title:"跑在自己的小盒子里。",
+      sec2Desc:"每份 Deck 都在独立的窗口里运行。就算别人发了一个可疑的 Deck，它也读不了你的文件、碰不到别的应用。",
+      sec3Title:"不联网，除非你同意。",
+      sec3Desc:"默认情况下，Deck 不能偷偷连网。就这么定的。哪天真的需要联网，也会明确问你。",
+      sec4Title:"开放，可检查。",
+      sec4Desc:'一份 <span class="mono">.deck</span> 不是黑盒 —— 它就是一段打包好的网页。你随时可以打开看看里面到底在做什么。',
+
+      s5Kicker:"05", s5KickerSub:"我们有什么不一样",
+      s5Title:"把每一类的好处都拿过来。",
+      cmpH1:"Gamma / Tome", cmpH2:"Keynote / PPT", cmpH4:"Deck",
+      cmpR1:"AI 帮你做", cmpR2:"文件在自己电脑里", cmpR3:"双击打开",
+      cmpR4:"动画、视频、任意交互",
+      cmpYes:"可以", cmpNo:"不行", cmpLow:"有限",
+
+      s6Kicker:"06", s6KickerSub:"未来",
+      s6Title:"今天、明天、以后。",
+      s6Lead:"现在能用什么，接下来会有什么 —— 都在这儿。",
+      rm1Tag:"今天",    rmLShipped:"已经好了",
+      rm1Title:"打开，开讲。",
+      rm1Desc:'双击任意 <span class="mono">.deck</span>，全屏的独立窗口立即打开，可以直接开讲。',
+      rm1L1:"双击打开", rm1L2:"拖拽文件进来", rm1L3:"离线也能用",
+      rm2Tag:"明天",    rmLProgress:"很快",
+      rm2Title:"和它对话，直接改。",
+      rm2Desc:"用大白话说你要改什么 —— 幻灯片会实时变给你看。不用重来、不用切窗口。",
+      rm2L1:"内置 AI 聊天", rm2L2:"边说边预览", rm2L3:"现成模板",
+      rm3Tag:"以后",    rmLPlanned:"再等等",
+      rm3Title:"导出到任何地方。",
+      rm3Desc:"要 PDF？要视频？要纯网页？一份 Deck，一键切成任何格式。",
+      rm3L1:"导出 PDF", rm3L2:"录制视频", rm3L3:"发布到网页",
+
+      endTitle:"准备好了，就来。",
+      endCta1:"获取 Deck",
+      endCta2:"获取 Skill",
+
+      footWhat:"什么是 Deck", footHow:"怎么用", footSkill:"Skill", footSafe:"安全 & 私密"
+    }
+  };
+
+  /* ===== Language detection (UA/system first, saved preference if any) ===== */
+  function detectLang(){
+    const saved = localStorage.getItem("lang");
+    if(saved && I18N[saved]) return saved;
+    const langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || "en"];
+    for(const l of langs){
+      const low = (l || "").toLowerCase();
+      if(low.startsWith("zh")) return "zh";
+      if(low.startsWith("en")) return "en";
+    }
+    return "en";
+  }
+  let currentLang = detectLang();
+
+  function applyI18n(lang, {persist = false} = {}){
+    currentLang = lang;
+    if(persist) localStorage.setItem("lang", lang);
+    document.documentElement.setAttribute("lang", lang);
+    const dict = I18N[lang] || I18N.en;
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+      const key = el.getAttribute("data-i18n");
+      const val = dict[key] !== undefined ? dict[key] : I18N.en[key];
+      if(val !== undefined) el.innerHTML = val;
+    });
+    // Update mobile card labels in compare-table
+    document.querySelectorAll("[data-label-i18n]").forEach(el => {
+      const key = el.getAttribute("data-label-i18n");
+      const val = dict[key] !== undefined ? dict[key] : I18N.en[key];
+      if(val !== undefined) el.setAttribute("data-label", val.replace(/<[^>]*>/g,""));
+    });
+    document.querySelectorAll("#langSeg button").forEach(b => {
+      b.classList.toggle("on", b.dataset.lang === lang);
+    });
+  }
+
+  document.querySelectorAll("#langSeg button").forEach(b => {
+    b.addEventListener("click", () => applyI18n(b.dataset.lang, {persist: true}));
+  });
+
+  /* ===== Theme — follow system until user picks ===== */
+  const themeBtn = document.getElementById("themeBtn");
+  const themeIcon = document.getElementById("themeIcon");
+  function applyTheme(t, {persist = false} = {}){
+    document.documentElement.setAttribute("data-theme", t);
+    if(persist) localStorage.setItem("theme", t);
+    if(t === "dark"){
+      themeIcon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+    } else {
+      themeIcon.innerHTML = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>';
+    }
+  }
+  themeBtn.addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme") || "light";
+    applyTheme(cur === "dark" ? "light" : "dark", {persist: true});
+  });
+  const systemDark = matchMedia("(prefers-color-scheme: dark)");
+  const savedTheme = localStorage.getItem("theme");
+  applyTheme(savedTheme || (systemDark.matches ? "dark" : "light"));
+  systemDark.addEventListener && systemDark.addEventListener("change", e => {
+    if(!localStorage.getItem("theme")) applyTheme(e.matches ? "dark" : "light");
+  });
+
+  /* ===== Init i18n ===== */
+  applyI18n(currentLang);
+
+  /* ===== Reveal on scroll ===== */
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if(e.isIntersecting){
+        e.target.classList.add("on");
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+</script>
+</body>
+</html>
