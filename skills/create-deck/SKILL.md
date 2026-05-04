@@ -34,7 +34,7 @@ If the user explicitly names a target directory, use that instead.
 ## Authoring flow
 
 1. **Create the Deck Source directory** `<slug>/`.
-2. **Write `deck.json`** — only `name` is required. `author`, `description`, `cover`, `version`, `drag` are optional. No spec-version field exists in v1. See `reference/spec-lite.md` §2 for fields and §6 for `drag` semantics.
+2. **Write `deck.json`** — only `name` is required. `author`, `description`, `cover`, `version` are optional. No spec-version field exists in v1. See `reference/spec-lite.md` §2 for fields.
 3. **Write `index.html`** — the entry point. Filename is fixed; it must sit at the root of the Deck Source.
 4. **Add any assets** (CSS, JS, images, fonts, video) inside the same directory, referenced by **relative paths**. Nested folders are fine.
 5. **Preview**: have the user open the Deck Source directory from the Deck App Launcher (or double-click the `.deck` after packing).
@@ -55,7 +55,7 @@ hello/
 Start from the templates shipped with this skill:
 
 - `templates/index.html` — a minimal Deck with arrow-key / Space / PageUp-Down / Home / End pagination and a slide counter, already wired up. Copy to `<slug>/index.html`, replace the `<section class="slide">` blocks with real content, and substitute the `<deck-name>` placeholder in `<title>` with the real Deck name.
-- `templates/deck.json` — just `{ "name": "<deck-name>" }`. Replace the placeholder with the real Deck name (same value as the one in `index.html`'s `<title>`). Add `author`, `description`, `version`, `drag` when the user provides them. Don't invent values.
+- `templates/deck.json` — just `{ "name": "<deck-name>" }`. Replace the placeholder with the real Deck name (same value as the one in `index.html`'s `<title>`). Add `author`, `description`, `version` when the user provides them. Don't invent values.
 
 ---
 
@@ -102,8 +102,7 @@ If either is missing, fix it before packing — the Deck App will refuse to open
 - **"Use Google Fonts"** — don't link the CDN. Download the `.woff2` into `<slug>/fonts/` and define `@font-face` in CSS with a relative `src:`.
 - **"Use reveal.js"** — vendor it: copy `dist/` into the Deck Source and reference `./reveal.js` / `./reveal.css` with relative paths.
 - **"Add a cover image"** — drop it into the Deck Source and reference it relatively in `deck.json` via `"cover": "cover.png"`. This is used by the Deck App Launcher as the Deck's thumbnail; it is independent of `index.html` (don't auto-add an `<img>` to the first slide unless the user asks).
-- **"Canvas / WebGL deck where clicks get swallowed"** — set `"drag": "off"` in `deck.json` so the Player injects no drag CSS; the author then owns window drag entirely (see `reference/spec-lite.md` §6).
-- **"Text on slides can't be selected"** — the default `drag: "auto"` makes most of `<body>` a drag region, which kills text selection on non-interactive elements. Opt specific elements out with `-webkit-app-region: no-drag` in CSS (e.g. `h1, p { -webkit-app-region: no-drag; }`), or flip to `drag: "off"` entirely.
+- **"Add a header / nav bar / logo at the top"** — inset it 32px from the top. The top 32px is reserved as a drag strip (macOS) and/or covered by the traffic lights / caption buttons. Clickable controls there won't work and logos in the top-left will be covered by the traffic lights. See `reference/spec-lite.md` §6.
 - **"Ship it"** — run the pack command above; hand the user `<slug>.deck`.
 
 ---

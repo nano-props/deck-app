@@ -30,8 +30,7 @@ hello.deck           hello/               ← Deck Source (equivalent, unzipped)
   "author": "Ada",
   "description": "A talk about Transformers",
   "cover": "cover.png",       // relative path to a cover image
-  "version": "1.0.0",         // SemVer, author-maintained
-  "drag": "auto"              // "auto" (default) or "off" — see §5
+  "version": "1.0.0"          // SemVer, author-maintained
 }
 ```
 
@@ -82,33 +81,31 @@ All keys reach the page (arrows, Space, PageUp/Down, letters, …). The only key
 
 Authors are free to use any slide framework — reveal.js, Swiper, custom — as long as it's vendored.
 
-## 6. Window drag (`drag` field)
+## 6. Window drag
 
-The Player has no titlebar, so drag-to-move is provided by injected CSS. `drag` in `deck.json` picks the strategy.
+The Player uses a platform-appropriate window chrome: traffic lights at top-left on macOS, native caption buttons at top-right on Windows/Linux. Scrolling, hover, pointer events, and text selection work normally in the rest of the page.
 
-| Value    | Behavior                                                                                                        |
-| -------- | --------------------------------------------------------------------------------------------------------------- |
-| `"auto"` | **Default.** `<body>` is a drag region; common interactive elements are carved back out as `no-drag`.           |
-| `"off"`  | No drag CSS installed. Author owns drag entirely — use for canvas-based Decks that need every pixel for input.  |
+**Top 32px of the author page is reserved (all platforms).** On macOS the Deck App injects a transparent drag strip there so the window stays draggable even when the Deck has a header pinned to `top: 0`. The strip is invisible but swallows clicks. Windows/Linux don't inject a strip (caption buttons / native titlebar already sit above web contents), but the same 32px reservation applies.
 
-`"auto"` automatically excludes: `<a>`, `<button>`, `<input>`, `<textarea>`, `<select>`, `<label>`, `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`, elements with `role="button|link|textbox|slider|checkbox|radio|menuitem|tab"`, and `contenteditable` elements.
+**Authoring rules for the top 32px:**
 
-**Author overrides** via the standard `-webkit-app-region` property (leaf wins over ancestor):
+- **No clickable controls** (buttons, links, inputs) — they won't receive clicks, hover, or pointer events. Inset headers/nav bars by 32px, or position interactive elements below the strip.
+- **No logos or important visuals in the top-left or top-right ~80×32px** — on macOS the traffic lights sit at the top-left; on Windows the caption buttons sit at the top-right. Both cover anything underneath. The 32px reservation is a cross-platform rule.
 
-```css
-.my-clickable-div { -webkit-app-region: no-drag; }  /* opt out of drag */
-.my-titlebar      { -webkit-app-region: drag; }     /* opt into drag */
-```
-
-**Platform note:** auto CSS is only installed on macOS. Windows/Linux have a native titlebar.
-
-**Common gotcha:** `"auto"` makes most of `<body>` a drag region, which kills text selection on non-interactive elements. Opt specific elements out in CSS:
+If an author wants extra drag zones elsewhere (e.g. a custom header bar **below** the reserved strip), they can opt in with standard CSS — make sure it's positioned below 32px so it doesn't fight the strip:
 
 ```css
-h1, p, .selectable { -webkit-app-region: no-drag; }
+.my-header-bar {
+  position: fixed;
+  top: 32px; /* sit below the reserved strip */
+  left: 0;
+  right: 0;
+  height: 40px;
+  -webkit-app-region: drag;
+}
 ```
 
-Or flip to `"drag": "off"` entirely.
+Don't mark `<body>` or large regions as drag — doing so swallows wheel and pointer events on everything underneath.
 
 ## 7. Versioning
 

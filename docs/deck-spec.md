@@ -45,7 +45,6 @@ hello.deck
   "description": "A talk about Transformers",
   "cover": "cover.png",
   "version": "1.0.0", // version of this Deck (author-maintained)
-  "drag": "auto", // window drag behavior — see §6
 }
 ```
 
@@ -58,7 +57,6 @@ hello.deck
 | `description` | ✗        | Short description.                                                |
 | `cover`       | ✗        | Relative path to a cover image.                                   |
 | `version`     | ✗        | Version number of this Deck (SemVer, author-maintained).          |
-| `drag`        | ✗        | Window drag behavior: `"auto"` (default) or `"off"`. See §6.      |
 
 > The entry point is always `index.html` at the root. It is not declared in `deck.json`.
 
@@ -127,37 +125,31 @@ This gives authors full freedom to use any slide framework they like — reveal.
 
 ## 6. Window drag behavior
 
-Because the Player has no visible titlebar, drag-to-move is provided by CSS injected into the author page. The `drag` field in `deck.json` picks the strategy.
+The Player window has a platform-appropriate chrome (macOS traffic lights, Windows caption buttons, etc.). Authors don't configure any of this — there is no `deck.json` field — but they do need to respect one rule:
 
-| Value    | Behavior                                                                                                                                                          |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"auto"` | **Default.** `<body>` is a drag region; common interactive elements (see list below) are carved back out as `no-drag`. Most Decks work with zero configuration.   |
-| `"off"`  | The Deck App installs no drag CSS at all. The author owns the window drag behavior entirely — e.g. a canvas-based Deck that needs every pixel for pointer events. |
+**The top 32px of the author page is reserved.** Across all platforms, the top 32px of the Player's coordinate space is used for drag regions and native window controls (traffic lights, caption buttons, or an injected drag strip). See [`window-chrome.md`](./window-chrome.md) for the per-platform details.
 
-The `"auto"` mode's `no-drag` selector list covers:
+**Implications for authors:**
 
-- `<a>`, `<button>`, `<input>`, `<textarea>`, `<select>`, `<label>`
-- `<video>`, `<audio>`, `<iframe>`, `<embed>`, `<object>`
-- Any element with `role="button" | "link" | "textbox" | "slider" | "checkbox" | "radio" | "menuitem" | "tab"`
-- Any element with `contenteditable` (except `contenteditable="false"`)
+- **Don't put clickable controls in the top 32px.** On macOS this band is a transparent drag strip injected by the Deck App: clicks and hover events in that band are swallowed and forwarded as window drag. Buttons, links, inputs, and anything else interactive won't work there. Inset headers/nav bars by 32px, or position their interactive elements below the strip. (Details: [`window-chrome.md`](./window-chrome.md#macos).)
+- **Don't put logos or important visuals in the top-left or top-right ~80×32px.** On macOS the traffic light buttons (close / minimize / maximize) sit at the top-left. On Windows the caption buttons sit at the top-right. Both cover anything the Deck draws underneath them, and neither can be hidden.
 
-**Valid values only.** `drag` must be one of `"auto"` or `"off"`. The field is optional — omit it to get the default. Values are **case-sensitive**. An invalid value (wrong case, unknown string, non-string type) is a Deck authoring error; the Deck App defaults to `"auto"` and logs a warning, but Decks must not rely on that behavior. If a future v1.x spec adds more modes, older Deck Apps will treat the new modes as invalid and fall back to `"auto"`.
-
-**Author overrides.** `-webkit-app-region` is a standard CSS property in the Electron/Chromium runtime. A leaf element's `no-drag` wins over an ancestor's `drag`, and vice versa — so authors can always override the defaults:
+**Author overrides.** `-webkit-app-region` is a standard CSS property in the Electron/Chromium runtime. If an author wants an additional drag zone of their own (e.g. a custom header bar below the reserved strip), they can opt in directly — remember to position it **below** the 32px strip:
 
 ```css
-/* opt a custom interactive element out of drag */
-.my-clickable-div {
-  -webkit-app-region: no-drag;
-}
-
-/* opt a specific zone into drag, even under `drag: "off"` */
-.my-titlebar {
+.my-header-bar {
+  position: fixed;
+  top: 32px; /* sit below the reserved strip */
+  left: 0;
+  right: 0;
+  height: 40px;
   -webkit-app-region: drag;
 }
 ```
 
-**Platform.** The auto CSS is only installed on macOS; on Windows and Linux the window ships with a native titlebar that already provides drag, so `"auto"` is effectively a no-op there. `"off"` is honored on every platform (it simply means "don't install anything").
+Don't mark `<body>` or large regions as drag — doing so swallows wheel, pointer, and selection events on everything underneath.
+
+> For the implementation-side rationale — why `hiddenInset` on macOS, why the injected strip, why 32px, Linux gaps, etc. — see [`window-chrome.md`](./window-chrome.md).
 
 ---
 

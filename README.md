@@ -6,12 +6,20 @@ Desktop container for `.deck` presentations — a `.deck` is just a zipped stati
 - **Product doc:** [`docs/deck.md`](./docs/deck.md)
 - **Terminology:** [`docs/terminology.md`](./docs/terminology.md)
 
+## Authoring a Deck
+
+See the skill at [`skills/create-deck/`](./skills/create-deck/) for a step-by-step authoring guide, and [`skills/create-deck/reference/spec-lite.md`](./skills/create-deck/reference/spec-lite.md) for a lite, author-oriented digest of the spec.
+
 ## Dev
 
 ```
 bun install
 bun run dev
 ```
+
+Implementation design docs (read when hacking on the Deck App itself, not when authoring Decks):
+
+- [`docs/window-chrome.md`](./docs/window-chrome.md) — per-platform titlebar, drag, and traffic light behavior.
 
 ## Install
 
