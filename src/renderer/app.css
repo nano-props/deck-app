@@ -633,6 +633,11 @@ body.drag .drop-ring {
   user-select: text;
   -webkit-user-select: text;
 }
+
+.chat-list > * {
+  flex-shrink: 0;  
+}
+
 .chat-empty {
   padding: 16px 4px;
   color: var(--ink-3);
