@@ -235,13 +235,18 @@
       <section class="mode deck-edit-mode" data-for-subview="edit">
         <main class="editor-main" id="editorMain">
           <section class="pane chat-pane" aria-label="Deck AI chat">
-            <div class="chat-list" id="chatList" role="log" aria-live="polite">
-              <div class="chat-empty" id="chatEmpty">
-                <div class="empty-title">Deck AI</div>
-                <div class="empty-body">
-                  Ask Deck AI to edit this presentation. It can read and write files, list the directory, and add
-                  assets. The preview on the right reloads automatically after edits.
+            <div class="scroller" id="chatScroller">
+              <div class="scroller-content chat-list" id="chatList" role="log" aria-live="polite">
+                <div class="chat-empty" id="chatEmpty">
+                  <div class="empty-title">Deck AI</div>
+                  <div class="empty-body">
+                    Ask Deck AI to edit this presentation. It can read and write files, list the directory, and add
+                    assets. The preview on the right reloads automatically after edits.
+                  </div>
                 </div>
+              </div>
+              <div class="scroller-rail" aria-hidden="true">
+                <div class="scroller-thumb"></div>
               </div>
             </div>
             <form class="composer" id="composer">

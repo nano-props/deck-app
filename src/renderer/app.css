@@ -624,8 +624,29 @@ body.drag .drop-ring {
   grid-template-rows: 1fr auto;
   min-height: 0;
 }
+/* Reusable scroller shell. Pair with the Scrollbar component (ui/scrollbar.js).
+ * Structure:
+ *   <div class="scroller">
+ *     <div class="scroller-content ...">...</div>      ← real scroll container
+ *     <div class="scroller-rail"><div class="scroller-thumb"/></div>
+ *   </div>
+ * The native scrollbar is hidden on any .scroller-content; the component
+ * paints the visible rail/thumb on top. */
+.scroller {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+.scroller-content {
+  height: 100%;
+  overflow-y: scroll;
+  scrollbar-width: none; /* Firefox */
+}
+.scroller-content::-webkit-scrollbar {
+  display: none;
+}
+
 .chat-list {
-  overflow-y: auto;
   padding: 20px 20px 16px;
   display: flex;
   flex-direction: column;
@@ -633,9 +654,45 @@ body.drag .drop-ring {
   user-select: text;
   -webkit-user-select: text;
 }
-
 .chat-list > * {
-  flex-shrink: 0;  
+  flex-shrink: 0;
+}
+
+/* naive-ui-style custom scrollbar: native scroll is hidden, a thumb
+ * overlays the right edge. The rail fades in on hover and during active
+ * scrolling, and stays out of the hit-test when hidden so it doesn't
+ * steal clicks from chat content. */
+.scroller-rail {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.scroller:hover .scroller-rail,
+.scroller-rail.active,
+.scroller-rail.scrolling {
+  opacity: 1;
+  pointer-events: auto;
+}
+.scroller-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 4px;
+  background: var(--ink-4);
+  opacity: 0.35;
+  transition: background 0.2s ease, opacity 0.2s ease;
+  /* Thumb height is driven by JS (see Scrollbar#update); the `minThumb`
+   * option is the single source of truth — don't set min-height here. */
+}
+.scroller-thumb:hover,
+.scroller-rail.active .scroller-thumb {
+  opacity: 0.55;
+  background: var(--ink-3);
 }
 
 .chat-empty {

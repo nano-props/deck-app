@@ -1,10 +1,12 @@
 import * as attachments from './attachments.js'
+import { Scrollbar } from './scrollbar.js'
 
 // Chat pane: message rendering, AI event dispatch, the composer submit
 // path. Assumes the DOM nodes `chatList`, `input`, `sendBtn`, `abortBtn`,
 // `chatStatus`, `composerForm`, `chatEmpty` already exist — they're in
 // `app.html`'s deck-edit mode section.
 
+const chatScroller = document.getElementById('chatScroller')
 const chatList = document.getElementById('chatList')
 const chatEmpty = document.getElementById('chatEmpty')
 const input = document.getElementById('input')
@@ -12,6 +14,8 @@ const sendBtn = document.getElementById('sendBtn')
 const abortBtn = document.getElementById('abortBtn')
 const chatStatus = document.getElementById('chatStatus')
 const composerForm = document.getElementById('composer')
+
+if (chatScroller) Scrollbar.mount(chatScroller)
 
 const messageNodes = new Map()
 const toolNodes = new Map()
@@ -103,7 +107,16 @@ function assistantText(m) {
     .join('')
 }
 function finalizeAssistant(key) {
-  messageNodes.get(key)?.body.classList.remove('streaming')
+  const node = messageNodes.get(key)
+  if (!node) return
+  node.body.classList.remove('streaming')
+  // Assistant turns that only contain toolCalls (no text) produce an empty
+  // bubble. Leaving it in the list doubles the gap around any adjacent
+  // tool chips — remove it so spacing stays uniform.
+  if (!node.body.textContent && node.body.childElementCount === 0) {
+    node.wrap.remove()
+    messageNodes.delete(key)
+  }
 }
 function renderErrorMessage(text) {
   hideEmpty()
