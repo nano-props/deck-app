@@ -3,17 +3,14 @@ import { nativeTheme, type TitleBarOverlayOptions } from 'electron'
 /**
  * Window chrome strategy per platform.
  *
- * This module is the single source of truth for how the Launcher and Player
- * windows are framed on each OS. Every platform is listed explicitly — there
- * is no shared else-branch — so that:
+ * The Deck App is a single-window application (one `BaseWindow` hosting
+ * one or more `WebContentsView`s), so there is only one chrome strategy
+ * per platform — "appChrome" — shared by the launcher / player / editor
+ * modes within that window. See docs/window-chrome.md for rationale.
  *
- * 1. Adding a new field to the strategy surfaces a TS error on every platform
- *    that doesn't declare it (exhaustive `Record<Platform, ...>`).
- * 2. Changing the value for one platform can't silently affect another.
- * 3. "Linux inherits Windows" is an intentional decision written in code,
- *    not a side effect of grouping everything non-macOS into one branch.
- *
- * See docs/window-chrome.md for the design rationale behind each strategy.
+ * `playerExtras` carries mode-specific tweaks (currently just: whether
+ * macOS needs the drag strip injected into the full-bleed deck view in
+ * player mode — see src/main/player-titlebar.ts).
  */
 
 export type Platform = 'mac' | 'win' | 'linux'
@@ -25,154 +22,83 @@ const PLATFORM: Platform = ((): Platform => {
     case 'win32':
       return 'win'
     default:
-      // freebsd / openbsd / etc. all map to Linux behavior. The Deck App
-      // isn't built for those, but if Electron happens to boot on one,
-      // Linux is the least-wrong default.
       return 'linux'
   }
 })()
 
-// --- Overlay color helpers (Windows / Linux) ---------------------------------
-
+// Keep in sync with app-window.ts::TOPBAR_PX — this is the OS caption
+// buttons strip height on Win/Linux, and must match the CSS topbar
+// height or the deckView overlaps / leaves a gap below the buttons.
 const OVERLAY_HEIGHT = 32
 
 /**
- * Launcher overlay adapted to an explicit theme ('dark' / 'light'). The
- * Launcher renderer owns theme state and reports its pick via IPC, at which
- * point the main process calls `applyChromeTheme` → this helper →
- * `setTitleBarOverlay`.
+ * Overlay color for an explicit theme. Used for both the app window chrome
+ * (launcher / editor background) and, in player mode, a translucent tint
+ * so caption buttons stay readable against arbitrary deck backgrounds.
  */
-export function launcherOverlayForTheme(dark: boolean): TitleBarOverlayOptions {
+export function overlayForTheme(dark: boolean): TitleBarOverlayOptions {
   return dark
     ? { color: '#000000', symbolColor: '#ffffff', height: OVERLAY_HEIGHT }
     : { color: '#ffffff', symbolColor: '#000000', height: OVERLAY_HEIGHT }
 }
 
-/**
- * Best-effort initial overlay seed for the Launcher at window-create time,
- * before the renderer has booted and IPC'd its persisted theme choice. If the
- * user's saved pick differs from the current system theme there may be a
- * brief flash on launch — accepted for simplicity.
- */
-export function launcherInitialOverlay(): TitleBarOverlayOptions {
-  return launcherOverlayForTheme(nativeTheme.shouldUseDarkColors)
+export function initialOverlay(): TitleBarOverlayOptions {
+  return overlayForTheme(nativeTheme.shouldUseDarkColors)
 }
 
-/**
- * Player overlay. Semi-transparent dark tint (`#00000040`, ~25% alpha) so the
- * white caption button symbols stay readable against any deck background. A
- * fully transparent overlay worked for black-backgrounded decks but made the
- * symbols invisible as soon as a deck painted a light background.
- *
- * No per-deck theming today; a future `deck.json` `theme` field could drive
- * this dynamically.
- */
-const PLAYER_OVERLAY: TitleBarOverlayOptions = {
-  color: '#00000040',
-  symbolColor: '#ffffff',
-  height: OVERLAY_HEIGHT,
-}
-
-// --- Strategy shape ----------------------------------------------------------
-
-export interface LauncherChrome {
+export interface AppChrome {
   titleBarStyle: 'hiddenInset' | 'hidden'
-  /**
-   * Thunk so the system theme is read at window-create time, not at module
-   * load — `nativeTheme.shouldUseDarkColors` is only reliable after
-   * `app.whenReady()`. Returns `undefined` on platforms that don't use
-   * `titleBarOverlay` (macOS).
-   */
   initialOverlay: () => TitleBarOverlayOptions | undefined
-  autoHideMenuBar: boolean
-}
-
-export interface PlayerChrome {
-  titleBarStyle: 'hiddenInset' | 'hidden'
-  overlay: TitleBarOverlayOptions | undefined
-  autoHideMenuBar: boolean
   /**
-   * Whether to inject the author-page drag strip. macOS needs it because
-   * `hiddenInset`'s OS-native drag region can be stolen by fixed-position
-   * author elements. Windows/Linux use `titleBarOverlay`, which natively
-   * sits above web contents.
+   * Whether the native OS menu bar is hidden by default. macOS has no
+   * per-window menu bar (always in the system bar), so this is `false`
+   * there. Windows/Linux use `true`: a self-drawn menu lives in the
+   * topbar (see src/renderer/ui/menu.js), and we call
+   * `setMenuBarVisibility(false)` on the window to suppress the native
+   * bar entirely — the native `Menu` is still installed via
+   * `Menu.setApplicationMenu` so global accelerators stay bound.
    */
-  injectDragStrip: boolean
+  hideNativeMenuBar: boolean
+  /**
+   * In player mode the deckView covers the whole content area. On macOS
+   * `hiddenInset` gives a native drag region around the traffic lights,
+   * but author `position: fixed; top: 0` elements steal hit-testing. We
+   * inject a transparent `-webkit-app-region: drag` strip (see
+   * src/main/player-titlebar.ts). Windows/Linux use `titleBarOverlay`
+   * which natively sits above web contents, so no injection needed.
+   */
+  playerInjectDragStrip: boolean
 }
 
-interface ChromeStrategy {
-  launcher: LauncherChrome
-  player: PlayerChrome
-}
-
-/**
- * Whether `setTitleBarOverlay` is meaningful on this platform. macOS
- * doesn't use `titleBarOverlay`, so calls would throw / no-op. Windows and
- * Linux both route theme changes through the overlay.
- *
- * Platform capability (true for every window on the platform), hoisted out
- * of the per-window strategies so callers that handle both Launcher and
- * Player can reuse the same flag.
- */
 export const supportsOverlayThemeUpdates: boolean = PLATFORM !== 'mac'
 
-// --- Per-platform strategies -------------------------------------------------
-
-const MAC: ChromeStrategy = {
-  launcher: {
-    titleBarStyle: 'hiddenInset',
-    initialOverlay: () => undefined,
-    autoHideMenuBar: false,
-  },
-  player: {
-    titleBarStyle: 'hiddenInset',
-    overlay: undefined,
-    autoHideMenuBar: false,
-    injectDragStrip: true,
-  },
+const MAC: AppChrome = {
+  titleBarStyle: 'hiddenInset',
+  initialOverlay: () => undefined,
+  hideNativeMenuBar: false,
+  playerInjectDragStrip: true,
 }
 
-const WIN: ChromeStrategy = {
-  launcher: {
-    titleBarStyle: 'hidden',
-    initialOverlay: launcherInitialOverlay,
-    autoHideMenuBar: true,
-  },
-  player: {
-    titleBarStyle: 'hidden',
-    overlay: PLAYER_OVERLAY,
-    autoHideMenuBar: true,
-    injectDragStrip: false,
-  },
+const WIN: AppChrome = {
+  titleBarStyle: 'hidden',
+  initialOverlay,
+  hideNativeMenuBar: true,
+  playerInjectDragStrip: false,
 }
 
-// Linux currently mirrors the Windows strategy field-for-field. Written out
-// as a full copy (not `= WIN`) so that changing a Windows value here is a
-// conscious, visible decision about whether Linux should track it — no
-// accidental coupling through a shared object. See docs/window-chrome.md
-// §Linux for known gaps and candidate fixes when Linux becomes an actively
-// supported target.
-const LINUX: ChromeStrategy = {
-  launcher: {
-    titleBarStyle: 'hidden',
-    initialOverlay: launcherInitialOverlay,
-    autoHideMenuBar: true,
-  },
-  player: {
-    titleBarStyle: 'hidden',
-    overlay: PLAYER_OVERLAY,
-    autoHideMenuBar: true,
-    injectDragStrip: false,
-  },
+// Field-for-field copy of WIN: Linux tracking Windows is an explicit
+// decision, not an accidental reference. See docs/window-chrome.md §Linux.
+const LINUX: AppChrome = {
+  titleBarStyle: 'hidden',
+  initialOverlay,
+  hideNativeMenuBar: true,
+  playerInjectDragStrip: false,
 }
 
-const STRATEGIES: Record<Platform, ChromeStrategy> = {
+const STRATEGIES: Record<Platform, AppChrome> = {
   mac: MAC,
   win: WIN,
   linux: LINUX,
 }
 
-const CURRENT = STRATEGIES[PLATFORM]
-
-export const launcherChrome: LauncherChrome = CURRENT.launcher
-export const playerChrome: PlayerChrome = CURRENT.player
+export const appChrome: AppChrome = STRATEGIES[PLATFORM]

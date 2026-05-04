@@ -3,8 +3,8 @@ import type { AddressInfo } from 'node:net'
 import serveStatic from 'serve-static'
 
 // Matches the CSP defined in deck-spec.md §4. Applied to author Decks only
-// (everything served by this per-deck server). The Launcher is loaded via
-// `win.loadFile` and uses its own meta CSP in src/renderer/index.html —
+// (everything served by this per-deck server). The app chrome is loaded via
+// `win.loadFile` and uses its own meta CSP in src/renderer/app.html —
 // don't try to keep these two in sync, they serve different threat models.
 const DEFAULT_CSP =
   "default-src 'self'; " +

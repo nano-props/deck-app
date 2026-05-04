@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self' 'unsafe-inline';
+               style-src 'self' 'unsafe-inline';
+               font-src 'self';
+               img-src 'self' data:;
+               connect-src 'self'"
+    />
+    <title>Deck</title>
+    <!-- Set data-theme before any CSS loads. Otherwise the first paint
+         uses the :root (light) token values until theme.js runs, which
+         shows as a white flash when the user's preference is dark. The
+         fallback matches theme.js::resolveTheme so nothing contradicts. -->
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem('deck:theme')
+          var resolved =
+            pref === 'light' || pref === 'dark'
+              ? pref
+              : matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+          document.documentElement.setAttribute('data-theme', resolved)
+        } catch (_) {
+          /* localStorage unavailable — fall back to CSS prefers-color-scheme */
+        }
+      })()
+    </script>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body data-mode="launcher" data-subview="edit">
+    <!-- Persistent topbar (48px). Shown in every mode so the user always has
+         a clear exit / switcher. In launcher mode the left-side back button
+         and sub-view switcher are hidden. -->
+    <header class="topbar" data-interactive>
+      <!-- Left cluster: self-drawn app menu trigger (Win/Linux only —
+           CSS hides it when data-chrome !== 'overlay') + mode toggle.
+           The menu trigger advertises File / Edit / View that macOS gets
+           from the OS menu bar. See src/renderer/ui/menu.js. -->
+      <div class="topbar-left">
+        <button class="icon-btn app-menu-trigger" id="appMenuTrigger" type="button" aria-label="App menu" aria-haspopup="menu" aria-expanded="false">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <button
+          class="icon-btn mode-toggle"
+          id="modeToggle"
+          type="button"
+          data-show-when="deck"
+          aria-label="Switch view"
+        >
+          <svg class="icon toggle-icon-play" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          <svg
+            class="icon toggle-icon-edit"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Center: app label (launcher) or deck name (deck). -->
+      <div class="topbar-center">
+        <div class="brand-or-name">
+          <span class="brand" data-show-when="launcher">Deck</span>
+          <span class="deck-name" id="deckName" data-show-when="deck">Deck</span>
+        </div>
+      </div>
+
+      <!-- Right cluster: mode-dependent tools.
+           The Edit/Play segmented control lives here (not in the center)
+           so the deck name can be the visual center of the topbar. -->
+      <div class="topbar-right">
+        <!-- Edit-only tools -->
+        <!-- Export as .deck — only meaningful for unpacked Deck Sources.
+             Renderer hides this button when the current deck is a Pack
+             (see applyStateToDom in app.js). -->
+        <button
+          class="icon-btn"
+          id="exportBtn"
+          type="button"
+          title="Export as .deck (⇧⌘E)"
+          aria-label="Export as .deck"
+          data-show-when="edit"
+        >
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </button>
+        <!-- Deck tools: reload preview (shown in play + edit) -->
+        <button
+          class="icon-btn"
+          id="reloadBtn"
+          type="button"
+          title="Reload preview (⌘R)"
+          aria-label="Reload preview"
+          data-show-when="deck"
+        >
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+            <path d="M3 21v-5h5" />
+          </svg>
+        </button>
+        <!-- App-level tools (always) -->
+        <button class="icon-btn" id="settingsBtn" type="button" title="Settings" aria-label="Open settings">
+          <svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Body area below the topbar. Mode-specific layouts render here.
+         The sub-view switcher fade-mask sits inside so it only covers
+         the body, never the topbar (users can always see where they're
+         at during the transition). -->
+    <div class="body">
+      <div class="subview-mask" id="subviewMask" aria-hidden="true"></div>
+      <!-- ============================= LAUNCHER ============================= -->
+      <section class="mode launcher-mode" data-for-mode="launcher">
+        <main class="launcher-main">
+          <div class="launcher-content">
+            <h1 data-i18n="title">Open a deck.</h1>
+            <p class="lede" data-i18n="lede">Pick a file or folder. Or just drag one in.</p>
+            <div class="launcher-actions">
+              <button class="btn primary" id="newDeck" data-interactive>
+                <svg
+                  class="icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span data-i18n="newDeck">New deck</span>
+              </button>
+              <button class="btn" id="openFile" data-interactive>
+                <span data-i18n="openFile">Open file</span>
+                <span class="kbd">⌘O</span>
+              </button>
+              <button class="btn" id="openFolder" data-interactive>
+                <span data-i18n="openFolder">Open folder</span>
+                <span class="kbd">⌘⇧O</span>
+              </button>
+            </div>
+
+            <section class="recents" id="recents" hidden>
+              <h2 class="recents-title" data-i18n="recent">Recent</h2>
+              <ul class="recents-list" id="recentsList" data-interactive></ul>
+            </section>
+          </div>
+
+          <!-- Decorative stack. Purely visual — three stacked "slide" cards
+               labelled .deck. Hidden on narrow viewports where the content
+               column already fills the row. -->
+          <div class="visual" aria-hidden="true">
+            <div class="card c-3">
+              <span class="bar w-1"></span>
+              <span class="bar w-2"></span>
+              <span class="bar w-3"></span>
+            </div>
+            <div class="card c-2">
+              <span class="bar w-1"></span>
+              <span class="bar w-2"></span>
+              <span class="bar w-3"></span>
+            </div>
+            <div class="card c-1">
+              <span class="stage-dot"></span>
+              <span class="bar w-1"></span>
+              <span class="bar w-2"></span>
+              <span class="bar w-3"></span>
+            </div>
+          </div>
+        </main>
+        <div class="drop-ring"></div>
+        <div class="launcher-loading" id="launcherLoading" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <div class="loading-text" data-i18n="loading">Opening…</div>
+        </div>
+      </section>
+
+      <!-- =========================== DECK (edit) ============================= -->
+      <section class="mode deck-edit-mode" data-for-subview="edit">
+        <main class="editor-main" id="editorMain">
+          <section class="pane chat-pane" aria-label="Deck AI chat">
+            <div class="chat-list" id="chatList" role="log" aria-live="polite">
+              <div class="chat-empty" id="chatEmpty">
+                <div class="empty-title">Deck AI</div>
+                <div class="empty-body">
+                  Ask Deck AI to edit this presentation. It can read and write files, list the directory, and add
+                  assets. The preview on the right reloads automatically after edits.
+                </div>
+              </div>
+            </div>
+            <form class="composer" id="composer">
+              <!-- Staged attachments chips. Populated by drag/drop into the
+                   composer or Cmd/Ctrl+V paste. Hidden when empty. -->
+              <div class="attachments" id="attachments" hidden></div>
+              <div class="composer-field">
+                <textarea
+                  id="input"
+                  rows="2"
+                  placeholder="Ask Deck AI… ⏎ send, Shift+⏎ newline, Esc stop. Drop or paste images/video/fonts."
+                  aria-label="Chat input"
+                ></textarea>
+                <div class="composer-drop" id="composerDrop" aria-hidden="true">
+                  <span class="drop-label">Drop to attach</span>
+                </div>
+              </div>
+              <div class="composer-actions">
+                <span class="status" id="chatStatus"></span>
+                <button type="button" class="btn" id="abortBtn" hidden>Stop</button>
+                <button type="submit" class="btn primary" id="sendBtn">
+                  <span>Send</span>
+                  <span class="kbd">⏎</span>
+                </button>
+              </div>
+            </form>
+          </section>
+          <div
+            class="divider"
+            id="divider"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat panel"
+            tabindex="0"
+          ></div>
+          <section class="pane preview-pane" aria-label="Deck preview"></section>
+        </main>
+      </section>
+
+      <!-- =========================== DECK (play) ============================= -->
+      <section class="mode deck-play-mode" data-for-subview="play">
+        <!-- deckView (WebContentsView) is overlaid by main on the body area
+             below the topbar. Intentionally empty. -->
+      </section>
+    </div>
+
+    <!-- ====================== SETTINGS OVERLAY ===================== -->
+    <div class="overlay" id="settingsOverlay" hidden>
+      <div class="overlay-backdrop" id="overlayBackdrop"></div>
+      <div class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <header class="overlay-topbar">
+          <div class="title" id="settingsTitle">Settings</div>
+          <button class="icon-btn" id="closeSettings" type="button" title="Close" aria-label="Close settings">
+            <svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+        <div class="overlay-body" id="settingsBody">
+          <section class="group">
+            <h2 class="group-title">Appearance</h2>
+            <div class="field">
+              <label>Theme</label>
+              <div class="seg" id="themeSeg" role="radiogroup" aria-label="Theme">
+                <button type="button" class="seg-btn" data-theme-value="auto" role="radio" aria-checked="false">
+                  Auto
+                </button>
+                <button type="button" class="seg-btn" data-theme-value="light" role="radio" aria-checked="false">
+                  Light
+                </button>
+                <button type="button" class="seg-btn" data-theme-value="dark" role="radio" aria-checked="false">
+                  Dark
+                </button>
+              </div>
+              <p class="hint">Auto follows your system setting.</p>
+            </div>
+          </section>
+          <section class="group">
+            <h2 class="group-title">AI</h2>
+            <div class="field">
+              <label for="provider">Provider</label>
+              <select id="provider"></select>
+              <p class="hint">Select the LLM provider.</p>
+            </div>
+            <div class="field" id="baseUrlField" hidden>
+              <label for="baseUrl">Base URL</label>
+              <input id="baseUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://…/v1" />
+              <p class="hint" id="baseUrlHint">Full endpoint URL.</p>
+            </div>
+            <div class="field">
+              <label for="model">Model</label>
+              <input id="model" type="text" autocomplete="off" spellcheck="false" />
+              <p class="hint" id="modelHint">Free-form — typos surface on first use.</p>
+            </div>
+            <div class="field">
+              <label for="apiKey">API key</label>
+              <div class="key-row">
+                <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your API key" />
+                <button
+                  id="toggleReveal"
+                  class="icon-btn"
+                  type="button"
+                  title="Show / hide"
+                  aria-label="Show / hide key"
+                >
+                  <svg
+                    class="icon icon-eye"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <svg
+                    class="icon icon-eye-off"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a19.77 19.77 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a19.77 19.77 0 0 1-3.16 4.19" />
+                    <path d="M1 1l22 22" />
+                  </svg>
+                </button>
+              </div>
+              <p class="hint" id="keyStatus">Stored in your OS keychain via safeStorage.</p>
+            </div>
+            <div class="actions-row">
+              <button id="saveBtn" class="btn primary" type="button">Save</button>
+              <button id="clearKeyBtn" class="btn ghost danger" type="button">Clear key</button>
+              <button id="pingBtn" class="btn" type="button">Test connection</button>
+              <span class="status" id="pingStatus"></span>
+            </div>
+          </section>
+          <div id="encryptionWarning" class="warn" hidden>
+            OS keychain is not available on this system. API keys can't be stored securely.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- App menu panel (self-drawn, Win/Linux). Positioned below the
+         trigger by JS; hidden by default. -->
+    <div class="app-menu" id="appMenu" role="menu" hidden></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

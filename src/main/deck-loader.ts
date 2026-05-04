@@ -18,17 +18,22 @@ export function tempNamespaceDir(): string {
 }
 
 /**
- * Load a deck from disk. Accepts either a `.deck` (zip) file — which is
- * extracted into a temp directory — or an already-unpacked directory
- * (treated as-is; the caller does not own it).
+ * Load a deck from disk. Accepts either a `.deck` (zip) file — extracted
+ * into a throwaway temp directory (kind: 'pack') — or an already-unpacked
+ * directory.
+ *
+ * Directories default to `kind: 'source'`. Callers that know the
+ * directory is an app-managed edit workspace (see workspaces.ts) pass
+ * `dirKind: 'workspace'` to preserve that distinction, which other
+ * subsystems (menu gating, attachment IPC) also read.
  */
-export async function loadDeck(deckPath: string): Promise<LoadedDeck> {
+export async function loadDeck(deckPath: string, dirKind: 'source' | 'workspace' = 'source'): Promise<LoadedDeck> {
   if (!existsSync(deckPath)) {
     throw new DeckLoadError(`Not found: ${deckPath}`)
   }
   const info = await stat(deckPath)
   if (info.isDirectory()) {
-    return loadDeckFromDir(deckPath)
+    return loadDeckFromDir(deckPath, dirKind)
   }
   return loadDeckFromFile(deckPath)
 }
@@ -40,7 +45,7 @@ async function loadDeckFromFile(deckPath: string): Promise<LoadedDeck> {
   try {
     extractZipSafely(deckPath, rootDir)
     const manifest = await validateDeckRoot(rootDir)
-    return { rootDir, manifest, ownsRootDir: true }
+    return { rootDir, manifest, kind: 'pack', deleteOnClose: true }
   } catch (err) {
     // Clean up the half-extracted directory on failure.
     await rm(rootDir, { recursive: true, force: true }).catch(() => {})
@@ -48,10 +53,10 @@ async function loadDeckFromFile(deckPath: string): Promise<LoadedDeck> {
   }
 }
 
-async function loadDeckFromDir(dirPath: string): Promise<LoadedDeck> {
+async function loadDeckFromDir(dirPath: string, kind: 'source' | 'workspace'): Promise<LoadedDeck> {
   const rootDir = path.resolve(dirPath)
   const manifest = await validateDeckRoot(rootDir)
-  return { rootDir, manifest, ownsRootDir: false }
+  return { rootDir, manifest, kind, deleteOnClose: false }
 }
 
 async function validateDeckRoot(rootDir: string): Promise<DeckManifest> {
@@ -78,6 +83,22 @@ async function validateDeckRoot(rootDir: string): Promise<DeckManifest> {
   }
 
   return manifest
+}
+
+/**
+ * Unpack a Deck Pack (.deck zip) into an existing directory. Caller is
+ * responsible for creating `destDir` and deciding whether to overwrite.
+ * Validates the manifest after extraction — throws DeckLoadError if the
+ * zip isn't a well-formed Deck.
+ *
+ * This is the user-visible form of "unpack a Deck" (terminology.md).
+ * The internal temp-dir extraction in `loadDeckFromFile` uses the same
+ * mechanism (`extractZipSafely`) but doesn't validate through here
+ * because its destDir is ephemeral and fully owned by us.
+ */
+export async function unpackDeckTo(zipPath: string, destDir: string): Promise<DeckManifest> {
+  extractZipSafely(zipPath, destDir)
+  return validateDeckRoot(destDir)
 }
 
 /**

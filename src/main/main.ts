@@ -1,74 +1,73 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
-import { existsSync, statSync } from 'node:fs'
-import path from 'node:path'
+import { app, nativeImage } from 'electron'
+import { existsSync } from 'node:fs'
+import { auditModelCatalog } from '#/main/ai/provider.ts'
+import { APP_ICON, AppWindow, isDeckPath } from '#/main/app-window.ts'
+import { allAppWindows, focusedAppWindow } from '#/main/window-registry.ts'
 import { sweepStaleTempDirs } from '#/main/deck-loader.ts'
-import { sessionManager } from '#/main/session-manager.ts'
-import { APP_ICON, showLauncherWindow, openDeckInNewWindow, applyChromeTheme } from '#/main/windows.ts'
 import { buildMenu } from '#/main/menu.ts'
-import { promptOpenDeck, promptOpenFolder } from '#/main/dialogs.ts'
+import { wireAiIpc } from '#/main/ipc/ai.ts'
+import { wireDeckLifecycleIpc } from '#/main/ipc/deck-lifecycle.ts'
+import { wireLayoutIpc } from '#/main/ipc/layout.ts'
+import { wireMenuIpc } from '#/main/ipc/menu.ts'
+import { wireRecentsIpc } from '#/main/ipc/recents.ts'
+import { wireSettingsIpc } from '#/main/ipc/settings.ts'
+import { recordOpen } from '#/main/recents.ts'
 
 /** Files queued up before the app was ready (macOS open-file, argv). */
 const pendingOpens: string[] = []
 
-/**
- * Resolve an input string to an absolute deck path, or null if it isn't one.
- * Accepts a `.deck` file, or a directory containing `deck.json`.
- */
-function resolveDeckPath(input: string): string | null {
-  try {
-    const resolved = path.resolve(input)
-    const s = statSync(resolved)
-    if (s.isFile() && resolved.toLowerCase().endsWith('.deck')) return resolved
-    if (s.isDirectory() && existsSync(path.join(resolved, 'deck.json'))) return resolved
-  } catch {
-    // not a real path
-  }
-  return null
-}
-
-/**
- * Collect deck paths from argv.
- *
- * argv layout differs between dev and packaged:
- *   - dev:      ['electron', '<app-path>', ...userArgs]     → skip 2
- *   - packaged: ['<bundled-main>', ...userArgs]             → skip 1
- *
- * Flags and the literal "." (common in `electron .`) are ignored.
- */
 function argvDeckPaths(argv: string[]): string[] {
+  // argv layout:
+  //   dev:      ['electron', '<app-path>', ...userArgs]     → skip 2
+  //   packaged: ['<bundled-main>', ...userArgs]             → skip 1
   const userArgs = argv.slice(app.isPackaged ? 1 : 2)
   const out: string[] = []
   for (const a of userArgs) {
     if (!a || a === '.' || a.startsWith('-')) continue
-    const resolved = resolveDeckPath(a)
-    if (resolved) out.push(resolved)
+    if (isDeckPath(a)) out.push(a)
   }
   return out
 }
 
+/**
+ * Route "open a deck" to the right AppWindow:
+ *   - If the deck is already open somewhere, focus that window.
+ *   - Otherwise, reuse the focused AppWindow if it has no deck loaded
+ *     (launcher mode). Fills the empty shell instead of spawning a second
+ *     blank window — this is the "single-window" feel.
+ *   - Otherwise, spawn a new AppWindow.
+ */
+async function openDeckSomewhere(deckPath: string): Promise<void> {
+  const focused = focusedAppWindow()
+  const target =
+    focused && !focused.getDeck() ? focused : (allAppWindows().find((w) => !w.getDeck()) ?? new AppWindow())
+  if (target !== focused) target.focus()
+  const ok = await target.openDeck(deckPath)
+  if (ok && target.getDeck()) {
+    void recordOpen({ path: deckPath, name: target.getDeck()!.manifest.name })
+  }
+}
+
 function wireAppEvents(): void {
-  // macOS: double-clicking a .deck fires this event.
   app.on('open-file', (event, filePath) => {
     event.preventDefault()
     if (app.isReady()) {
-      void openDeckInNewWindow(filePath)
+      void openDeckSomewhere(filePath)
     } else {
       pendingOpens.push(filePath)
     }
   })
 
-  // Windows/Linux: a second launch (e.g. user double-clicks another .deck
-  // while this app is running) fires 'second-instance' in the primary
-  // process with the new argv. We route it through the same open path.
   app.on('second-instance', (_event, argv) => {
     const paths = argvDeckPaths(argv)
-    for (const p of paths) void openDeckInNewWindow(p)
-    // No deck in argv → bring up the Launcher. showLauncherWindow is
-    // idempotent (focuses the existing Launcher rather than opening a
-    // new one). Deliberately not just focusing `getAllWindows()[0]`
-    // because its order isn't guaranteed — we could end up surfacing a
-    // random Player instead of the app's starting point.
-    if (paths.length === 0) showLauncherWindow()
+    if (paths.length > 0) {
+      for (const p of paths) void openDeckSomewhere(p)
+    } else {
+      // Focus an existing window, or spawn a fresh launcher if none exist.
+      const existing = allAppWindows()[0]
+      if (existing) existing.focus()
+      else new AppWindow()
+    }
   })
 
   app.on('window-all-closed', () => {
@@ -76,60 +75,34 @@ function wireAppEvents(): void {
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) showLauncherWindow()
+    if (allAppWindows().length === 0) new AppWindow()
   })
 
   let isQuitting = false
   app.on('before-quit', async (event) => {
-    if (isQuitting || sessionManager.size === 0) return
+    if (isQuitting || allAppWindows().length === 0) return
     event.preventDefault()
     isQuitting = true
     try {
-      await sessionManager.disposeAll()
+      // Let each window's `closed` handler clean up its deck/server/ai.
+      await Promise.all(
+        allAppWindows().map(
+          (w) =>
+            new Promise<void>((resolve) => {
+              const bw = w.getBaseWindow()
+              if (bw.isDestroyed()) return resolve()
+              bw.once('closed', () => resolve())
+              w.close()
+            }),
+        ),
+      )
     } finally {
       app.exit(0)
     }
   })
 }
 
-function wireIpc(): void {
-  ipcMain.handle('deck:open-dialog', async () => {
-    await promptOpenDeck()
-  })
-  ipcMain.handle('deck:open-folder', async () => {
-    await promptOpenFolder()
-  })
-  // Drag-and-drop onto the Launcher routes here. The renderer hands us an
-  // absolute path pulled from `webUtils.getPathForFile` — which returns an
-  // empty string for non-filesystem drops (e.g. browser-origin drags), in
-  // which case we silently ignore. Non-deck files get a user-facing error.
-  ipcMain.handle('deck:open-path', async (_event, input: string) => {
-    if (!input) return
-    const resolved = resolveDeckPath(input)
-    if (resolved) {
-      await openDeckInNewWindow(resolved)
-    } else {
-      void dialog.showMessageBox({
-        type: 'error',
-        title: "Can't open that",
-        message: "That doesn't look like a Deck",
-        detail: `Drop a .deck file, or a folder containing deck.json.\n\nPath: ${input}`,
-      })
-    }
-  })
-  // Renderer tells us its current theme so the native title bar overlay
-  // (Windows/Linux) matches the page. macOS is a no-op inside applyChromeTheme.
-  ipcMain.handle('deck:set-chrome-theme', (event, theme: unknown) => {
-    if (theme !== 'dark' && theme !== 'light') return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (win) applyChromeTheme(win, theme)
-  })
-}
-
 async function main(): Promise<void> {
-  // Ensure only one Deck App instance exists. A second launch — e.g.
-  // double-clicking another .deck on Windows/Linux — receives a
-  // 'second-instance' event in the primary and exits here.
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return
@@ -139,14 +112,7 @@ async function main(): Promise<void> {
 
   await app.whenReady()
 
-  // Show our icon in the Dock during development. In a packaged build
-  // electron-builder bakes the icon into the .app bundle so this is a
-  // no-op, but in `electron .` runs the Dock would otherwise show the
-  // default Electron icon.
-  //
-  // nativeImage.createFromPath returns an *empty* image when the path
-  // doesn't exist, which would silently blank out the Dock icon. We
-  // check first and warn loudly so a packaging regression is visible.
+  // Dock icon in dev (packaged builds already carry the icon in the .app).
   if (process.platform === 'darwin' && !app.isPackaged) {
     if (existsSync(APP_ICON)) {
       app.dock?.setIcon(nativeImage.createFromPath(APP_ICON))
@@ -156,22 +122,25 @@ async function main(): Promise<void> {
   }
 
   await sweepStaleTempDirs()
-
+  auditModelCatalog()
   buildMenu()
-  wireIpc()
+  wireDeckLifecycleIpc()
+  wireLayoutIpc()
+  wireMenuIpc()
+  wireRecentsIpc()
+  wireAiIpc()
+  wireSettingsIpc()
 
-  const fromArgv = argvDeckPaths(process.argv)
-  const toOpen = [...pendingOpens, ...fromArgv]
+  const queued = [...pendingOpens, ...argvDeckPaths(process.argv)]
+  if (queued.length > 0) {
+    // Open each deck in its own window (first one may reuse the initial
+    // launcher, subsequent ones spawn).
+    for (const p of queued) await openDeckSomewhere(p)
+  }
 
-  // Opens are independent (each spins its own server + window), so run
-  // them in parallel. A failure in one doesn't block the others —
-  // openDeckInNewWindow handles its own error dialog.
-  await Promise.all(toOpen.map((p) => openDeckInNewWindow(p)))
-
-  // If every queued open failed (or there were none), show the launcher
-  // so the user has somewhere to go.
-  if (BrowserWindow.getAllWindows().length === 0) {
-    showLauncherWindow()
+  // If nothing is open, show a launcher.
+  if (allAppWindows().length === 0) {
+    new AppWindow()
   }
 }
 

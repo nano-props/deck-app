@@ -14,6 +14,14 @@ const config: Configuration = {
       to: 'assets',
       filter: ['**/*'],
     },
+    // Skills are loaded at runtime (inlined into AI system prompt, and
+    // templates copied on "New deck"). Ship them as external resources so
+    // they can be updated without code changes in packaged builds.
+    {
+      from: 'skills',
+      to: 'skills',
+      filter: ['**/*.md', '**/*.html', '**/*.json'],
+    },
   ],
   mac: {
     category: 'public.app-category.productivity',

@@ -12,6 +12,7 @@ A **Deck** is a full-screen 16:9 single-page static site opened in the Deck App 
 ## Design Thinking
 
 Before coding, understand the context and commit to a BOLD aesthetic direction:
+
 - **Purpose**: What is this deck arguing for? Who watches it live, who reads it later?
 - **Tone**: Pick an extreme: brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined, playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel, industrial/utilitarian, etc. There are so many flavors to choose from. Use these for inspiration but design one that is true to the aesthetic direction.
 - **Constraints**: Technical requirements (performance, accessibility) AND the deck's dual role — it must work both on a projector in a live talk and as a document someone reads alone later.
@@ -20,6 +21,7 @@ Before coding, understand the context and commit to a BOLD aesthetic direction:
 **CRITICAL**: Choose a clear conceptual direction and execute it with precision. Bold maximalism and refined minimalism both work - the key is intentionality, not intensity.
 
 Then implement working code (single `index.html` with inline CSS/JS, or split files — all relative paths) that is:
+
 - Production-grade and functional
 - Visually striking and memorable
 - Cohesive with a clear aesthetic point-of-view
@@ -28,6 +30,7 @@ Then implement working code (single `index.html` with inline CSS/JS, or split fi
 ## Frontend Aesthetics Guidelines
 
 Focus on:
+
 - **Typography**: Choose fonts that are beautiful, unique, and interesting. Avoid generic fonts like Arial and Inter; opt instead for distinctive choices that elevate the deck's aesthetics; unexpected, characterful font choices. Pair a distinctive display font with a refined body font. Decks are read at a distance — size body copy one step larger than you would on a landing page. The Deck App's CSP blocks external fonts, so vendor `.woff2` files into the deck and define `@font-face` with relative `src:`.
 - **Color & Theme**: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes.
 - **Motion**: Use animations for effects and micro-interactions. Prioritize CSS-only solutions. Focus on high-impact moments: a well-orchestrated staggered reveal (animation-delay) fired **every time a slide becomes active** creates the signature rhythm of a deck — not a one-time page-load moment. Avoid scroll-triggered effects entirely; a deck is a paged medium, not a scrolling one.
@@ -37,6 +40,7 @@ Focus on:
 NEVER use generic AI-generated aesthetics like overused font families (Inter, Roboto, Arial, system fonts), cliched color schemes (particularly purple gradients on white backgrounds), predictable layouts and component patterns, and cookie-cutter design that lacks context-specific character.
 
 Deck-specific anti-patterns to avoid:
+
 - A giant hero animation on the cover that burns 3 seconds before any content appears — on stage, that's dead air.
 - Cramming a slide by shrinking type instead of splitting it into two. If it doesn't fit at the intended size, it's two slides.
 - Hiding key information behind `:hover` — projectors have no cursor, and a passive reader won't discover it either.

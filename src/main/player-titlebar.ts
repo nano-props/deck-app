@@ -1,4 +1,7 @@
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, WebContentsView } from 'electron'
+
+/** Something that has a `.webContents` we can hook 'did-finish-load' onto. */
+type DragStripTarget = Pick<BrowserWindow, 'webContents'> | WebContentsView
 
 // Height of the drag strip at the top of the Player window. Matches the
 // Windows `titleBarOverlay.height` (32px) so the reserved top band is the
@@ -65,9 +68,10 @@ const STRIP_SCRIPT = `
  * intact, so the previously-injected strip survives the transition. The
  * script is idempotent (sentinel ID) so repeat calls don't stack elements.
  */
-export function installDragStrip(win: BrowserWindow): void {
-  win.webContents.on('did-finish-load', () => {
-    win.webContents.executeJavaScript(STRIP_SCRIPT).catch(() => {
+export function installDragStrip(target: DragStripTarget): void {
+  const wc = target.webContents
+  wc.on('did-finish-load', () => {
+    wc.executeJavaScript(STRIP_SCRIPT).catch(() => {
       // webContents gone (window destroyed, renderer crashed) — cosmetic
       // failure, not worth surfacing.
     })

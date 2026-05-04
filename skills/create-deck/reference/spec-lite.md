@@ -24,13 +24,13 @@ hello.deck           hello/               ← Deck Source (equivalent, unzipped)
 
 ```jsonc
 {
-  "name": "My Presentation",  // required
+  "name": "My Presentation", // required
 
   // everything below is optional
   "author": "Ada",
   "description": "A talk about Transformers",
-  "cover": "cover.png",       // relative path to a cover image
-  "version": "1.0.0"          // SemVer, author-maintained
+  "cover": "cover.png", // relative path to a cover image
+  "version": "1.0.0", // SemVer, author-maintained
 }
 ```
 
