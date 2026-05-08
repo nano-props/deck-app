@@ -11,38 +11,40 @@ export interface DeckManifest {
 
 /**
  * What `rootDir` is physically backed by.
- * - 'pack':      throwaway temp extraction of a `.deck` zip opened in Play.
- *                Read-only to the user; deleted on close.
- * - 'source':    the user's own on-disk Deck Source directory.
- * - 'workspace': an app-managed unpack of a `.deck` for editing.
- *                Persists across sessions (see workspaces.ts).
+ * - 'pack':   temp extraction of a `.deck` zip. Edits accumulate here and
+ *             are zipped back to the original `.deck` on Save / close.
+ *             Deleted on close after the rezip.
+ * - 'source': the user's own on-disk Deck Source directory. Edits land
+ *             directly in the directory; nothing to zip.
+ *
+ * "Deck Source" is no longer surfaced in the UI; the user-facing model
+ * is just "open a .deck". Source remains as an internal concept so
+ * developers can `Open Folder…` against a working tree.
  */
-export type DeckKind = 'pack' | 'source' | 'workspace'
+export type DeckKind = 'pack' | 'source'
 
 export interface LoadedDeck {
   rootDir: string
   manifest: DeckManifest
   kind: DeckKind
-  /** If true, the caller must delete `rootDir` on close. */
-  deleteOnClose: boolean
 }
 
 /**
  * Loaded deck + its running HTTP server, as tracked by an AppWindow.
- * Lives here (not app-window.ts) so the window registry and IPC layer
- * can reference the shape without importing the full class.
+ * Lives here (not in the AppWindow module) so the window registry and
+ * IPC layer can reference the shape without importing the full class.
  */
 export interface DeckContext {
   rootDir: string
   manifest: DeckManifest
   kind: DeckKind
-  deleteOnClose: boolean
-  /** The original path the user opened: `.deck` zip, or same as rootDir. */
+  /**
+   * The original path the user opened: a `.deck` file (kind 'pack') or
+   * a directory (kind 'source'). Doubles as the deck's stable identity:
+   * window-mutex and chat-history are keyed off this, not `rootDir` —
+   * `rootDir` for a Pack is a per-open tmpdir that changes every time.
+   */
   sourcePath: string
   server: DeckServer
 }
 
-/** A Deck is editable if its rootDir is a persistent, writable directory. */
-export function isEditable(kind: DeckKind): boolean {
-  return kind !== 'pack'
-}

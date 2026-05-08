@@ -1,5 +1,6 @@
 import { streamSimple, type Context } from '@mariozechner/pi-ai'
 import { buildModel } from '#/main/ai/provider.ts'
+import { t } from '#/main/i18n/index.ts'
 import { getSecret, type ProviderId } from '#/main/secrets.ts'
 import { getSettings, resolveModel } from '#/main/settings.ts'
 
@@ -28,7 +29,10 @@ export async function pingAi(): Promise<PingResult> {
   if (!apiKey) {
     return {
       ok: false,
-      error: `No API key set for ${provider}. Open Settings to add one.`,
+      // Same copy as the composer's send-disabled hint — both flag the
+      // exact same configuration gap. Env-var fallback is deliberately
+      // not honored here; see checkAiReadiness for the rationale.
+      error: t('composer.disabled.no-key'),
       provider,
       model: modelId,
     }

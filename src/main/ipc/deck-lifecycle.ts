@@ -1,15 +1,23 @@
 import { dialog, ipcMain } from 'electron'
-import { AppWindow, isDeckPath } from '#/main/app-window.ts'
+import { AppWindow } from '#/main/app-window/index.ts'
+import { isDeckPath } from '#/main/window-shell.ts'
 import { appWindowByWebContents } from '#/main/window-registry.ts'
 import {
   createNewDeckInWindow,
-  exportCurrentDeckAsPack,
   promptOpenDeck,
   promptOpenFolder,
-  unpackAndOpenInEditor,
+  saveDeckAsInWindow,
 } from '#/main/dialogs.ts'
+import { t } from '#/main/i18n/index.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
 import { recordOpen } from '#/main/recents.ts'
+
+function logRecentsError(err: unknown): void {
+  // recents.json is best-effort UX scaffolding — a failed write should
+  // not crash the open-deck flow, but it MUST surface in the console so
+  // a recurring disk error doesn't sit silent.
+  console.warn('[recents] recordOpen failed', err)
+}
 
 /**
  * Deck-mode transitions and the window-shell channels that drive them.
@@ -21,7 +29,8 @@ import { recordOpen } from '#/main/recents.ts'
  *   app:close-deck / app:enter-editor / app:enter-player
  *                                       — sub-view transitions once a deck is loaded
  *   app:reload-preview                  — refetch the iframe without touching chat
- *   app:export-deck                     — zip the current Deck Source into a .deck
+ *   app:save-deck                       — flush a Pack's edits back to its .deck
+ *   app:save-deck-as                    — copy current contents to a new .deck
  */
 export function wireDeckLifecycleIpc(): void {
   ipcMain.handle(
@@ -46,7 +55,7 @@ export function wireDeckLifecycleIpc(): void {
       if (w) {
         const ok = await w.openDeck(picked)
         if (ok && w.getDeck()) {
-          void recordOpen({ path: picked, name: w.getDeck()!.manifest.name })
+          recordOpen({ path: picked, name: w.getDeck()!.manifest.name }).catch(logRecentsError)
         }
       }
     }),
@@ -60,7 +69,7 @@ export function wireDeckLifecycleIpc(): void {
       if (w) {
         const ok = await w.openDeck(picked)
         if (ok && w.getDeck()) {
-          void recordOpen({ path: picked, name: w.getDeck()!.manifest.name })
+          recordOpen({ path: picked, name: w.getDeck()!.manifest.name }).catch(logRecentsError)
         }
       }
     }),
@@ -72,9 +81,9 @@ export function wireDeckLifecycleIpc(): void {
       if (!isDeckPath(input)) {
         void dialog.showMessageBox({
           type: 'error',
-          title: "Can't open that",
-          message: "That doesn't look like a Deck",
-          detail: `Drop a .deck file, or a folder containing deck.json.\n\nPath: ${input}`,
+          title: t('dialog.cantOpen.title'),
+          message: t('dialog.cantOpen.message'),
+          detail: t('dialog.cantOpen.detail', { path: input }),
         })
         return
       }
@@ -82,7 +91,7 @@ export function wireDeckLifecycleIpc(): void {
       if (w) {
         const ok = await w.openDeck(input)
         if (ok && w.getDeck()) {
-          void recordOpen({ path: input, name: w.getDeck()!.manifest.name })
+          recordOpen({ path: input, name: w.getDeck()!.manifest.name }).catch(logRecentsError)
         }
       }
     }),
@@ -103,25 +112,17 @@ export function wireDeckLifecycleIpc(): void {
   )
   ipcMain.handle(
     'app:enter-editor',
-    chromeOnly(async (event) => {
+    chromeOnly((event) => {
       const w = appWindowByWebContents(event.sender)
       if (!w || !w.getDeck()) return
-      const deck = w.getDeck()
-      if (deck?.kind === 'pack') {
-        const zip = deck.sourcePath
-        const name = deck.manifest.name
-        await w.closeDeck()
-        await unpackAndOpenInEditor(zip, w, name)
-        return
-      }
-      await w.enterEditor()
+      w.enterEditor()
     }),
   )
   ipcMain.handle(
     'app:enter-player',
-    chromeOnly(async (event) => {
+    chromeOnly((event) => {
       const w = appWindowByWebContents(event.sender)
-      if (w) await w.enterPlayer()
+      w?.enterPlayer()
     }),
   )
   ipcMain.handle(
@@ -132,10 +133,17 @@ export function wireDeckLifecycleIpc(): void {
     }),
   )
   ipcMain.handle(
-    'app:export-deck',
+    'app:save-deck',
     chromeOnly(async (event) => {
       const w = appWindowByWebContents(event.sender)
-      if (w) await exportCurrentDeckAsPack(w)
+      if (w) await w.saveDeck()
+    }),
+  )
+  ipcMain.handle(
+    'app:save-deck-as',
+    chromeOnly(async (event) => {
+      const w = appWindowByWebContents(event.sender)
+      if (w) await saveDeckAsInWindow(w)
     }),
   )
 }

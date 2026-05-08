@@ -1,17 +1,22 @@
 import { app, nativeImage } from 'electron'
 import { existsSync } from 'node:fs'
 import { auditModelCatalog } from '#/main/ai/provider.ts'
-import { APP_ICON, AppWindow, isDeckPath } from '#/main/app-window.ts'
+import { AppWindow } from '#/main/app-window/index.ts'
+import { APP_ICON, isDeckPath } from '#/main/window-shell.ts'
 import { allAppWindows, focusedAppWindow } from '#/main/window-registry.ts'
 import { sweepStaleTempDirs } from '#/main/deck-loader.ts'
-import { buildMenu } from '#/main/menu.ts'
+import { configureDeckSession } from '#/main/deck-view.ts'
+import { assertDictionaryParity, resolveLang, setCurrentLang } from '#/main/i18n/index.ts'
+import { buildMenu } from '#/main/menu/index.ts'
 import { wireAiIpc } from '#/main/ipc/ai.ts'
 import { wireDeckLifecycleIpc } from '#/main/ipc/deck-lifecycle.ts'
+import { wireI18nIpc } from '#/main/ipc/i18n.ts'
 import { wireLayoutIpc } from '#/main/ipc/layout.ts'
 import { wireMenuIpc } from '#/main/ipc/menu.ts'
 import { wireRecentsIpc } from '#/main/ipc/recents.ts'
 import { wireSettingsIpc } from '#/main/ipc/settings.ts'
 import { recordOpen } from '#/main/recents.ts'
+import { getSettings } from '#/main/settings.ts'
 
 /** Files queued up before the app was ready (macOS open-file, argv). */
 const pendingOpens: string[] = []
@@ -44,7 +49,9 @@ async function openDeckSomewhere(deckPath: string): Promise<void> {
   if (target !== focused) target.focus()
   const ok = await target.openDeck(deckPath)
   if (ok && target.getDeck()) {
-    void recordOpen({ path: deckPath, name: target.getDeck()!.manifest.name })
+    recordOpen({ path: deckPath, name: target.getDeck()!.manifest.name }).catch((err) => {
+      console.warn('[recents] recordOpen failed', err)
+    })
   }
 }
 
@@ -79,23 +86,34 @@ function wireAppEvents(): void {
   })
 
   let isQuitting = false
+  // Hard cap on how long we'll wait for windows to close cleanly.
+  // Without this, a single hung close (e.g. a stuck server or AI session
+  // teardown) holds the whole process open forever — quitting becomes
+  // a Force Quit problem. 3s is generous enough for a normal shutdown
+  // (typically <100ms) and short enough that users don't notice the
+  // ceiling when something does go wrong.
+  const QUIT_TIMEOUT_MS = 3000
   app.on('before-quit', async (event) => {
     if (isQuitting || allAppWindows().length === 0) return
     event.preventDefault()
     isQuitting = true
+    const closeAll = Promise.all(
+      allAppWindows().map(
+        (w) =>
+          new Promise<void>((resolve) => {
+            const bw = w.getBaseWindow()
+            if (bw.isDestroyed()) return resolve()
+            bw.once('closed', () => resolve())
+            w.close()
+          }),
+      ),
+    )
+    const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT_MS))
     try {
-      // Let each window's `closed` handler clean up its deck/server/ai.
-      await Promise.all(
-        allAppWindows().map(
-          (w) =>
-            new Promise<void>((resolve) => {
-              const bw = w.getBaseWindow()
-              if (bw.isDestroyed()) return resolve()
-              bw.once('closed', () => resolve())
-              w.close()
-            }),
-        ),
-      )
+      const winner = await Promise.race([closeAll.then(() => 'closed' as const), timeout])
+      if (winner === 'timeout') {
+        console.warn(`[deck] window close exceeded ${QUIT_TIMEOUT_MS}ms; forcing exit`)
+      }
     } finally {
       app.exit(0)
     }
@@ -122,9 +140,16 @@ async function main(): Promise<void> {
   }
 
   await sweepStaleTempDirs()
+  configureDeckSession()
   auditModelCatalog()
+  assertDictionaryParity(!app.isPackaged)
+  // Resolve language BEFORE buildMenu — every menu label runs through `t()`
+  // and would otherwise render in the default ('en') for the first frame.
+  const settings = await getSettings()
+  setCurrentLang(resolveLang(settings.ui.lang))
   buildMenu()
   wireDeckLifecycleIpc()
+  wireI18nIpc()
   wireLayoutIpc()
   wireMenuIpc()
   wireRecentsIpc()

@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title><deck-name></title>
     <style>
-      /* Top 32px of the window is reserved by the Player as a drag strip
-       (clicks swallowed; macOS traffic lights / Windows caption buttons
-       overlap it). Don't place interactive controls or important visuals
-       there. See spec-lite.md §6. */
+      /* The Deck App draws its own chrome topbar above this viewport;
+       traffic lights / caption buttons live there, not on top of the
+       Deck. The full Deck viewport is yours — `top: 0` in this page sits
+       flush against the chrome topbar's bottom edge. See spec-lite.md §6. */
       :root {
         color-scheme: light;
       }

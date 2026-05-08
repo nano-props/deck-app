@@ -6,14 +6,15 @@
 // (closing any running instance first). `install` is macOS-only.
 //
 // Usage: ./scripts/build.ts [install|i|win]
-import { spawnSync } from 'node:child_process'
-import { globSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { $ } from 'bun'
+import { mkdirSync, renameSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 process.chdir(repoRoot)
+$.cwd(repoRoot)
 
 const APP_NAME = 'Deck'
 
@@ -22,25 +23,18 @@ const mode = positionals[0]
 const shouldInstall = mode === 'install' || mode === 'i'
 const target: 'mac' | 'win' = mode === 'win' ? 'win' : 'mac'
 
-function run(cmd: string, args: string[]): void {
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: false })
-  if (r.status !== 0) {
-    console.error(`command failed: ${cmd} ${args.join(' ')}`)
-    process.exit(r.status ?? 1)
-  }
-}
-
-function findBuiltArtifact(): string | null {
-  if (target === 'win') {
-    // electron-builder's `portable` target produces a single .exe at the
-    // top level of release/. artifactName controls the filename.
-    const [match] = globSync(`release/${APP_NAME}-*-portable.exe`, { cwd: repoRoot })
-    return match ? path.join(repoRoot, match) : null
-  }
-  // electron-builder picks the output dir based on arch: `mac-arm64` on
-  // Apple Silicon, `mac` / `mac-x64` on Intel. Let glob find whatever
-  // actually got produced.
-  const [match] = globSync(`release/mac*/${APP_NAME}.app`, { cwd: repoRoot })
+async function findBuiltArtifact(): Promise<string | null> {
+  const pattern =
+    target === 'win'
+      ? // electron-builder's `portable` target produces a single .exe at the
+        // top level of release/. artifactName controls the filename.
+        `release/${APP_NAME}-*-portable.exe`
+      : // electron-builder picks the output dir based on arch: `mac-arm64` on
+        // Apple Silicon, `mac` / `mac-x64` on Intel. Let glob find whatever
+        // actually got produced.
+        `release/mac*/${APP_NAME}.app`
+  const glob = new Bun.Glob(pattern)
+  const [match] = await Array.fromAsync(glob.scan({ cwd: repoRoot, onlyFiles: false }))
   return match ? path.join(repoRoot, match) : null
 }
 
@@ -49,11 +43,14 @@ function findBuiltArtifact(): string | null {
 // rm after a successful install is run below.
 rmSync(path.join(repoRoot, 'release'), { recursive: true, force: true })
 
-run('bun', ['install'])
-run('bun', ['run', 'typecheck'])
-run('bun', ['run', 'build:electron', '--', `--${target}`])
+await $`bun install`
+await $`bun run typecheck`
+// Renderer bundle MUST exist before electron-builder packs it (the
+// `files` glob in electron-builder.ts expects `dist/renderer/`).
+await $`bun run build:renderer`
+await $`bun run build:electron -- --${target}`
 
-const srcApp = findBuiltArtifact()
+const srcApp = await findBuiltArtifact()
 if (!srcApp) {
   const what = target === 'win' ? 'portable .exe' : `${APP_NAME}.app`
   console.error(`Error: could not find built ${what} under release/`)

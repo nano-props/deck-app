@@ -60,6 +60,14 @@ export function formatDeckSkillsForPrompt(): string {
  * into `destDir`, substituting the supplied deck name into deck.json and
  * the <title> of index.html. destDir must already exist and be empty
  * (caller's responsibility).
+ *
+ * The name is sourced from `path.basename(savedDir)` — i.e. whatever the
+ * user typed in the Save dialog. macOS allows quotes/backslashes/even
+ * newlines in folder names, and Windows allows angle-brackets-adjacent
+ * characters too. We escape per output context so a name like
+ *   `Foo "Bar"`
+ * doesn't produce a deck.json that fails to parse, or a stray script
+ * boundary inside the HTML <title>.
  */
 export async function createDeckFromTemplate(params: { destDir: string; name: string }): Promise<void> {
   const templateDir = path.join(skillsRoot(), 'create-deck', 'templates')
@@ -71,11 +79,33 @@ export async function createDeckFromTemplate(params: { destDir: string; name: st
   }
 
   const rawJson = await readFile(deckJsonSrc, 'utf8')
-  const deckJson = rawJson.replace(/<deck-name>/g, params.name)
+  const deckJson = rawJson.replace(/<deck-name>/g, escapeForJsonString(params.name))
   const rawHtml = await readFile(indexHtmlSrc, 'utf8')
-  const indexHtml = rawHtml.replace(/<deck-name>/g, params.name)
+  const indexHtml = rawHtml.replace(/<deck-name>/g, escapeForHtmlText(params.name))
 
   await mkdir(params.destDir, { recursive: true })
   await writeFile(path.join(params.destDir, 'deck.json'), deckJson, 'utf8')
   await writeFile(path.join(params.destDir, 'index.html'), indexHtml, 'utf8')
+}
+
+/**
+ * Escape so the result can sit inside a JSON string literal. The template
+ * has `"<deck-name>"` (placeholder already wrapped in quotes), so we want
+ * the body of a JSON string — `JSON.stringify` adds the quotes itself,
+ * we strip them.
+ */
+function escapeForJsonString(s: string): string {
+  const stringified = JSON.stringify(s)
+  return stringified.slice(1, -1)
+}
+
+/**
+ * Escape for HTML text content. `<` is the only character that MUST be
+ * escaped in text (otherwise it starts a tag). `&` we escape so a
+ * pre-encoded entity in the source name doesn't get re-decoded. `>` is
+ * not strictly required in text but a few legacy parsers misbehave
+ * without it. Quotes are not escaped — they're fine inside text nodes.
+ */
+function escapeForHtmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }

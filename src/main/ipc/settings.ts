@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { pingAi } from '#/main/ai/ping.ts'
 import { isBuiltin } from '#/main/ai/provider.ts'
+import { checkAiReadiness } from '#/main/ai/readiness.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
 import {
   clearSecret,
@@ -105,5 +106,9 @@ export function wireSettingsIpc(): void {
   ipcMain.handle(
     'settings:ping',
     chromeOnly(async () => pingAi()),
+  )
+  ipcMain.handle(
+    'settings:ai-readiness',
+    chromeOnly(async () => checkAiReadiness()),
   )
 }

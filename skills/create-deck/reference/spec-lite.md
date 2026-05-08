@@ -42,7 +42,7 @@ Unknown fields are ignored (forward compatibility). Don't invent fields.
 2. Read `deck.json`, verify `name` and that `index.html` exists at the root.
 3. Start a local HTTP server on `127.0.0.1:<random-port>` rooted at the directory.
 4. Load `http://127.0.0.1:<port>/` in the Player window.
-5. On close: stop the server; if it was a Deck Pack, delete the temp directory.
+5. On close: if a Pack was edited, rezip the live extraction back into the original `.deck`. Then stop the server; if it was a Pack, delete the temp directory.
 
 Any browser can open the unzipped `index.html` and see the Deck. That's the baseline.
 
@@ -81,31 +81,13 @@ All keys reach the page (arrows, Space, PageUp/Down, letters, …). The only key
 
 Authors are free to use any slide framework — reveal.js, Swiper, custom — as long as it's vendored.
 
-## 6. Window drag
+## 6. Window chrome
 
-The Player uses a platform-appropriate window chrome: traffic lights at top-left on macOS, native caption buttons at top-right on Windows/Linux. Scrolling, hover, pointer events, and text selection work normally in the rest of the page.
+The Deck App draws a persistent 32px chrome topbar above the Deck — traffic lights at top-left on macOS, native caption buttons at top-right on Windows/Linux. The Deck's own viewport starts **below** this band: `(0, 0)` in the Deck page corresponds to the pixel directly under the topbar, not the top of the OS window.
 
-**Top 32px of the author page is reserved (all platforms).** On macOS the Deck App injects a transparent drag strip there so the window stays draggable even when the Deck has a header pinned to `top: 0`. The strip is invisible but swallows clicks. Windows/Linux don't inject a strip (caption buttons / native titlebar already sit above web contents), but the same 32px reservation applies.
+**Practical implication for authors:** the entire Deck viewport is yours. The full `0..viewport-height` range is clickable, hoverable, and visible — there is no reserved strip inside the Deck page itself. A `<button style="position:fixed; top:0">` sits flush against the chrome topbar's bottom edge and works normally; a hero image at `top:0; left:0; width:100%; height:100%` covers the whole Deck without being clipped by traffic lights or caption buttons (those live in the chrome above the Deck, not on top of it).
 
-**Authoring rules for the top 32px:**
-
-- **No clickable controls** (buttons, links, inputs) — they won't receive clicks, hover, or pointer events. Inset headers/nav bars by 32px, or position interactive elements below the strip.
-- **No logos or important visuals in the top-left or top-right ~80×32px** — on macOS the traffic lights sit at the top-left; on Windows the caption buttons sit at the top-right. Both cover anything underneath. The 32px reservation is a cross-platform rule.
-
-If an author wants extra drag zones elsewhere (e.g. a custom header bar **below** the reserved strip), they can opt in with standard CSS — make sure it's positioned below 32px so it doesn't fight the strip:
-
-```css
-.my-header-bar {
-  position: fixed;
-  top: 32px; /* sit below the reserved strip */
-  left: 0;
-  right: 0;
-  height: 40px;
-  -webkit-app-region: drag;
-}
-```
-
-Don't mark `<body>` or large regions as drag — doing so swallows wheel and pointer events on everything underneath.
+You don't need `-webkit-app-region: drag` regions in the Deck — the chrome topbar handles window dragging. Don't mark `<body>` or large regions as drag anyway: doing so swallows wheel and pointer events on everything underneath.
 
 ## 7. Versioning
 

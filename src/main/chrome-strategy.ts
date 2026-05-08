@@ -1,4 +1,5 @@
 import { nativeTheme, type TitleBarOverlayOptions } from 'electron'
+import { TOPBAR_PX } from '#/main/window-layout.ts'
 
 /**
  * Window chrome strategy per platform.
@@ -26,10 +27,12 @@ const PLATFORM: Platform = ((): Platform => {
   }
 })()
 
-// Keep in sync with app-window.ts::TOPBAR_PX — this is the OS caption
-// buttons strip height on Win/Linux, and must match the CSS topbar
-// height or the deckView overlaps / leaves a gap below the buttons.
-const OVERLAY_HEIGHT = 32
+// OS caption buttons strip height on Win/Linux. Must match the CSS
+// topbar height (App.tsx grid row) or the deckView overlaps / leaves a
+// gap below the buttons. Sourced from TOPBAR_PX so the three places
+// that need to agree (this overlay, the CSS grid row, and the macOS
+// trafficLightPosition centering math) all read from one constant.
+const OVERLAY_HEIGHT = TOPBAR_PX
 
 /**
  * Overlay color for an explicit theme. Used for both the app window chrome
@@ -53,7 +56,7 @@ export interface AppChrome {
    * Whether the native OS menu bar is hidden by default. macOS has no
    * per-window menu bar (always in the system bar), so this is `false`
    * there. Windows/Linux use `true`: a self-drawn menu lives in the
-   * topbar (see src/renderer/ui/menu.js), and we call
+   * topbar (see src/renderer/components/AppMenu.tsx), and we call
    * `setMenuBarVisibility(false)` on the window to suppress the native
    * bar entirely — the native `Menu` is still installed via
    * `Menu.setApplicationMenu` so global accelerators stay bound.

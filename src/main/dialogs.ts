@@ -1,16 +1,15 @@
-import { dialog, shell } from 'electron'
+import { app, dialog, shell } from 'electron'
 import { existsSync } from 'node:fs'
-import { mkdir, rm } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import path from 'node:path'
-import type { AppWindow } from '#/main/app-window.ts'
-import { unpackDeckTo } from '#/main/deck-loader.ts'
+import type { AppWindow } from '#/main/app-window/index.ts'
 import { packDeck } from '#/main/deck-packer.ts'
+import { t } from '#/main/i18n/index.ts'
 import { createDeckFromTemplate } from '#/main/skills.ts'
-import { clearWorkspace, ensureWorkspaceDir, resolveWorkspaceForPack } from '#/main/workspaces.ts'
 
 export async function promptOpenDeck(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
-    title: 'Open .deck',
+    title: t('dialog.openDeck.title'),
     filters: [
       { name: 'Deck', extensions: ['deck', 'zip'] },
       { name: 'All Files', extensions: ['*'] },
@@ -23,8 +22,8 @@ export async function promptOpenDeck(): Promise<string | null> {
 
 export async function promptOpenFolder(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
-    title: 'Open deck folder',
-    message: 'Pick a folder containing deck.json and index.html',
+    title: t('dialog.openFolder.title'),
+    message: t('dialog.openFolder.message'),
     properties: ['openDirectory'],
   })
   if (result.canceled || result.filePaths.length === 0) return null
@@ -32,92 +31,23 @@ export async function promptOpenFolder(): Promise<string | null> {
 }
 
 /**
- * Unpack a Deck Pack into its app-managed workspace, then load that
- * workspace into `win` in editor mode.
- *
- * The workspace directory is keyed by the Pack's SHA-256 (see
- * workspaces.ts), so opening the same Pack twice resolves to the same
- * directory and preserves earlier edits. Behavior by workspace state:
- *
- *   - fresh:    unpack silently, open.
- *   - reusable: ask the user — "Continue Editing" (reuse), "Start Fresh"
- *               (wipe + re-unpack), or "Cancel".
- *   - broken:   treat as fresh after wiping — there's nothing user-authored
- *               left to protect.
- */
-export async function unpackAndOpenInEditor(zipPath: string, win: AppWindow, deckName?: string): Promise<void> {
-  let resolution: Awaited<ReturnType<typeof resolveWorkspaceForPack>>
-  try {
-    resolution = await resolveWorkspaceForPack(zipPath, deckName)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    void dialog.showMessageBox({
-      type: 'error',
-      title: 'Failed to open deck',
-      message: 'Failed to locate edit workspace',
-      detail: `${message}\n\nPack: ${zipPath}`,
-    })
-    return
-  }
-
-  const { dir, state } = resolution
-  let needsUnpack: boolean
-
-  if (state === 'reusable') {
-    const choice = await dialog.showMessageBox(win.getBaseWindow(), {
-      type: 'question',
-      title: 'Resume editing?',
-      message: 'This pack has a work-in-progress copy',
-      detail:
-        `You've edited "${deckName || path.parse(zipPath).name}" from this pack before. ` +
-        'Continue with those edits, or start fresh from the pack?',
-      buttons: ['Continue Editing', 'Start Fresh', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-    })
-    if (choice.response === 2) return
-    needsUnpack = choice.response === 1
-    if (needsUnpack) await clearWorkspace(dir)
-  } else if (state === 'broken') {
-    await clearWorkspace(dir)
-    needsUnpack = true
-  } else {
-    needsUnpack = true
-  }
-
-  const createdByUs = !existsSync(dir)
-  try {
-    await ensureWorkspaceDir(dir)
-    if (needsUnpack) await unpackDeckTo(zipPath, dir)
-  } catch (err) {
-    if (createdByUs) await rm(dir, { recursive: true, force: true }).catch(() => {})
-    const message = err instanceof Error ? err.message : String(err)
-    void dialog.showMessageBox({
-      type: 'error',
-      title: 'Failed to unpack deck',
-      message: 'Failed to unpack deck',
-      detail: `${message}\n\nPack: ${zipPath}`,
-    })
-    return
-  }
-
-  await win.openDeck(dir, 'edit', 'workspace')
-}
-
-/**
  * "+ New deck" flow: ask for a name, ask where to put it, copy the
- * starter template, open the new Source in `win` in edit mode.
+ * starter template, open the new directory in `win` in edit mode.
  *
- * This is driven by two sequential dialogs because Electron doesn't have
- * a "name + save-as" composite picker. The friction is acceptable for a
+ * Driven by two sequential dialogs because Electron doesn't have a
+ * "name + save-as" composite picker. The friction is acceptable for a
  * one-time create action.
  */
 export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
+  // `app.getPath('home')` is cross-platform (USERPROFILE on Windows,
+  // HOME on POSIX). The earlier `process.env.HOME || ''` fallback would
+  // have produced a relative path 'my-deck' on Windows, where HOME is
+  // typically unset — the dialog would land in an unpredictable cwd.
   const save = await dialog.showSaveDialog({
-    title: 'Create new deck',
-    message: 'Pick where to save the new Deck Source directory',
-    defaultPath: path.join(process.env.HOME || '', 'my-deck'),
-    buttonLabel: 'Create',
+    title: t('dialog.newDeck.title'),
+    message: t('dialog.newDeck.message'),
+    defaultPath: path.join(app.getPath('home'), 'my-deck'),
+    buttonLabel: t('dialog.newDeck.button'),
     properties: ['createDirectory'],
   })
   if (save.canceled || !save.filePath) return
@@ -128,9 +58,9 @@ export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
   if (existsSync(destDir)) {
     void dialog.showMessageBox({
       type: 'error',
-      title: 'Path already exists',
-      message: `"${baseName}" already exists`,
-      detail: 'Pick a different name or delete the existing path first.',
+      title: t('dialog.pathExists.title'),
+      message: t('dialog.pathExists.message', { name: baseName }),
+      detail: t('dialog.pathExists.detail'),
     })
     return
   }
@@ -141,8 +71,8 @@ export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
     const message = err instanceof Error ? err.message : String(err)
     void dialog.showMessageBox({
       type: 'error',
-      title: 'Failed to create deck',
-      message: 'Failed to create deck',
+      title: t('dialog.failedToCreate.title'),
+      message: t('dialog.failedToCreate.message'),
       detail: `${message}\n\nTarget: ${destDir}`,
     })
     // Best-effort cleanup if we partially wrote.
@@ -154,52 +84,127 @@ export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
 }
 
 /**
- * Prompt the user for a destination `.deck` path, then pack the window's
- * current Deck Source into it.
+ * Save the current deck.
  *
- * No-op for Deck Packs (kind: 'pack') — a Pack is already packed, and the
- * temp extraction it's backed by is not the authoritative source. Surfaces
- * an info dialog so the user isn't confused by a silent no-op.
+ * - Pack:   rezip the live extraction (rootDir) back into the original
+ *           `.deck` file the user opened (sourcePath). No dialog.
+ * - Source: nothing to flush — Source edits already live on disk in
+ *           the user's directory. Returns true silently.
+ *
+ * Missing-source-file handling: if the original `.deck` was deleted
+ * out from under us mid-edit, we must NOT silently swallow that — the
+ * tmpdir is the only copy of the user's work. Behavior:
+ *   - silent (close-time): pack to a sibling `<original>.recovered.deck`
+ *     so the data survives even though we can't reach the user. The
+ *     console gets a warning and `markClean` is NOT called (the rezip
+ *     didn't land at sourcePath).
+ *   - interactive: prompt "the original file is gone — Save As?" and
+ *     route through the user-driven Save As flow.
+ *
+ * Errors surface a dialog (unless `silent`). Returns true on success.
  */
-export async function exportCurrentDeckAsPack(win: AppWindow): Promise<void> {
+export async function saveDeckInWindow(win: AppWindow, opts?: { silent?: boolean }): Promise<boolean> {
   const deck = win.getDeck()
-  if (!deck) return
-  if (deck.kind === 'pack') {
-    void dialog.showMessageBox({
-      type: 'info',
-      title: 'Already packed',
-      message: 'This deck is already a .deck pack.',
-      detail: 'Export is only needed for Deck Sources (unpacked directories).',
+  if (!deck) return false
+  if (deck.kind === 'source') return true
+
+  // Pre-flight: original `.deck` still where we expect it?
+  if (!existsSync(deck.sourcePath)) {
+    if (opts?.silent) {
+      // Last-resort save to a sibling path so tmpdir teardown doesn't
+      // erase the user's work. Don't markClean — sourcePath is still
+      // missing, so the deck IS still effectively dirty against its
+      // identity. The recovery file is the rescue, not the new home.
+      const recoveryPath = `${deck.sourcePath}.recovered.deck`
+      try {
+        await packDeck(deck.rootDir, recoveryPath)
+        console.warn(
+          `[deck] original .deck missing on close (${deck.sourcePath}); ` + `wrote recovery copy to ${recoveryPath}`,
+        )
+        return true
+      } catch (err) {
+        console.error('[deck] recovery save failed', err)
+        return false
+      }
+    }
+    // Interactive path — tell the user, offer Save As.
+    const choice = await dialog.showMessageBox(win.getBaseWindow(), {
+      type: 'warning',
+      title: t('dialog.sourceMissing.title'),
+      message: t('dialog.sourceMissing.message'),
+      detail: t('dialog.sourceMissing.detail', { path: deck.sourcePath }),
+      buttons: [t('dialog.sourceMissing.saveAs'), t('dialog.cancel')],
+      defaultId: 0,
+      cancelId: 1,
     })
-    return
+    if (choice.response === 0) {
+      await saveDeckAsInWindow(win)
+    }
+    return false
   }
 
-  // Suggest `<sourceDirName>.deck` next to the Source as the default.
-  const parsed = path.parse(deck.rootDir)
-  const defaultName = `${parsed.base || deck.manifest.name || 'deck'}.deck`
-  const defaultPath = path.join(parsed.dir || parsed.root, defaultName)
+  try {
+    await packDeck(deck.rootDir, deck.sourcePath)
+    win.markClean()
+    return true
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (!opts?.silent) {
+      void dialog.showMessageBox(win.getBaseWindow(), {
+        type: 'error',
+        title: t('dialog.saveFailed.title'),
+        message: t('dialog.saveFailed.message'),
+        detail: message,
+      })
+    }
+    return false
+  }
+}
+
+/**
+ * "Save As .deck…" — pack the current deck's contents into a user-chosen
+ * `.deck` file. Works on both Pack and Source. Does NOT change which
+ * file the window is editing — that stays as the original sourcePath.
+ * (To switch to the new file, the user reopens it.)
+ */
+export async function saveDeckAsInWindow(win: AppWindow): Promise<void> {
+  const deck = win.getDeck()
+  if (!deck) return
+
+  // Default name: derive from sourcePath. For a Pack, drop the .deck
+  // extension on the basename so we don't suggest `foo.deck.deck`.
+  const parsed = path.parse(deck.sourcePath)
+  const baseName = parsed.ext.toLowerCase() === '.deck' ? parsed.name : parsed.base || deck.manifest.name || 'deck'
+  const defaultName = `${baseName}.deck`
+  // Prefer the deck's own dir/root; fall back to the user's home (cross
+  // -platform via Electron, unlike `process.env.HOME` which is unset on
+  // Windows). Final '' fallback only fires if `app.getPath('home')`
+  // itself errored, which Electron makes very unlikely.
+  const defaultDir = parsed.dir || parsed.root || app.getPath('home')
+  const defaultPath = path.join(defaultDir, defaultName)
 
   const save = await dialog.showSaveDialog(win.getBaseWindow(), {
-    title: 'Export Deck Pack',
-    message: 'Save the current Deck Source as a .deck pack',
+    title: t('dialog.saveAs.title'),
+    message: t('dialog.saveAs.message'),
     defaultPath,
     filters: [{ name: 'Deck', extensions: ['deck'] }],
-    buttonLabel: 'Export',
+    buttonLabel: t('dialog.saveAs.button'),
   })
   if (save.canceled || !save.filePath) return
   // macOS auto-appends the extension from `filters`; Windows/Linux don't.
-  // Normalize so users who typed "my-deck" don't end up with a file the
-  // Player can't auto-detect by extension.
   const destPath = save.filePath.toLowerCase().endsWith('.deck') ? save.filePath : `${save.filePath}.deck`
 
   try {
     const result = await packDeck(deck.rootDir, destPath)
     const response = await dialog.showMessageBox(win.getBaseWindow(), {
       type: 'info',
-      title: 'Exported',
-      message: `Exported ${result.fileCount} files as .deck`,
+      title: t('dialog.saved.title'),
+      message: t('dialog.saved.message', { count: result.fileCount }),
       detail: `${path.basename(result.destPath)} · ${formatBytes(result.bytes)}\n\n${result.destPath}`,
-      buttons: ['OK', process.platform === 'darwin' ? 'Show in Finder' : 'Show in Folder'],
+      buttons: [
+        t('dialog.ok'),
+        process.platform === 'darwin' ? t('dialog.saved.showInFinder') : t('dialog.saved.showInFolder'),
+      ],
       defaultId: 0,
       cancelId: 0,
     })
@@ -210,8 +215,8 @@ export async function exportCurrentDeckAsPack(win: AppWindow): Promise<void> {
     const message = err instanceof Error ? err.message : String(err)
     void dialog.showMessageBox(win.getBaseWindow(), {
       type: 'error',
-      title: 'Export failed',
-      message: 'Could not export the Deck Pack',
+      title: t('dialog.saveFailed.title'),
+      message: t('dialog.saveFailed.message'),
       detail: message,
     })
   }

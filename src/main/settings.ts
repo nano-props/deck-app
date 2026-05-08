@@ -34,6 +34,17 @@ export interface CustomProviderConfig {
   model: string
 }
 
+/**
+ * UI preferences. Currently just language; theme stays in localStorage on
+ * the renderer (it has to be resolved before any IPC round-trip to avoid a
+ * white→dark flash, see the inline boot script in src/renderer/index.html).
+ */
+export interface UiSettings {
+  /** 'auto' resolves to the OS language at startup; an explicit value
+   *  overrides. See src/main/i18n/index.ts::resolveLang. */
+  lang: 'en' | 'zh' | 'ko' | 'auto'
+}
+
 export interface AiSettings {
   /** Active provider used for AI chat. One key per id lives in secrets.ts. */
   provider: ProviderId
@@ -50,6 +61,7 @@ export interface AiSettings {
 
 export interface Settings {
   ai: AiSettings
+  ui: UiSettings
   /**
    * Context compaction thresholds. Shape is pi-coding-agent's
    * `CompactionSettings` verbatim — we reuse the type so pi upgrades keep
@@ -88,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
       'custom-responses': { ...EMPTY_CUSTOM },
     },
   },
+  ui: { lang: 'auto' },
   compaction: { ...DEFAULT_COMPACTION_SETTINGS },
 }
 
@@ -108,9 +121,27 @@ function settingsFile(): string {
 }
 
 let cache: Settings | null = null
+/**
+ * In-flight `load()` promise. Concurrent callers (e.g. a getSettings
+ * race against a doUpdate) used to each fire their own `readFile`; if
+ * one finished after a write had landed, its assignment to `cache`
+ * could overwrite the post-write state with the pre-write contents.
+ * Sharing the promise gives all concurrent callers the same result and
+ * keeps `cache` strictly monotonic: only the first read of a cold
+ * cache touches disk, and once it resolves cache is the new floor.
+ */
+let inflight: Promise<Settings> | null = null
 
-async function load(): Promise<Settings> {
-  if (cache) return cache
+function load(): Promise<Settings> {
+  if (cache) return Promise.resolve(cache)
+  if (inflight) return inflight
+  inflight = doLoad().finally(() => {
+    inflight = null
+  })
+  return inflight
+}
+
+async function doLoad(): Promise<Settings> {
   const file = settingsFile()
   if (!existsSync(file)) {
     cache = structuredClone(DEFAULT_SETTINGS)
@@ -126,6 +157,7 @@ async function load(): Promise<Settings> {
         builtinModel?: Partial<AiSettings['builtinModel']>
         custom?: Partial<AiSettings['custom']>
       }
+      ui?: Partial<UiSettings>
       compaction?: Partial<CompactionSettings>
     }
     const mergedCustom = { ...DEFAULT_SETTINGS.ai.custom }
@@ -153,12 +185,17 @@ async function load(): Promise<Settings> {
     ) {
       mergedBuiltin[provider] = parsed.ai.model
     }
+    const uiLang =
+      parsed.ui?.lang === 'en' || parsed.ui?.lang === 'zh' || parsed.ui?.lang === 'ko' || parsed.ui?.lang === 'auto'
+        ? parsed.ui.lang
+        : DEFAULT_SETTINGS.ui.lang
     cache = {
       ai: {
         provider,
         builtinModel: mergedBuiltin,
         custom: mergedCustom,
       },
+      ui: { lang: uiLang },
       compaction: {
         ...DEFAULT_SETTINGS.compaction,
         ...(parsed.compaction ?? {}),
@@ -176,12 +213,36 @@ export async function getSettings(): Promise<Settings> {
 }
 
 /**
+ * Tail of the write queue. Concurrent updateSettings calls would otherwise
+ * race on the shared `.tmp` path (writeFile+rename pair) and on the
+ * read-modify-write of `cache`. Chain each call onto the previous so
+ * writes serialize without serializing reads.
+ *
+ * Errors in one update don't sink the chain — `.catch(() => {})` keeps
+ * the tail resolvable so the next caller's await isn't poisoned.
+ */
+let writeQueue: Promise<unknown> = Promise.resolve()
+
+/**
  * Shallow-merge `patch` into the current settings and persist. Callers that
  * need to change nested fields (e.g. just `ai.model`) should pass a fully
  * formed `ai` object — this intentionally doesn't deep-merge to avoid
  * partial-write ambiguity.
+ *
+ * Concurrent calls are serialized (see `writeQueue`) so two near-simultaneous
+ * Save clicks can't clobber each other's `.tmp` file or interleave the
+ * read-modify-write of `cache`.
  */
-export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
+export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
+  const next = writeQueue.then(() => doUpdate(patch))
+  // Swallow errors in the chain tail so one failure doesn't poison
+  // subsequent updates; callers still see the rejection on their own
+  // returned promise.
+  writeQueue = next.catch(() => {})
+  return next
+}
+
+async function doUpdate(patch: Partial<Settings>): Promise<Settings> {
   const current = await load()
   // Explicit-per-field merge instead of spread: `ai.custom` is a map of
   // three independent entries and we don't want a patch that only knows
@@ -197,7 +258,8 @@ export async function updateSettings(patch: Partial<Settings>): Promise<Settings
         custom: patch.ai.custom ? { ...current.ai.custom, ...patch.ai.custom } : current.ai.custom,
       }
     : current.ai
-  const next: Settings = { ...current, ...patch, ai: nextAi }
+  const nextUi: UiSettings = patch.ui ? { ...current.ui, ...patch.ui } : current.ui
+  const next: Settings = { ...current, ...patch, ai: nextAi, ui: nextUi }
   const file = settingsFile()
   const tmp = file + '.tmp'
   await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8')

@@ -3,9 +3,10 @@ import type { AddressInfo } from 'node:net'
 import serveStatic from 'serve-static'
 
 // Matches the CSP defined in deck-spec.md §4. Applied to author Decks only
-// (everything served by this per-deck server). The app chrome is loaded via
-// `win.loadFile` and uses its own meta CSP in src/renderer/app.html —
-// don't try to keep these two in sync, they serve different threat models.
+// (everything served by this per-deck server). The app chrome is loaded
+// from the Vite-built bundle and ships its own meta CSP in
+// src/renderer/index.html — don't try to keep these two in sync, they
+// serve different threat models.
 const DEFAULT_CSP =
   "default-src 'self'; " +
   "script-src 'self' 'unsafe-inline'; " +
@@ -49,8 +50,15 @@ export function startDeckServer(rootDir: string): Promise<DeckServer> {
   })
 
   return new Promise((resolve, reject) => {
-    server.once('error', reject)
+    // `error` is registered for the listen-failure path. Once listen
+    // succeeds we detach it — otherwise a runtime socket error later
+    // would re-trigger the already-settled `reject`, which V8 logs as
+    // an unhandled rejection. Post-listen errors are not actionable
+    // here (the server is up and serving); leave them to the default.
+    const onListenError = (err: unknown) => reject(err)
+    server.once('error', onListenError)
     server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', onListenError)
       const addr = server.address() as AddressInfo
       const port = addr.port
       resolve({

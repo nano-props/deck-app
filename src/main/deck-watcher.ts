@@ -2,7 +2,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import path from 'node:path'
 
 /**
- * File-watcher for the Editor's live preview.
+ * File-watcher for the deck preview.
  *
  * Watches a Deck Source directory and debounces rapid changes into a
  * single `onChange` callback. Covers the "user edits files outside the

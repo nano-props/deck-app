@@ -12,12 +12,12 @@ import {
 import { type AgentTool } from '@mariozechner/pi-agent-core'
 import { type Static, Type } from '@mariozechner/pi-ai'
 import { existsSync, statSync } from 'node:fs'
-import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { skillsRoot } from '#/main/skills.ts'
 
 /**
- * Tool surface for the Editor Agent.
+ * Tool surface for the Edit sub-view's Agent.
  *
  * We use pi-coding-agent's tool factories (read / write / edit / ls)
  * rather than hand-rolling them — they're the same tools the `pi` CLI
@@ -28,9 +28,9 @@ import { skillsRoot } from '#/main/skills.ts'
  * directory, so the model can read SKILL.md by its absolute path).
  *
  * One Deck-specific tool remains: `add_asset`. pi has no base64 binary
- * inject tool, and the Editor needs one because renderer attachment
- * chips arrive over IPC as bytes. Writing via `write_file` would require
- * the model to base64-round-trip through its own transcript — wasteful.
+ * inject tool, and we need one because renderer attachment chips arrive
+ * over IPC as bytes. Writing via `write_file` would require the model
+ * to base64-round-trip through its own transcript — wasteful.
  *
  * Notably absent:
  *   - `bash` — we don't grant the Agent shell access in a desktop app.
@@ -51,8 +51,8 @@ export interface DeckToolsContext {
   rootDir: string
   /**
    * Optional notifier invoked after a tool mutates the Deck Source
-   * (write / edit / add_asset). Used by the Editor to auto-reload the
-   * preview iframe once the agent has finished editing. Path is relative
+   * (write / edit / add_asset). Used by the Edit sub-view to auto-reload
+   * the preview once the agent has finished editing. Path is relative
    * to rootDir when the write landed in the Deck; absolute otherwise
    * (shouldn't happen given sandbox, but the type is defensive).
    */
@@ -63,11 +63,49 @@ export interface DeckToolsContext {
 // Sandbox
 // ---------------------------------------------------------------------------
 
-/** Return true if `abs` is `root` or inside `root` (no symlink escape). */
-function isInside(abs: string, root: string): boolean {
+/**
+ * String-only containment check. Used as a fast pre-filter and as the
+ * ground truth for paths that don't yet exist on disk (writes to new
+ * files). Symlink resolution lives in `realpathSafe` below.
+ */
+function isInsideString(abs: string, root: string): boolean {
   const a = path.resolve(abs)
   const r = path.resolve(root)
   return a === r || a.startsWith(r + path.sep)
+}
+
+/**
+ * Resolve symlinks for sandbox checks. If the path itself doesn't exist
+ * (a fresh write), walk up to the nearest existing ancestor, realpath
+ * that, and rejoin the missing tail. This way a write to
+ * `<root>/new/file` resolves through `<root>` (whose realpath we trust)
+ * rather than failing the resolve and silently allowing a symlinked
+ * `<root>` to escape.
+ *
+ * The escape vector this closes: a Deck Source containing a symlink
+ * `escape -> /` would otherwise let `read_file('<root>/escape/etc/passwd')`
+ * pass `isInsideString` (it's a string-prefix match) and then traverse
+ * through the link in the underlying `readFile`.
+ */
+async function realpathSafe(p: string): Promise<string> {
+  let current = path.resolve(p)
+  const tail: string[] = []
+  // Bound by the path depth — `path.dirname('/')` returns '/' so this
+  // can't infinite-loop on POSIX. On Windows `path.dirname('C:\\')`
+  // returns `'C:\\'` similarly.
+  // Guarded with a hard ceiling regardless.
+  for (let i = 0; i < 64; i++) {
+    try {
+      const real = await realpath(current)
+      return tail.length === 0 ? real : path.join(real, ...tail)
+    } catch {
+      const parent = path.dirname(current)
+      if (parent === current) return path.join(current, ...tail)
+      tail.unshift(path.basename(current))
+      current = parent
+    }
+  }
+  return path.resolve(p)
 }
 
 /**
@@ -75,10 +113,22 @@ function isInside(abs: string, root: string): boolean {
  * whether the bundled-skills allowlist applies — it does for read-only
  * ops (read / ls) but NOT for mutating ops (write / edit) because skills
  * are shipped content, not user-authorable.
+ *
+ * We resolve `abs` AND each allowed root through `realpath` so symlinks
+ * within the Deck Source can't be used to escape.
  */
-function ensureInSandbox(abs: string, rootDir: string, writable: boolean): void {
-  if (isInside(abs, rootDir)) return
-  if (!writable && isInside(abs, skillsRoot())) return
+async function ensureInSandbox(abs: string, rootDir: string, writable: boolean): Promise<void> {
+  // Cheap string prefix first — catches `..` traversal before any I/O.
+  if (!isInsideString(abs, rootDir) && !(!writable && isInsideString(abs, skillsRoot()))) {
+    throw new Error(`Path escapes the Deck sandbox: ${abs}`)
+  }
+  const real = await realpathSafe(abs)
+  const realRoot = await realpathSafe(rootDir)
+  if (isInsideString(real, realRoot)) return
+  if (!writable) {
+    const realSkills = await realpathSafe(skillsRoot())
+    if (isInsideString(real, realSkills)) return
+  }
   throw new Error(`Path escapes the Deck sandbox: ${abs}`)
 }
 
@@ -97,11 +147,11 @@ function toRelInsideRoot(abs: string, rootDir: string): string | null {
 function readOps(rootDir: string): ReadOperations {
   return {
     readFile: async (abs) => {
-      ensureInSandbox(abs, rootDir, /* writable */ false)
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
       return readFile(abs)
     },
     access: async (abs) => {
-      ensureInSandbox(abs, rootDir, /* writable */ false)
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
       await access(abs)
     },
     // pi's default detectImageMimeType opens the file with `fs.open` — it
@@ -109,7 +159,7 @@ function readOps(rootDir: string): ReadOperations {
     // `access` catches escapes before it runs. Override here anyway so
     // the sandbox doesn't depend on pi's call order.
     detectImageMimeType: async (abs) => {
-      ensureInSandbox(abs, rootDir, /* writable */ false)
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
       // Minimal magic-byte probe mirroring pi's behavior: read the head,
       // match against the image types pi accepts inline.
       const buf = await readFile(abs)
@@ -146,13 +196,13 @@ function writeOps(ctx: DeckToolsContext): WriteOperations {
     // withFileMutationQueue already — we do NOT re-lock here or we'd
     // deadlock (the mutex is not reentrant).
     writeFile: async (abs, content) => {
-      ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       await writeFile(abs, content, 'utf-8')
       const rel = toRelInsideRoot(abs, ctx.rootDir)
       if (rel !== null) ctx.onFileChange?.(rel)
     },
     mkdir: async (dir) => {
-      ensureInSandbox(dir, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(dir, ctx.rootDir, /* writable */ true)
       await mkdir(dir, { recursive: true })
     },
   }
@@ -163,17 +213,17 @@ function editOps(ctx: DeckToolsContext): EditOperations {
     // Same as writeOps: pi's edit tool holds the per-file mutex for
     // access+readFile+writeFile. Re-locking here would deadlock.
     readFile: async (abs) => {
-      ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       return readFile(abs)
     },
     writeFile: async (abs, content) => {
-      ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       await writeFile(abs, content, 'utf-8')
       const rel = toRelInsideRoot(abs, ctx.rootDir)
       if (rel !== null) ctx.onFileChange?.(rel)
     },
     access: async (abs) => {
-      ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       await access(abs)
     },
   }
@@ -181,16 +231,16 @@ function editOps(ctx: DeckToolsContext): EditOperations {
 
 function lsOps(rootDir: string): LsOperations {
   return {
-    exists: (abs) => {
-      ensureInSandbox(abs, rootDir, /* writable */ false)
+    exists: async (abs) => {
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
       return existsSync(abs)
     },
-    stat: (abs) => {
-      ensureInSandbox(abs, rootDir, /* writable */ false)
+    stat: async (abs) => {
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
       return statSync(abs)
     },
-    readdir: (abs) => {
-      ensureInSandbox(abs, rootDir, /* writable */ false)
+    readdir: async (abs) => {
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
       return readdir(abs)
     },
   }
@@ -223,13 +273,27 @@ function addAssetTool(ctx: DeckToolsContext): AgentTool<typeof addAssetSchema> {
       'pass a full relative path to override. Existing files are overwritten.',
     parameters: addAssetSchema,
     execute: async (_id, params: AddAssetParams) => {
+      // Reject absolute paths and any segment that climbs out — `..` would
+      // pass the sandbox if the segments cancel out (`a/../deck.json`),
+      // landing inside root but on a non-asset file. The tool is named
+      // `add_asset`; clobbering deck.json / index.html via this path is a
+      // contract violation regardless of being technically inside root.
+      if (path.isAbsolute(params.path) || params.path.split(/[/\\]/).some((seg) => seg === '..')) {
+        throw new Error(`add_asset path must be relative and within the Deck (no "..").`)
+      }
       const hasDir = params.path.includes('/')
       const rel = hasDir ? params.path : path.posix.join('assets', params.path)
       if (!path.extname(rel)) {
         throw new Error(`Asset filename needs an extension: ${params.path}`)
       }
+      // Reserved authoring files — agent uses `write` / `edit` for those.
+      const RESERVED = new Set(['deck.json', 'index.html'])
+      const relPosix = rel.split(path.sep).join('/')
+      if (RESERVED.has(relPosix)) {
+        throw new Error(`Refusing to overwrite ${relPosix} via add_asset; use write/edit instead.`)
+      }
       const abs = path.resolve(ctx.rootDir, rel)
-      ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       await mkdir(path.dirname(abs), { recursive: true })
       const buf = Buffer.from(params.base64, 'base64')
       await withFileMutationQueue(abs, async () => {

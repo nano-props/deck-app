@@ -18,7 +18,7 @@ Dropping the folder into any `skills/` directory Just Works.
 
 ### `create-deck/`
 
-Creates a Deck — a `.deck` presentation file or unpacked Deck Source directory. Triggers on "create a deck", "make a presentation", "build slides". Packs with system `zip`; no runtime dependencies.
+Creates a Deck — produces a `.deck` presentation file (or, intermediately, an unpacked directory ready to zip). Triggers on "create a deck", "make a presentation", "build slides". Packs with system `zip`; no runtime dependencies.
 
 ```
 create-deck/

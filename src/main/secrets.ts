@@ -90,9 +90,28 @@ async function readFileOrEmpty(): Promise<SecretsFile> {
 async function writeAtomic(data: SecretsFile): Promise<void> {
   const file = secretsFile()
   const tmp = tempFile(file)
-  await writeFile(tmp, JSON.stringify(data, null, 2), 'utf8')
+  // mode 0o600 — owner read/write only. The values are already
+  // safeStorage-encrypted with a per-user key (Keychain / DPAPI /
+  // secret-service), so cross-user reads of the blob can't be decrypted,
+  // but the JSON keys (provider names) are plaintext and would otherwise
+  // leak which AI services the user has configured. Default umask on
+  // Linux yields 0644 — set explicitly to keep the file user-private.
+  // No-op on Windows (mode is ignored; ACLs from the userData dir apply).
+  // `rename` preserves the source file's mode, so this carries over.
+  await writeFile(tmp, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 })
   await rename(tmp, file)
 }
+
+/**
+ * Tail of the read-modify-write queue for setSecret/clearSecret. Two
+ * concurrent setSecret calls would otherwise each read the old map,
+ * splice their own provider, and the second write would lose the first
+ * provider's key. Chaining onto this tail forces a strict
+ * happens-before ordering. Reads (getSecret / listConfiguredProviders)
+ * stay outside — at worst they see a stale snapshot, never a
+ * corrupted one (writes are atomic via rename).
+ */
+let writeQueue: Promise<unknown> = Promise.resolve()
 
 /**
  * Return the decrypted API key for `provider`, or undefined if none is
@@ -108,9 +127,12 @@ export async function getSecret(provider: ProviderId): Promise<string | undefine
     return safeStorage.decryptString(buf)
   } catch {
     // Keychain re-keyed, user profile moved, file corrupt. Drop it so the
-    // settings UI shows "not set" instead of looking stuck.
-    delete data[provider]
-    await writeAtomic(data).catch(() => {})
+    // settings UI shows "not set" instead of looking stuck. Route the
+    // self-repair write through the queue so it can't race a concurrent
+    // setSecret on a different provider — that race would re-read the
+    // map without the deletion and resurrect a key we just declared
+    // unreadable.
+    await setSecret(provider, '').catch(() => {})
     return undefined
   }
 }
@@ -119,8 +141,20 @@ export async function getSecret(provider: ProviderId): Promise<string | undefine
  * Persist `key` for `provider`. Throws if safeStorage is unavailable — never
  * writes plaintext. Pass an empty string to clear the entry (same effect as
  * `clearSecret`).
+ *
+ * Concurrent calls are serialized through `writeQueue` so a second
+ * setSecret arriving mid-flight can't read the pre-write map and
+ * clobber the first call's contribution.
  */
-export async function setSecret(provider: ProviderId, key: string): Promise<void> {
+export function setSecret(provider: ProviderId, key: string): Promise<void> {
+  const next = writeQueue.then(() => doSetSecret(provider, key))
+  // Swallow errors in the chain tail so one failure doesn't poison
+  // subsequent updates; callers still see the rejection on `next`.
+  writeQueue = next.catch(() => {})
+  return next
+}
+
+async function doSetSecret(provider: ProviderId, key: string): Promise<void> {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error('OS keychain not available — cannot store API key securely on this system')
   }

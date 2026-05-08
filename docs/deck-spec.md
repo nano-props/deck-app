@@ -70,15 +70,17 @@ hello.deck
 
 **Opening a Deck Pack:**
 
-1. Extract the Deck Pack into a temporary directory (yielding an ephemeral Deck Source).
+1. Extract the Deck Pack into a temporary directory (a per-open live extraction).
 2. Read `deck.json`, verify required fields (`name`), and confirm `index.html` exists at the root.
 3. Start a local HTTP server (`127.0.0.1` on a random port) hosting that directory.
 4. Load `http://127.0.0.1:<port>/` in the Player (which resolves to `index.html`).
-5. On close: stop the server and delete the temp directory.
+5. On close: if the Pack was edited, rezip the live extraction back into the original `.deck` file. Then stop the server and delete the temp directory.
 
 **Opening a Deck Source:**
 
-Same flow, but step 1 is skipped (no extraction needed) — the server hosts the user's directory directly. On close the server stops but **the user's directory is not touched**.
+Same flow, but step 1 is skipped (no extraction needed) — the server hosts the user's directory directly. On close the server stops but **the user's directory is not touched**. There is no rezip step: the directory IS the persistent form.
+
+> An implementation MAY treat a Deck Pack as read-only (Player-only). The Deck App's reference implementation does not — it edits Packs in place via the extract-and-rezip dance described above. Both behaviors are conformant.
 
 **Any browser should be able to open `index.html` after unzipping a Deck Pack and see the Deck.** That is the baseline the spec guarantees.
 
@@ -123,33 +125,15 @@ This gives authors full freedom to use any slide framework they like — reveal.
 
 ---
 
-## 6. Window drag behavior
+## 6. Window chrome and viewport
 
-The Player window has a platform-appropriate chrome (macOS traffic lights, Windows caption buttons, etc.). Authors don't configure any of this — there is no `deck.json` field — but they do need to respect one rule:
+The Player draws its own 32px chrome topbar above the Deck — traffic lights at the top-left on macOS, caption buttons at the top-right on Windows/Linux. The Deck's viewport begins **below** this band: the page's `(0, 0)` is the pixel directly under the topbar, not the top of the OS window. Authors don't configure any of this — there is no `deck.json` field for chrome.
 
-**The top 32px of the author page is reserved.** Across all platforms, the top 32px of the Player's coordinate space is used for drag regions and native window controls (traffic lights, caption buttons, or an injected drag strip). See [`window-chrome.md`](./window-chrome.md) for the per-platform details.
+**Practical implication:** the Deck has the full viewport to itself. The full `0..viewport-height` range inside the page is clickable, hoverable, and visible — there is no reserved dead-zone inside the Deck. Traffic lights / caption buttons live in the chrome's coordinate space, never on top of the Deck's content.
 
-**Implications for authors:**
+**Drag.** The chrome topbar handles window dragging. Authors do not need (and should not add) `-webkit-app-region: drag` regions in the Deck. Don't mark `<body>` or large regions as drag — doing so swallows wheel, pointer, and selection events on everything underneath.
 
-- **Don't put clickable controls in the top 32px.** On macOS this band is a transparent drag strip injected by the Deck App: clicks and hover events in that band are swallowed and forwarded as window drag. Buttons, links, inputs, and anything else interactive won't work there. Inset headers/nav bars by 32px, or position their interactive elements below the strip. (Details: [`window-chrome.md`](./window-chrome.md#macos).)
-- **Don't put logos or important visuals in the top-left or top-right ~80×32px.** On macOS the traffic light buttons (close / minimize / maximize) sit at the top-left. On Windows the caption buttons sit at the top-right. Both cover anything the Deck draws underneath them, and neither can be hidden.
-
-**Author overrides.** `-webkit-app-region` is a standard CSS property in the Electron/Chromium runtime. If an author wants an additional drag zone of their own (e.g. a custom header bar below the reserved strip), they can opt in directly — remember to position it **below** the 32px strip:
-
-```css
-.my-header-bar {
-  position: fixed;
-  top: 32px; /* sit below the reserved strip */
-  left: 0;
-  right: 0;
-  height: 40px;
-  -webkit-app-region: drag;
-}
-```
-
-Don't mark `<body>` or large regions as drag — doing so swallows wheel, pointer, and selection events on everything underneath.
-
-> For the implementation-side rationale — why `hiddenInset` on macOS, why the injected strip, why 32px, Linux gaps, etc. — see [`window-chrome.md`](./window-chrome.md).
+> For the implementation-side rationale — why `hiddenInset` on macOS, the persistent topbar architecture, Linux gaps, etc. — see [`window-chrome.md`](./window-chrome.md).
 
 ---
 

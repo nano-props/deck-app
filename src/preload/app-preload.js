@@ -82,12 +82,6 @@ function renderMarkdown(md) {
   }
 }
 
-if (process.platform !== 'darwin') {
-  window.addEventListener('DOMContentLoaded', () => {
-    document.documentElement.setAttribute('data-chrome', 'overlay')
-  })
-}
-
 contextBridge.exposeInMainWorld('deck', {
   // ---- App / window state -------------------------------------------------
   getState: () => ipcRenderer.invoke('app:get-state'),
@@ -110,9 +104,13 @@ contextBridge.exposeInMainWorld('deck', {
   enterEditor: () => ipcRenderer.invoke('app:enter-editor'),
   enterPlayer: () => ipcRenderer.invoke('app:enter-player'),
   reloadPreview: () => ipcRenderer.invoke('app:reload-preview'),
-  exportDeck: () => ipcRenderer.invoke('app:export-deck'),
-  setChatWidth: (px) => ipcRenderer.invoke('app:set-chat-width', px),
+  saveDeck: () => ipcRenderer.invoke('app:save-deck'),
+  saveDeckAs: () => ipcRenderer.invoke('app:save-deck-as'),
+  setPreviewBounds: (rect) => ipcRenderer.invoke('app:set-preview-bounds', rect),
   setDeckViewVisible: (visible) => ipcRenderer.invoke('app:set-deck-view-visible', visible),
+  captureDeckView: () => ipcRenderer.invoke('app:capture-deck-view'),
+  toggleFullScreen: () => ipcRenderer.invoke('app:toggle-fullscreen'),
+  togglePresentation: () => ipcRenderer.invoke('app:toggle-presentation'),
 
   // ---- Recents ------------------------------------------------------------
   listRecents: () => ipcRenderer.invoke('app:list-recents'),
@@ -126,11 +124,21 @@ contextBridge.exposeInMainWorld('deck', {
   aiAbort: () => ipcRenderer.invoke('ai:abort'),
   aiReset: () => ipcRenderer.invoke('ai:reset'),
 
+  // ---- Chat history switcher ----------------------------------------------
+  chats: {
+    list: () => ipcRenderer.invoke('chats:list'),
+    switch: (sessionPath) => ipcRenderer.invoke('chats:switch', sessionPath),
+    delete: (sessionPath) => ipcRenderer.invoke('chats:delete', sessionPath),
+  },
+
   // ---- Attachments --------------------------------------------------------
   // Copy files the user dropped or pasted into the composer into the Deck
   // Source. Accepts a mix of `{kind:'path', path, mimeType?}` (drag-drop)
   // and `{kind:'bytes', fileName, mimeType, base64}` (clipboard paste).
   attachAssets: (inputs) => ipcRenderer.invoke('app:attach-assets', inputs),
+  // Open an OS file picker for the Attach button. Returns
+  //   { ok: boolean, files: { path, name, size, mimeType }[] }.
+  pickAttachments: () => ipcRenderer.invoke('app:pick-attachments'),
   // Resolve a DataTransfer File to its on-disk path. Returns '' when the
   // drop wasn't backed by a filesystem entry (e.g. a drag from a browser).
   pathForDroppedFile: (file) => webUtils.getPathForFile(file),
@@ -186,6 +194,20 @@ contextBridge.exposeInMainWorld('deck', {
     invoke: (id) => ipcRenderer.invoke('app:menu-invoke', id),
   },
 
+  // ---- i18n ---------------------------------------------------------------
+  i18n: {
+    /** One-shot pull of { lang, pref, dict } at boot. */
+    get: () => ipcRenderer.invoke('i18n:get'),
+    /** Set the user preference: 'auto' | 'en' | 'zh' | 'ko'. */
+    setPref: (pref) => ipcRenderer.invoke('i18n:set-pref', pref),
+    /** Subscribe to language changes — receives { lang, pref, dict }. */
+    onChange: (cb) => {
+      const listener = (_event, payload) => cb(payload)
+      ipcRenderer.on('app:i18n-changed', listener)
+      return () => ipcRenderer.off('app:i18n-changed', listener)
+    },
+  },
+
   // ---- Settings overlay ---------------------------------------------------
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
@@ -195,5 +217,8 @@ contextBridge.exposeInMainWorld('deck', {
     clearApiKey: (provider) => ipcRenderer.invoke('settings:clear-key', provider),
     encryptionAvailable: () => ipcRenderer.invoke('settings:encryption-available'),
     ping: () => ipcRenderer.invoke('settings:ping'),
+    /** Returns { ready: boolean, reason?: string } — used to gate the
+     *  composer Send button when the active provider isn't usable yet. */
+    aiReadiness: () => ipcRenderer.invoke('settings:ai-readiness'),
   },
 })

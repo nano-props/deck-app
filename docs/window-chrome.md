@@ -19,10 +19,10 @@ The Deck App is a **single-window** application: one `BaseWindow` hosts a `chrom
 
 The chromeView draws a persistent **32px topbar** that stays mounted in every mode. That single number is repeated deliberately:
 
-- `TOPBAR_PX = 32` in `src/main/window-layout.ts` (Y offset for the deckView).
-- `grid-template-rows: 32px 1fr` in `src/renderer/app.css` (body layout).
-- `height: 32` on the Windows/Linux `titleBarOverlay` config.
-- The macOS traffic-light centering math in the window constructor assumes the same 32.
+- `TOPBAR_PX = 32` in `src/main/window-layout.ts` (the canonical constant).
+- `grid-template-rows: ${TOPBAR_PX}px 1fr` in `src/renderer/App.tsx` (root grid, imported from `window-layout.ts`).
+- `OVERLAY_HEIGHT = TOPBAR_PX` in `src/main/chrome-strategy.ts` (Windows/Linux `titleBarOverlay` config).
+- The macOS traffic-light centering math in the window constructor (`src/main/app-window/index.ts`) reads `TOPBAR_PX` directly.
 
 Because the topbar is always there, the `deckView` never sits under the OS traffic lights or caption buttons, and no special handling is needed to keep those regions draggable. See [macOS](#macos) for what this replaces.
 
@@ -53,8 +53,8 @@ Everything below is the consequence of this constraint.
 
 ## Windows
 
-| `titleBarStyle` | Caption buttons     | Overlay                                       | Drag strip injection |
-| --------------- | ------------------- | --------------------------------------------- | -------------------- |
+| `titleBarStyle` | Caption buttons     | Overlay                                        | Drag strip injection |
+| --------------- | ------------------- | ---------------------------------------------- | -------------------- |
 | `hidden`        | Visible, right side | Theme-adaptive solid (`overlayForTheme`), 32px | No                   |
 
 **Why `titleBarOverlay`.** Windows 10+ can render just the min/max/close buttons ("caption buttons") and let the webview fill the rest. This gives a clean chrome-less feel similar to macOS `hiddenInset`. The caption buttons use the Window Controls Overlay web standard under the hood.
@@ -63,7 +63,7 @@ Everything below is the consequence of this constraint.
 
 **One overlay, not two.** Earlier designs used a separate translucent dark overlay in Player mode (because the deckView covered the caption area, so the buttons had to stay readable against arbitrary deck backgrounds). With the persistent topbar, the caption buttons always sit over the chromeView background, never over deck content — so we use a single solid theme-matched overlay across all modes.
 
-**Native menu bar hidden.** On Windows / Linux `setMenuBarVisibility(false)` is called so the legacy menu bar never flashes. The native `Menu` is still installed via `Menu.setApplicationMenu` so global accelerators (`⌘N`, `⌘O`, `⌘E`, `F11`, etc.) stay bound, and a self-drawn DOM menu in the topbar renders the same tree (see `src/renderer/ui/menu.js`).
+**Native menu bar hidden.** On Windows / Linux `setMenuBarVisibility(false)` is called so the legacy menu bar never flashes. The native `Menu` is still installed via `Menu.setApplicationMenu` so global accelerators (`⌘N`, `⌘O`, `⌘E`, `F11`, etc.) stay bound, and a self-drawn DOM menu in the topbar renders the same tree (see `src/renderer/components/AppMenu.tsx`).
 
 **32px vs. native.** Windows 11 caption buttons are typically ~30px tall; we pick 32 to share a single "top 32px reserved" number with macOS. The cost is a small (~2px) discrepancy with native Explorer windows. We accept this for one-number authoring and a shared constant with the topbar height.
 
@@ -97,25 +97,21 @@ Track this as a known gap; revisit when Linux is an actively supported target.
 
 ---
 
-## Cross-cutting: the "top 32px" contract
+## Cross-cutting: deck viewport vs window coordinates
 
-Across platforms, the **top 32px of the deck page's coordinate space is effectively unusable** for clickable content. It is either:
+The persistent chrome topbar sits in the top 32px of the **window**. The deckView is sized and positioned by the renderer (see `app:set-preview-bounds`) to start at `y = 32`, so the deck page's `(0, 0)` corresponds to the pixel directly below the topbar, not the top of the OS window. Traffic lights / caption buttons live in the chrome's coordinate space, never on top of the deck.
 
-- **macOS** — native `hiddenInset` drag region plus the chromeView topbar above the deckView (clicks in the topbar never reach the deck in the first place).
-- **Windows** — the `titleBarOverlay` band (caption buttons on the right, drag in the middle and on the sides).
-- **Linux** — the same `titleBarOverlay` config as Windows where the WM renders it; otherwise (unsupported WMs) the band is there in config but may not be draggable at runtime.
+**Practical implication:** the deck has the full viewport to itself — there is no reserved dead-zone inside the deck page. Earlier versions of this app injected a transparent drag strip into the top of the author page on macOS (see `src/main/player-titlebar.ts`, dormant); with the persistent topbar that injection is no longer needed and is no longer wired up.
 
-Authors see a single rule: **don't put interactive or visually important content in the top 32px**. See `deck-spec.md` §6 for the author-facing phrasing.
-
-The 32px number is the contract between the Deck App and Deck authors. Changing it later would be a breaking change for any Deck that built a header against that boundary.
+Author-facing guidance lives in `skills/create-deck/reference/spec-lite.md §6`.
 
 ---
 
 ## Related source
 
 - `src/main/chrome-strategy.ts` — per-platform chrome config (single source of truth for the "what to set" decisions). Exports one `appChrome` per platform, shared across Launcher / Player / Editor.
-- `src/main/window-layout.ts` — `TOPBAR_PX`, splitter / pane-width constants, and the `clampChatWidth` geometry helper used by Editor mode.
-- `src/main/app-window.ts` — `AppWindow` class: creates the `BaseWindow` + `chromeView` + on-demand `deckView`, applies chrome from `chrome-strategy.ts`, lays views out per mode.
-- `src/main/window-registry.ts` — registry of open windows keyed by deck rootDir, so the same Deck is never opened twice.
+- `src/main/window-layout.ts` — `TOPBAR_PX`, the only main-side layout constant. Splitter / pane geometry is renderer-owned (CSS + the inline divider in `Editor.tsx`); main mirrors what the renderer measures via `app:set-preview-bounds`.
+- `src/main/app-window/index.ts` — `AppWindow` class: creates the `BaseWindow` + `chromeView` + on-demand `deckView`, applies chrome from `chrome-strategy.ts`, lays views out per mode.
+- `src/main/window-registry.ts` — registry of open windows keyed by canonical deck source path, so the same Deck is never opened twice.
 - `src/main/player-titlebar.ts` — dormant macOS drag-strip injection. Kept for potential re-use in a future full-bleed Present mode.
-- `src/renderer/app.css`, `src/renderer/tokens.css` — chromeView styles, including the `grid-template-rows: 32px 1fr` topbar layout that must stay in sync with `TOPBAR_PX`.
+- `src/renderer/styles.css` — chromeView base layout (`@theme` design tokens, `html/body/#root` reset, `.topbar` padding rules including the Win/Linux right-padding reservation for the OS caption buttons). The topbar grid row itself is inlined in `App.tsx` and reads `TOPBAR_PX` from `window-layout.ts`.

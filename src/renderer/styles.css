@@ -1,0 +1,232 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 dark variant gated by our `[data-theme='dark']` toggle on
+ * <html>, not the OS preference — the user's pick takes priority. The
+ * inline boot script in index.html sets the attribute before any
+ * stylesheet loads, so first paint is correct. */
+@custom-variant dark (&:where(html[data-theme='dark'] *));
+
+/* ============================================================ TOKENS
+ *
+ * Tailwind v4 generates utilities (`bg-bg`, `text-ink-2`, etc.) only
+ * for variables declared inside `@theme`. We declare them BOTH on
+ * `:root` (so component CSS can use `var(--color-bg)` directly) AND
+ * inside `@theme` (so utility generation kicks in). The two blocks are
+ * kept identical by hand — Tailwind doesn't pick up `:root` variables
+ * automatically.
+ *
+ * Dark mode flips only the `:root` values; Tailwind utilities resolve
+ * the var at paint time, so theme switches propagate everywhere
+ * automatically.
+ */
+
+@theme {
+  --color-bg: #f7f7f5;
+  --color-bg-rgb: 247 247 245;
+  --color-bg-deep: #efeeea;
+  --color-surface: #ffffff;
+
+  --color-ink: #0a0a0a;
+  --color-ink-2: #404040;
+  --color-ink-3: #737373;
+  --color-ink-4: #a3a3a3;
+  --color-ink-5: #d4d4d4;
+
+  --color-line: rgb(10 10 10 / 0.06);
+  --color-line-2: rgb(10 10 10 / 0.1);
+
+  --color-accent: #2f6bff;
+  --color-accent-rgb: 47 107 255;
+
+  --color-btn-solid: #0a0a0a;
+  --color-btn-solid-hover: #1f1f1f;
+  --color-btn-solid-text: #fafafa;
+  --color-btn-solid-text-rgb: 255 255 255;
+
+  --color-shadow-rgb: 10 10 10;
+  --color-ambient-rgb: 10 10 10;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --shadow-sm: 0 1px 2px rgb(10 10 10 / 0.04);
+  --shadow-card:
+    0 1px 2px rgb(10 10 10 / 0.03), 0 10px 30px -12px rgb(10 10 10 / 0.12);
+  --shadow-card-lift:
+    0 2px 4px rgb(10 10 10 / 0.04), 0 20px 40px -16px rgb(10 10 10 / 0.18);
+  --shadow-btn: 0 1px 2px rgb(10 10 10 / 0.12);
+  --shadow-btn-hover: 0 2px 6px rgb(10 10 10 / 0.18);
+
+  --animate-spin: spin 900ms linear infinite;
+  --animate-rise: rise 900ms 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* The dark theme rebinds the same names via `[data-theme='dark']`.
+ * Tailwind utilities generated from `@theme` resolve the var at paint
+ * time, so they automatically pick up the new values. */
+html[data-theme='dark'] {
+  --color-bg: #0c0d0f;
+  --color-bg-rgb: 12 13 15;
+  --color-bg-deep: #16181c;
+  --color-surface: #121417;
+
+  --color-ink: #f2f3f5;
+  --color-ink-2: #c9cbce;
+  --color-ink-3: #8a8e95;
+  --color-ink-4: #6a6e75;
+  --color-ink-5: #353942;
+
+  --color-line: rgb(255 255 255 / 0.09);
+  --color-line-2: rgb(255 255 255 / 0.16);
+
+  --color-accent: #5d8dff;
+  --color-accent-rgb: 93 141 255;
+
+  --color-btn-solid: #2f6bff;
+  --color-btn-solid-hover: #4e82ff;
+  --color-btn-solid-text: #ffffff;
+
+  --color-shadow-rgb: 0 0 0;
+  --color-ambient-rgb: 255 255 255;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-card:
+    0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -10px rgb(0 0 0 / 0.6);
+  --shadow-card-lift:
+    0 2px 6px rgb(0 0 0 / 0.5), 0 24px 48px -14px rgb(0 0 0 / 0.7);
+}
+
+:root {
+  color-scheme: light dark;
+}
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========================================================= RADIX MOTION
+ *
+ * Tailwind v4 doesn't ship the `animate-in / fade-in-0 / zoom-in-95 /
+ * slide-in-from-*` utilities — those came from the v3-only
+ * `tailwindcss-animate` plugin. Components still use those class names
+ * for parity with the original design; we map them to native
+ * @keyframes here.
+ *
+ * Each utility just sets one of `--enter-opacity / --enter-scale /
+ * --enter-translate-{x,y}` and pulls in the shared `enter`/`exit`
+ * keyframes. Multiple utilities on the same element compose because
+ * each writes to its own custom property, and the keyframes interpolate
+ * `from` (the variables' current values) back to the element's
+ * computed style at `to` (zero / identity). */
+@keyframes enter {
+  from {
+    opacity: var(--enter-opacity, 1);
+    transform: translate3d(var(--enter-translate-x, 0), var(--enter-translate-y, 0), 0)
+      scale(var(--enter-scale, 1));
+  }
+}
+@keyframes exit {
+  to {
+    opacity: var(--enter-opacity, 1);
+    transform: translate3d(var(--enter-translate-x, 0), var(--enter-translate-y, 0), 0)
+      scale(var(--enter-scale, 1));
+  }
+}
+
+@utility animate-in {
+  animation: enter 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@utility animate-out {
+  animation: exit 120ms cubic-bezier(0.4, 0, 1, 1);
+}
+@utility fade-in-0 {
+  --enter-opacity: 0;
+}
+@utility fade-out-0 {
+  --enter-opacity: 0;
+}
+@utility zoom-in-95 {
+  --enter-scale: 0.95;
+}
+@utility zoom-out-95 {
+  --enter-scale: 0.95;
+}
+@utility slide-in-from-top-1 {
+  --enter-translate-y: -0.25rem;
+}
+@utility slide-in-from-bottom-1 {
+  --enter-translate-y: 0.25rem;
+}
+@utility slide-in-from-left-1 {
+  --enter-translate-x: -0.25rem;
+}
+@utility slide-in-from-right-1 {
+  --enter-translate-x: 0.25rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ========================================================= BASE RESET */
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  transition:
+    background-color 300ms ease,
+    color 300ms ease;
+}
+* {
+  box-sizing: border-box;
+}
+button,
+[data-interactive] {
+  -webkit-app-region: no-drag;
+}
+
+/* ===================================================== APP-MENU TRIGGER
+ * macOS uses the OS menu bar, so the in-window hamburger trigger is
+ * hidden. Win/Linux gets `data-chrome='overlay'` set in index.html
+ * BEFORE styles.css loads, so the rule below unhides it on those
+ * platforms. */
+.app-menu-trigger {
+  display: none;
+}
+html[data-chrome='overlay'] .app-menu-trigger {
+  display: inline-flex;
+}
+
+/* ============================================================== TOPBAR
+ * Default padding leaves the left side clear for macOS traffic lights.
+ * Win/Linux flips: caption buttons (titleBarOverlay) sit on the RIGHT,
+ * so we push tools left and reserve ~150px of right padding for them. */
+.topbar {
+  padding: 0 16px 0 80px;
+}
+html[data-chrome='overlay'] .topbar {
+  padding: 0 150px 0 16px;
+}

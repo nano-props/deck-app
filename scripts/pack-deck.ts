@@ -3,9 +3,12 @@
 //
 // Usage: ./scripts/pack-deck.ts <name>
 //   Reads examples/<name>/ and writes examples/<name>.deck
+//
+// Delegates to the same packer the in-app Save uses (src/main/deck-packer.ts)
+// so the dev script and the user-visible Save apply identical skip rules.
 import { existsSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
-import AdmZip from 'adm-zip'
+import { packDeck } from '#/main/deck-packer.ts'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 
@@ -22,23 +25,14 @@ if (!existsSync(srcDir) || !statSync(srcDir).isDirectory()) {
   console.error(`source dir not found: ${path.relative(repoRoot, srcDir)}`)
   process.exit(1)
 }
-if (!existsSync(path.join(srcDir, 'deck.json'))) {
-  console.error(`missing deck.json in ${path.relative(repoRoot, srcDir)}`)
-  process.exit(1)
-}
-if (!existsSync(path.join(srcDir, 'index.html'))) {
-  console.error(`missing index.html in ${path.relative(repoRoot, srcDir)}`)
-  process.exit(1)
-}
 
 // Overwrite any previous pack.
 rmSync(outFile, { force: true })
 
-// Skip dotfiles (.DS_Store, .fonts-source.json, etc.) so the pack stays
-// minimal and doesn't leak local metadata. adm-zip's addLocalFolder filter
-// receives forward-slash relative paths on every platform.
-const zip = new AdmZip()
-zip.addLocalFolder(srcDir, '', (entry) => !entry.split('/').some((seg) => seg.startsWith('.')))
-zip.writeZip(outFile)
-
-console.log(`packed → ${path.relative(repoRoot, outFile)}`)
+try {
+  const result = await packDeck(srcDir, outFile)
+  console.log(`packed → ${path.relative(repoRoot, outFile)} (${result.fileCount} files, ${result.bytes} bytes)`)
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err))
+  process.exit(1)
+}

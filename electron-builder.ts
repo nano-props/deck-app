@@ -7,7 +7,15 @@ const config: Configuration = {
   directories: {
     output: 'release',
   },
-  files: ['src/main/**/*.ts', 'src/renderer/**/*', 'src/preload/**/*', 'package.json', '!**/*.map'],
+  files: [
+    'src/main/**/*.ts',
+    'src/preload/**/*',
+    // Vite-built renderer bundle. Ship the bundle, not the source —
+    // `dist/renderer/` is what `CHROME_HTML` points at.
+    'dist/renderer/**/*',
+    'package.json',
+    '!**/*.map',
+  ],
   extraResources: [
     {
       from: 'assets',
@@ -28,23 +36,16 @@ const config: Configuration = {
     target: ['dir'],
     identity: null,
   },
+  // Windows: portable .exe only. The publish flow is macOS-only today,
+  // and the build script (scripts/build.ts) globs for the portable
+  // artifact specifically — adding an NSIS installer here without
+  // wiring it through the build script would silently produce a second
+  // unreleased binary on every Windows build.
   win: {
-    target: [
-      { target: 'portable', arch: ['x64'] },
-      { target: 'nsis', arch: ['x64'] },
-    ],
+    target: [{ target: 'portable', arch: ['x64'] }],
   },
   portable: {
     artifactName: '${productName}-${version}-portable.exe',
-  },
-  nsis: {
-    artifactName: '${productName}-${version}-setup.${ext}',
-    oneClick: false,
-    perMachine: false,
-    allowToChangeInstallationDirectory: true,
-    createDesktopShortcut: true,
-    createStartMenuShortcut: true,
-    shortcutName: '${productName}',
   },
   fileAssociations: [
     {

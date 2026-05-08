@@ -72,6 +72,22 @@ function resolveBuiltin(provider: BuiltinProviderId, modelId: string): Model<any
 function buildCustomModel(provider: CustomProviderId, config: CustomProviderConfig): Model<any> {
   if (!config.baseUrl) throw new Error(`Base URL is not set for ${PROVIDER_LABEL[provider]}`)
   if (!config.model) throw new Error(`Model id is not set for ${PROVIDER_LABEL[provider]}`)
+  // Reject anything that isn't an http(s) endpoint. Without this, a
+  // misconfigured Settings entry like `file:///etc/...` would let pi-ai
+  // chase a local resource via the model API, and `about:` / `data:`
+  // schemes are similarly never appropriate. Validate before stripping
+  // the trailing slash so `URL` parses cleanly.
+  let parsed: URL
+  try {
+    parsed = new URL(config.baseUrl)
+  } catch {
+    throw new Error(`Base URL for ${PROVIDER_LABEL[provider]} is not a valid URL.`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(
+      `Base URL for ${PROVIDER_LABEL[provider]} must use http:// or https:// (got ${parsed.protocol}).`,
+    )
+  }
   return {
     id: config.model,
     name: config.model,
@@ -120,6 +136,23 @@ export function isKnownBuiltinModel(provider: BuiltinProviderId, modelId: string
   } catch {
     return false
   }
+}
+
+/**
+ * Reasons the active AI configuration isn't ready to stream a turn.
+ * Mirrored by `composer.disabled.<reason>` keys in the i18n dictionary so
+ * the renderer can render a friendly hint without main → renderer string
+ * coupling.
+ */
+export type AiUnreadyReason =
+  | 'no-key' // API key for the active provider isn't stored
+  | 'no-base-url' // custom endpoint, baseUrl blank
+  | 'no-model-id' // custom endpoint, model id blank
+  | 'unknown-builtin-model' // builtin model id no longer in pi-ai's registry
+
+export interface AiReadiness {
+  ready: boolean
+  reason?: AiUnreadyReason
 }
 
 /**

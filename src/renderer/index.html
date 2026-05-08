@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self' 'unsafe-inline';
+               style-src 'self' 'unsafe-inline';
+               font-src 'self';
+               img-src 'self' data:;
+               connect-src 'self'"
+    />
+    <title>Deck</title>
+    <!-- Set data-theme + data-chrome before any CSS loads. Two-flash
+         prevention (white→dark, mac-padding→win-padding). Same logic as
+         the old renderer's bootstrap; copied verbatim because Vite must
+         not transform this — it has to run BEFORE module scripts. -->
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem('deck:theme')
+          var resolved =
+            pref === 'light' || pref === 'dark'
+              ? pref
+              : matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          document.documentElement.setAttribute('data-theme', resolved)
+        } catch (_) {}
+        if (!/Mac/i.test(navigator.platform)) {
+          document.documentElement.setAttribute('data-chrome', 'overlay')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

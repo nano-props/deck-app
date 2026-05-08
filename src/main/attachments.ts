@@ -204,6 +204,18 @@ export async function stageAttachments(rootDir: string, inputs: StagedInput[]): 
           rejected.push({ name: input.fileName, reason: verdict.reason })
           continue
         }
+        // Cheap pre-check on the encoded string before allocating the
+        // decoded Buffer. base64 is ~1.37x the byte length; we cap at
+        // 1.5x of MAX_ATTACHMENT_BYTES to leave a small slack for
+        // padding / whitespace and still reject the truly oversized
+        // payloads that would OOM if we let `Buffer.from` allocate.
+        if (input.base64.length > Math.ceil(MAX_ATTACHMENT_BYTES * 1.5)) {
+          rejected.push({
+            name: input.fileName,
+            reason: `Over ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MB limit.`,
+          })
+          continue
+        }
         const buf = Buffer.from(input.base64, 'base64')
         if (buf.length > MAX_ATTACHMENT_BYTES) {
           rejected.push({

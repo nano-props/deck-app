@@ -5,9 +5,10 @@ import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
+import { canonicalPath } from '#/main/util/path-identity.ts'
 
 /**
- * Chat transcript persistence for the Editor Agent.
+ * Chat transcript persistence for the deck-bound Agent.
  *
  * We delegate to pi-coding-agent's `SessionManager`, which owns the
  * append-only JSONL format (SessionEntry per line, with parent-child
@@ -21,14 +22,22 @@ import path from 'node:path'
  *       <deckId>/                 ← one directory per deck
  *         <timestamp>_<sid>.jsonl ← one file per session (pi-managed)
  *
- * `deckId` is a SHA-256 prefix of the deck's canonical rootDir path. On
- * macOS/Windows the path is case-folded before hashing so symlink
- * renames don't split the identity.
+ * `deckId` is a SHA-256 prefix of the deck's canonical *sourcePath* —
+ * the `.deck` file or Source directory the user opened. NOT the
+ * `rootDir`, because for a Pack `rootDir` is a per-open tmpdir that
+ * differs every time we extract — hashing that would split the same
+ * deck's history across opens. On macOS/Windows the path is case-folded
+ * before hashing so symlink renames don't split the identity.
  *
- * Opening a deck calls `openDeckSessionManager(rootDir)` which resumes
- * the most recent session in that directory, or starts a new one if
- * none exists. `resetDeckSessionManager(mgr)` deletes the current
- * session file and rolls over to a fresh one.
+ * Functions take an explicit `chatKey` (= the deck's `sourcePath`) plus
+ * a `rootDir` cwd that pi's SessionManager records in its header.
+ * Two parameters because the chat dir is identity-keyed but pi's cwd
+ * has to point at the live extracted directory for tool-use traces.
+ *
+ * Opening a deck calls `openDeckSessionManager(chatKey, rootDir)` which
+ * resumes the most recent session in that directory, or starts a new
+ * one if none exists. `resetDeckSessionManager(mgr)` deletes the
+ * current session file and rolls over to a fresh one.
  *
  * Why delete instead of keep old files as a recovery breadcrumb: pi's
  * `newSession` only writes the new file's header when the next message
@@ -43,20 +52,13 @@ import path from 'node:path'
  * `getSessionDir()` expose paths for a future background sweep.
  */
 
-/** Canonicalize a rootDir path for hashing — case-fold on case-insensitive FS. */
-function canonicalize(rootDir: string): string {
-  const resolved = path.resolve(rootDir)
-  const ci = process.platform === 'darwin' || process.platform === 'win32'
-  return ci ? resolved.toLowerCase() : resolved
+/** Stable id derived from the deck's source path (the user-facing identity). */
+export function deckChatId(chatKey: string): string {
+  return createHash('sha256').update(canonicalPath(chatKey)).digest('hex').slice(0, 16)
 }
 
-/** Stable id derived from the deck's rootDir. Used as the per-deck dir name. */
-export function deckChatId(rootDir: string): string {
-  return createHash('sha256').update(canonicalize(rootDir)).digest('hex').slice(0, 16)
-}
-
-function deckChatDir(rootDir: string): string {
-  const dir = path.join(app.getPath('userData'), 'chats', deckChatId(rootDir))
+function deckChatDir(chatKey: string): string {
+  const dir = path.join(app.getPath('userData'), 'chats', deckChatId(chatKey))
   mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -66,13 +68,12 @@ function deckChatDir(rootDir: string): string {
  * session on disk, its messages are restored; otherwise a new session file
  * is started.
  *
- * `cwd` in pi-land is the working directory the session is associated
- * with. We pass the deck's rootDir so pi's session header records the
- * right origin — it's cosmetic for us (we never use it to route) but
- * keeps the session files self-describing.
+ * `chatKey` selects the chat directory (the deck's stable identity).
+ * `rootDir` is the live extraction passed to pi as cwd — it shows up in
+ * pi's session header so traces are self-describing.
  */
-export function openDeckSessionManager(rootDir: string): SessionManager {
-  const dir = deckChatDir(rootDir)
+export function openDeckSessionManager(chatKey: string, rootDir: string): SessionManager {
+  const dir = deckChatDir(chatKey)
   return SessionManager.continueRecent(rootDir, dir)
 }
 
@@ -93,6 +94,101 @@ export function resetDeckSessionManager(manager: SessionManager): void {
     }
   }
   manager.newSession()
+}
+
+/**
+ * Lightweight summary of one persisted chat session — the shape sent to
+ * the renderer for the History popover. Derived from pi's `SessionInfo`
+ * but trimmed to the fields the UI actually shows.
+ */
+export interface DeckChatSummary {
+  /** Absolute path to the session's .jsonl file. Used as the stable id
+   *  for switch/delete IPCs (sessionId would also work but path is what
+   *  pi.SessionManager.open() takes directly). */
+  path: string
+  /** Short text from the first user message, '' if the session is empty.
+   *  Renderer treats '' as "skip / hide". */
+  firstMessage: string
+  /** Number of message-shaped entries — used as a "msgs" badge. */
+  messageCount: number
+  /** Last-modified timestamp in ms, for relative-time labels. */
+  modifiedMs: number
+}
+
+/**
+ * List every chat session for a deck, newest first. Empty sessions
+ * (no first message yet) are filtered out — they exist on disk for users
+ * who hit "new chat" and then closed without typing, but they're not
+ * useful in a switcher.
+ */
+export async function listDeckChatSessions(chatKey: string, rootDir: string): Promise<DeckChatSummary[]> {
+  const dir = deckChatDir(chatKey)
+  const all = await SessionManager.list(rootDir, dir)
+  return all
+    .filter((s) => typeof s.firstMessage === 'string' && s.firstMessage.trim().length > 0)
+    .map((s) => ({
+      path: s.path,
+      firstMessage: s.firstMessage,
+      messageCount: s.messageCount,
+      modifiedMs: s.modified.getTime(),
+    }))
+}
+
+/**
+ * Defence-in-depth check: a sessionPath supplied by the renderer must
+ * resolve inside the deck's own chat directory. The renderer is
+ * untrusted code (XSS in deck content could reach the chrome via a
+ * compromised contextBridge); a path here that escapes the chat dir
+ * would let an attacker call `SessionManager.open` on / `rmSync` any
+ * file the main process can read/write.
+ *
+ * Returns true when `sessionPath` is safe; false otherwise. Caller is
+ * expected to bail (no-op or error) on `false`.
+ */
+function isPathInside(sessionPath: string, dir: string): boolean {
+  const resolvedPath = path.resolve(sessionPath)
+  const resolvedDir = path.resolve(dir) + path.sep
+  return resolvedPath.startsWith(resolvedDir)
+}
+
+/**
+ * Open a SessionManager pointing at a specific session file. Used when
+ * the user picks a past session in the History popover.
+ *
+ * Mirrors `openDeckSessionManager` but bypasses `continueRecent`'s
+ * "most-recent" selection. Throws if `sessionPath` escapes the deck's
+ * chat directory (renderer-supplied input is not trusted — see
+ * `isPathInside`).
+ */
+export function openDeckChatSession(
+  chatKey: string,
+  rootDir: string,
+  sessionPath: string,
+): SessionManager {
+  const dir = deckChatDir(chatKey)
+  if (!isPathInside(sessionPath, dir)) {
+    throw new Error('sessionPath escapes deck chat directory')
+  }
+  return SessionManager.open(sessionPath, dir, rootDir)
+}
+
+/**
+ * Delete a single session file. Best-effort — a held-open file (current
+ * SessionManager) returns an error on Windows; caller should close the
+ * SessionManager first if deleting the active session.
+ *
+ * `chatKey` is required so we can scope the delete to the deck's own
+ * chat directory. A path outside that dir is silently ignored; this is
+ * defence-in-depth on top of the IPC handler's own validation.
+ */
+export function deleteChatSession(chatKey: string, sessionPath: string): void {
+  const dir = deckChatDir(chatKey)
+  if (!isPathInside(sessionPath, dir)) return
+  try {
+    rmSync(sessionPath, { force: true })
+  } catch {
+    // ignore — the next list() will skip it if gone, surface it if not
+  }
 }
 
 /**

@@ -1,12 +1,12 @@
-import path from 'node:path'
 import type { WebContents } from 'electron'
-import type { AppWindow } from '#/main/app-window.ts'
+import type { AppWindow } from '#/main/app-window/index.ts'
+import { canonicalPath } from '#/main/util/path-identity.ts'
 
 /**
- * Global registry of live `AppWindow` instances. Kept outside `app-window.ts`
- * so the class definition isn't cluttered with map bookkeeping, and so that
- * IPC handlers / menu actions have a single, side-effect-free place to look
- * windows up.
+ * Global registry of live `AppWindow` instances. Kept outside the AppWindow
+ * module so the class definition isn't cluttered with map bookkeeping, and
+ * so that IPC handlers / menu actions have a single, side-effect-free place
+ * to look windows up.
  *
  * Dual-keyed:
  *   - by BaseWindow id         — for menu / shortcut dispatch
@@ -23,6 +23,42 @@ import type { AppWindow } from '#/main/app-window.ts'
 const byWindowId = new Map<number, AppWindow>()
 const byChromeWcId = new Map<number, AppWindow>()
 
+/**
+ * Source paths whose `openDeck` is mid-flight in some window. Holds the
+ * canonicalized form so the across-window mutual-exclusion check (in
+ * `openDeck`) can detect "another window is currently in the middle of
+ * opening this same deck", not just "another window has finished
+ * opening it".
+ *
+ * Without this, two windows that race to open the same `.deck` both
+ * pass the `findAppWindowBySourcePath` check (neither has set its
+ * `deck` yet) and proceed to extract independently into different
+ * tmpdirs — two servers, two AI sessions, two close-time rezips
+ * stomping each other.
+ *
+ * `claimOpening(sourcePath)` returns true if we got the slot; the
+ * caller is responsible for `releaseOpening` exactly once when the
+ * flow ends (success or failure).
+ */
+const openingSourcePaths = new Set<string>()
+
+export function isOpeningSourcePath(sourcePath: string): boolean {
+  return openingSourcePaths.has(canonicalPath(sourcePath))
+}
+
+/** Try to reserve the in-flight slot. Returns false if already taken. */
+export function claimOpening(sourcePath: string): boolean {
+  const key = canonicalPath(sourcePath)
+  if (openingSourcePaths.has(key)) return false
+  openingSourcePaths.add(key)
+  return true
+}
+
+/** Release the in-flight slot. Idempotent. */
+export function releaseOpening(sourcePath: string): void {
+  openingSourcePaths.delete(canonicalPath(sourcePath))
+}
+
 /** Called from `AppWindow` constructor. Both ids must be present. */
 export function registerAppWindow(win: AppWindow, params: { windowId: number; chromeWcId: number }): void {
   byWindowId.set(params.windowId, win)
@@ -35,10 +71,6 @@ export function unregisterAppWindow(params: { windowId: number; chromeWcId: numb
   byChromeWcId.delete(params.chromeWcId)
 }
 
-export function appWindowByWindowId(id: number): AppWindow | undefined {
-  return byWindowId.get(id)
-}
-
 export function appWindowByWebContents(wc: WebContents): AppWindow | undefined {
   return byChromeWcId.get(wc.id)
 }
@@ -46,31 +78,28 @@ export function appWindowByWebContents(wc: WebContents): AppWindow | undefined {
 /**
  * True if `wc` is one of our registered chrome WebContents. Used as the
  * `validateSender` check on every `ipcMain.handle` — only the app chrome
- * (loaded from app.html with our preload) is allowed to invoke handlers.
- * Deck content runs in a separate WebContentsView without a preload, so
- * it can't reach `ipcRenderer`, but this guard makes that property
- * structural rather than configurational (Electron security checklist #17).
+ * (loaded from the renderer bundle with our preload) is allowed to invoke
+ * handlers. Deck content runs in a separate WebContentsView without a
+ * preload, so it can't reach `ipcRenderer`, but this guard makes that
+ * property structural rather than configurational (Electron security
+ * checklist #17).
  */
 export function isChromeWebContents(wc: WebContents): boolean {
   return byChromeWcId.has(wc.id)
 }
 
 /**
- * Canonicalize for identity comparison. macOS/Windows are case-insensitive;
- * Linux is case-sensitive. Mirrors `deckChatId` in chats.ts so a deck's
- * identity is consistent across both systems.
+ * Look up a window by the deck's source path — i.e. the `.deck` file or
+ * Source directory the user opened. NOT keyed by `rootDir`, because for
+ * a Pack `rootDir` is a per-open tmpdir that differs across opens of
+ * the same `.deck`; we'd fail to detect "already open" and let the same
+ * file load into two windows.
  */
-function canonicalRootDir(p: string): string {
-  const resolved = path.resolve(p)
-  const ci = process.platform === 'darwin' || process.platform === 'win32'
-  return ci ? resolved.toLowerCase() : resolved
-}
-
-export function findAppWindowByRootDir(rootDir: string): AppWindow | undefined {
-  const key = canonicalRootDir(rootDir)
+export function findAppWindowBySourcePath(sourcePath: string): AppWindow | undefined {
+  const key = canonicalPath(sourcePath)
   for (const w of byWindowId.values()) {
     const d = w.getDeck()
-    if (d && canonicalRootDir(d.rootDir) === key) return w
+    if (d && canonicalPath(d.sourcePath) === key) return w
   }
   return undefined
 }

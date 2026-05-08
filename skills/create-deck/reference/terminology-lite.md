@@ -6,9 +6,9 @@
 
 | Term              | Meaning                                                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------- |
-| **Deck**          | A single presentation (the abstract thing). Concretely: a Deck Pack or a Deck Source.     |
-| **Deck Pack**     | The packaged `.deck` file — a standard ZIP archive. Distribution form.                    |
-| **Deck Source**   | The unpacked directory form. Contains `deck.json`, `index.html`, and assets. Author form. |
+| **Deck**          | A single presentation. Concretely: a `.deck` file (Pack) or a directory (Source).         |
+| **Deck Pack**     | The packaged `.deck` file — a standard ZIP archive. The user-facing form, both for distribution and for in-app editing. |
+| **Deck Source**   | The unpacked directory form. Useful as a working area while authoring; not surfaced as a separate concept in the Deck App UI. |
 | **Deck Manifest** | The `deck.json` file at the root.                                                         |
 | **pack a Deck**   | Verb. Zip a Deck Source into a Deck Pack.                                                 |
 | **unpack a Deck** | Verb. Extract a Deck Pack into a Deck Source.                                             |
@@ -23,17 +23,19 @@ A Deck Source and a Deck Pack have **identical** directory structure — the onl
 | **Deck App**          | The desktop application. Hosts the three views below.                                   |
 | **Deck App Launcher** | Initial view when no Deck is loaded. Open recent, create new, browse.                   |
 | **Deck App Player**   | The view that hosts a Deck for reading or presenting.                                   |
-| **Deck App Editor**   | The view that hosts a Deck Source for editing: AI chat on the left, live preview right. |
+| **Deck App Editor**   | The view that hosts a Deck for editing: AI chat on the left, live preview right. Works on Pack and Source alike. |
 
-**Key relationships** (relevant when users ask to edit a Deck):
+**Key relationships** (relevant when discussing how a user works with a Deck):
 
-- A Deck Pack opens in the Player only. To edit it, it must first be **unpacked** into a Deck Source.
-- A Deck Source can open in either the Player (read/present) or the Editor (edit), but never both at once.
+- A Deck Pack defaults to opening in the Player; the user can flip to the Editor for any Deck. The Editor's edits to a Pack are flushed back to the original `.deck` on Save / close.
+- A Deck Source defaults to opening in the Editor.
+- Player and Editor are mutually exclusive — the same Deck is never open in both at once.
 
 ## Anti-patterns — don't use
 
-- ~~"deck file"~~ → **Deck Pack**. "File" is ambiguous (a Deck Source is a directory).
-- ~~"deck project"~~ → **Deck Source**.
+- ~~"deck file"~~ → **Deck Pack**.
+- ~~"deck project"~~ → **Deck Source** (for the directory) or **Deck Pack** (for the user's working artifact in the Deck App).
+- ~~"workspace"~~ → there is no workspace concept. Pack edits live in a temp extraction the Deck App manages internally; users never see or address it.
 - ~~"Reader mode"~~ → **Deck App Player**.
 - ~~"landing page"~~ → **Deck App Launcher**.
-- ~~"extracted directory"~~ → **Deck Source**.
+- ~~"extracted directory"~~ → **Deck Source** (an authoring directory) or "the Pack's live extraction" (the app's internal temp directory).

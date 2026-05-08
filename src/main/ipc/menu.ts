@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { chromeOnly } from '#/main/ipc/guard.ts'
-import { buildMenuTree, invokeMenuAction, type MenuNode } from '#/main/menu.ts'
+import { buildMenuTree, invokeMenuAction, type MenuNode } from '#/main/menu/index.ts'
 
 /**
  * Menu channels for the self-drawn DOM menu in the topbar (Win/Linux).

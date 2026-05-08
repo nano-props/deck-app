@@ -45,8 +45,23 @@ function shouldSkip(name: string): boolean {
 
 async function collectEntries(rootDir: string): Promise<{ absPath: string; relPosixPath: string }[]> {
   const out: { absPath: string; relPosixPath: string }[] = []
+  // Track real (post-realpath) directory paths we've already walked so a
+  // symlink loop — `<root>/sub/back-to-root → <root>` is the canonical
+  // example, but git submodules and some build outputs can produce
+  // similar shapes — terminates instead of recursing forever. Files
+  // don't need this; only directory recursion can loop.
+  const visitedDirs = new Set<string>()
 
   async function walk(dirAbs: string, relPosix: string): Promise<void> {
+    let dirReal: string
+    try {
+      dirReal = await realpath(dirAbs)
+    } catch {
+      return
+    }
+    if (visitedDirs.has(dirReal)) return
+    visitedDirs.add(dirReal)
+
     const entries = await readdir(dirAbs, { withFileTypes: true })
     for (const entry of entries) {
       if (shouldSkip(entry.name)) continue
