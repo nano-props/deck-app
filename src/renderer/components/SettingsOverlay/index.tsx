@@ -177,7 +177,7 @@ function SettingsBody() {
       </RTabs.List>
 
       {/* Tab pane — the only scrolling region. */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-6 py-5">
         <RTabs.Content value="appearance" className="focus-visible:outline-none">
           <AppearanceTab />
         </RTabs.Content>

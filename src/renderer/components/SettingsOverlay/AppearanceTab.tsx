@@ -11,7 +11,7 @@ export function AppearanceTab() {
   const setLangPref = useI18n((s) => s.setPref)
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
       <Field label={t('settings.theme')} hint={t('settings.theme.hint')}>
         <Segmented
           value={themePref}

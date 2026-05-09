@@ -21,7 +21,7 @@ import {
 
 export function AiTab() {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <AiGroup />
       <EncryptionWarning />
     </div>
@@ -329,7 +329,7 @@ function AiGroup() {
     : ''
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
       <Field label={t('settings.provider')}>
         <Select
           value={provider}
