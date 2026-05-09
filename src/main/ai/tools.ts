@@ -17,13 +17,7 @@ import { existsSync, statSync } from 'node:fs'
 import { access, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { net, nativeImage } from 'electron'
-import {
-  compileGlob,
-  createDeckGrepTool,
-  IGNORED_DIRS,
-  walkFiles,
-  type GrepOps,
-} from '#/main/ai/grep-tool.ts'
+import { compileGlob, createDeckGrepTool, IGNORED_DIRS, walkFiles, type GrepOps } from '#/main/ai/grep-tool.ts'
 import { editorSkillRoots } from '#/main/skills.ts'
 
 /**
@@ -147,31 +141,44 @@ function realpathRootCached(p: string): Promise<string> {
 }
 
 /**
- * Reject any path that escapes the writable sandbox. `writable` controls
+ * Resolve and validate a path against the Deck sandbox. `writable` controls
  * whether the Editor-visible skill allowlist applies — it does for
  * read-only ops (read / ls) but NOT for mutating ops (write / edit)
  * because skills are shipped content, not user-authorable.
  *
  * The candidate path goes through `realpath` fresh (it can be a brand-
  * new file the model is about to create); the trusted roots are cached
- * (see `realpathRootCached`).
+ * (see `realpathRootCached`). We intentionally avoid rejecting on raw
+ * string prefixes before realpath: macOS commonly aliases `/var` to
+ * `/private/var`, so a path can look outside `rootDir` as a string while
+ * still resolving inside the same Deck Source.
  */
-async function ensureInSandbox(abs: string, rootDir: string, writable: boolean): Promise<void> {
+async function resolveSandboxPath(
+  abs: string,
+  rootDir: string,
+  writable: boolean,
+): Promise<{ relPath: string | null }> {
   const allowedReadRoots = writable ? [] : editorSkillRoots()
-  // Cheap string prefix first — catches `..` traversal before any I/O.
-  if (!isInsideString(abs, rootDir) && !allowedReadRoots.some((root) => isInsideString(abs, root))) {
-    throw new Error(`Path escapes the Deck sandbox: ${abs}`)
-  }
   const real = await realpathSafe(abs)
   const realRoot = await realpathRootCached(rootDir)
-  if (isInsideString(real, realRoot)) return
+  if (isInsideString(real, realRoot)) {
+    return { relPath: toRelPosixFromResolved(real, realRoot) }
+  }
   if (!writable) {
     for (const root of allowedReadRoots) {
       const realAllowedRoot = await realpathRootCached(root)
-      if (isInsideString(real, realAllowedRoot)) return
+      if (isInsideString(real, realAllowedRoot)) {
+        return { relPath: null }
+      }
     }
   }
   throw new Error(`Path escapes the Deck sandbox: ${abs}`)
+}
+
+function toRelPosixFromResolved(abs: string, rootDir: string): string | null {
+  const rel = toRelInsideRoot(abs, rootDir)
+  if (rel === null) return null
+  return rel.split(path.sep).join('/')
 }
 
 function toRelInsideRoot(abs: string, rootDir: string): string | null {
@@ -187,7 +194,7 @@ function toRelInsideRoot(abs: string, rootDir: string): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Wrap an `(abs, ...) => R` function so it gates on `ensureInSandbox`
+ * Wrap an `(abs, ...) => R` function so it gates on `resolveSandboxPath`
  * before delegating. Suitable for ops where the only side effect is the
  * one inside `fn` itself; ops that also need to fire `onFileChange` or
  * run extra validation (writeFile, edit's writeFile) keep an explicit
@@ -206,7 +213,7 @@ function sandboxed<A extends unknown[], R>(
   fn: (abs: string, ...rest: A) => R | Promise<R>,
 ): (abs: string, ...rest: A) => Promise<R> {
   return async (abs, ...rest) => {
-    await ensureInSandbox(abs, rootDir, writable)
+    await resolveSandboxPath(abs, rootDir, writable)
     return fn(abs, ...rest)
   }
 }
@@ -282,8 +289,7 @@ function checkDeckJsonShape(parsed: unknown): string[] {
  * this guard a malformed `deck.json` would land on disk and break the
  * next `loadDeck` call.
  */
-function validateReservedFileContent(abs: string, rootDir: string, content: string): void {
-  const rel = toRelPosix(abs, rootDir)
+function validateReservedFileContent(rel: string | null, content: string): void {
   if (rel !== 'deck.json') return
   let parsed: unknown
   try {
@@ -304,11 +310,10 @@ function writeOps(ctx: DeckToolsContext): WriteOperations {
   // deadlock (the mutex is not reentrant).
   return {
     writeFile: async (abs, content) => {
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
-      validateReservedFileContent(abs, ctx.rootDir, content)
+      const checked = await resolveSandboxPath(abs, ctx.rootDir, /* writable */ true)
+      validateReservedFileContent(checked.relPath, content)
       await writeFile(abs, content, 'utf-8')
-      const rel = toRelPosix(abs, ctx.rootDir)
-      if (rel !== null) ctx.onFileChange?.(rel)
+      if (checked.relPath !== null) ctx.onFileChange?.(checked.relPath)
     },
     mkdir: sandboxed(ctx.rootDir, true, async (dir) => {
       await mkdir(dir, { recursive: true })
@@ -324,11 +329,10 @@ function editOps(ctx: DeckToolsContext): EditOperations {
   return {
     readFile: sandboxed(ctx.rootDir, true, (abs) => readFile(abs)),
     writeFile: async (abs, content) => {
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
-      validateReservedFileContent(abs, ctx.rootDir, content)
+      const checked = await resolveSandboxPath(abs, ctx.rootDir, /* writable */ true)
+      validateReservedFileContent(checked.relPath, content)
       await writeFile(abs, content, 'utf-8')
-      const rel = toRelPosix(abs, ctx.rootDir)
-      if (rel !== null) ctx.onFileChange?.(rel)
+      if (checked.relPath !== null) ctx.onFileChange?.(checked.relPath)
     },
     access: sandboxed(ctx.rootDir, true, (abs) => access(abs)),
   }
@@ -367,7 +371,7 @@ function findOps(rootDir: string): FindOperations {
   return {
     exists: sandboxed(rootDir, false, (abs) => existsSync(abs)),
     glob: async (pattern, cwd, options) => {
-      await ensureInSandbox(cwd, rootDir, /* writable */ false)
+      await resolveSandboxPath(cwd, rootDir, /* writable */ false)
 
       // stat throws on broken symlinks / permission denials; treat that
       // as "not provably a file" and let the walk produce an empty result.
@@ -379,8 +383,7 @@ function findOps(rootDir: string): FindOperations {
       }
       if (cwdStats?.isFile()) {
         throw new Error(
-          `find expects a directory, got a file: ${cwd}. ` +
-            `Use the read tool to inspect a single file's contents.`,
+          `find expects a directory, got a file: ${cwd}. ` + `Use the read tool to inspect a single file's contents.`,
         )
       }
 
@@ -464,7 +467,7 @@ function addAssetTool(ctx: DeckToolsContext): AgentTool<typeof addAssetSchema> {
         throw new Error(`Refusing to overwrite ${relPosix} via add_asset; use write/edit instead.`)
       }
       const abs = path.resolve(ctx.rootDir, rel)
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await resolveSandboxPath(abs, ctx.rootDir, /* writable */ true)
       // Tolerate a leading `data:<mime>;base64,` prefix — models
       // occasionally hand the full data URL straight from a clipboard.
       // Buffer.from silently strips invalid characters, so we also
@@ -517,10 +520,10 @@ function deleteFileTool(ctx: DeckToolsContext): AgentTool<typeof deleteFileSchem
     parameters: deleteFileSchema,
     execute: async (_id, params: DeleteFileParams) => {
       const abs = path.resolve(ctx.rootDir, params.path)
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
-      const relPosix = toRelPosix(abs, ctx.rootDir)
+      const checked = await resolveSandboxPath(abs, ctx.rootDir, /* writable */ true)
+      const relPosix = checked.relPath
       if (relPosix === null) {
-        // ensureInSandbox should already have thrown, but defense in depth.
+        // resolveSandboxPath should already have thrown, but defense in depth.
         throw new Error(`Path escapes the Deck sandbox: ${params.path}`)
       }
       if (relPosix === '') {
@@ -538,9 +541,7 @@ function deleteFileTool(ctx: DeckToolsContext): AgentTool<typeof deleteFileSchem
         throw e
       }
       if (st.isDirectory()) {
-        throw new Error(
-          `delete_file targets a directory: ${relPosix}. Directory removal is not supported.`,
-        )
+        throw new Error(`delete_file targets a directory: ${relPosix}. Directory removal is not supported.`)
       }
       await withFileMutationQueue(abs, async () => {
         await unlink(abs)
@@ -588,10 +589,10 @@ function moveFileTool(ctx: DeckToolsContext): AgentTool<typeof moveFileSchema> {
     execute: async (_id, params: MoveFileParams) => {
       const fromAbs = path.resolve(ctx.rootDir, params.from)
       const toAbs = path.resolve(ctx.rootDir, params.to)
-      await ensureInSandbox(fromAbs, ctx.rootDir, /* writable */ true)
-      await ensureInSandbox(toAbs, ctx.rootDir, /* writable */ true)
-      const fromRel = toRelPosix(fromAbs, ctx.rootDir)
-      const toRel = toRelPosix(toAbs, ctx.rootDir)
+      const fromChecked = await resolveSandboxPath(fromAbs, ctx.rootDir, /* writable */ true)
+      const toChecked = await resolveSandboxPath(toAbs, ctx.rootDir, /* writable */ true)
+      const fromRel = fromChecked.relPath
+      const toRel = toChecked.relPath
       if (fromRel === null || toRel === null) {
         throw new Error('Both `from` and `to` must be inside the Deck Source.')
       }
@@ -609,9 +610,7 @@ function moveFileTool(ctx: DeckToolsContext): AgentTool<typeof moveFileSchema> {
         throw new Error(`Refusing to move reserved file ${fromRel}; edit it in place.`)
       }
       if (RESERVED_DECK_FILES.has(toRel)) {
-        throw new Error(
-          `Refusing to overwrite reserved file ${toRel} via move_file; use write/edit instead.`,
-        )
+        throw new Error(`Refusing to overwrite reserved file ${toRel} via move_file; use write/edit instead.`)
       }
 
       let fromStat: import('node:fs').Stats
@@ -623,9 +622,7 @@ function moveFileTool(ctx: DeckToolsContext): AgentTool<typeof moveFileSchema> {
         throw e
       }
       if (fromStat.isDirectory()) {
-        throw new Error(
-          `move_file targets a directory: ${fromRel}. Directory moves are not supported.`,
-        )
+        throw new Error(`move_file targets a directory: ${fromRel}. Directory moves are not supported.`)
       }
 
       if (existsSync(toAbs)) {
@@ -732,10 +729,7 @@ async function checkDeckJson(rootDir: string): Promise<DeckCheckResult> {
     return { issues: [`deck.json: invalid JSON (${reason})`], ok: [], manifest: null }
   }
   const shapeIssues = checkDeckJsonShape(parsed).map((s) => `deck.json: ${s}`)
-  const ok =
-    shapeIssues.length === 0 && typeof parsed.name === 'string'
-      ? [`deck.json: name = ${parsed.name}`]
-      : []
+  const ok = shapeIssues.length === 0 && typeof parsed.name === 'string' ? [`deck.json: name = ${parsed.name}`] : []
   return { issues: shapeIssues, ok, manifest: parsed }
 }
 
@@ -766,7 +760,7 @@ async function checkIndexHtml(rootDir: string): Promise<Pick<DeckCheckResult, 'i
     // Even though refs are author-controlled, run the sandbox check so
     // a stray `../foo` is reported as escaping rather than as a Deck file.
     try {
-      await ensureInSandbox(refAbs, rootDir, /* writable */ false)
+      await resolveSandboxPath(refAbs, rootDir, /* writable */ false)
     } catch {
       issues.push(`index.html: reference escapes the Deck Source: ${ref}`)
       missingCount++
@@ -835,9 +829,7 @@ const fetchUrlSchema = Type.Object(
         'Destination relative path inside the Deck Source. If it contains no "/" the ' +
         'file lands under "assets/". The filename must have an extension.',
     }),
-    overwrite: Type.Optional(
-      Type.Boolean({ description: 'Allow replacing an existing file (default: false).' }),
-    ),
+    overwrite: Type.Optional(Type.Boolean({ description: 'Allow replacing an existing file (default: false).' })),
   },
   { additionalProperties: false },
 )
@@ -882,11 +874,9 @@ function fetchUrlTool(ctx: DeckToolsContext): AgentTool<typeof fetchUrlSchema> {
         throw new Error(`Refusing to overwrite ${relPosix} via fetch_url; use write/edit instead.`)
       }
       const abs = path.resolve(ctx.rootDir, rel)
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      await resolveSandboxPath(abs, ctx.rootDir, /* writable */ true)
       if (existsSync(abs) && !params.overwrite) {
-        throw new Error(
-          `Destination already exists: ${relPosix}. Pass overwrite=true to replace.`,
-        )
+        throw new Error(`Destination already exists: ${relPosix}. Pass overwrite=true to replace.`)
       }
 
       const res = await net.fetch(parsed.toString(), { redirect: 'follow', signal })
@@ -898,9 +888,7 @@ function fetchUrlTool(ctx: DeckToolsContext): AgentTool<typeof fetchUrlSchema> {
       // (since servers can lie or omit the header).
       const lenHeader = res.headers.get('content-length')
       if (lenHeader && Number(lenHeader) > FETCH_URL_MAX_BYTES) {
-        throw new Error(
-          `Remote file ${lenHeader} bytes exceeds ${FETCH_URL_MAX_BYTES} byte cap.`,
-        )
+        throw new Error(`Remote file ${lenHeader} bytes exceeds ${FETCH_URL_MAX_BYTES} byte cap.`)
       }
       const body = res.body
       if (!body) {
@@ -929,9 +917,7 @@ function fetchUrlTool(ctx: DeckToolsContext): AgentTool<typeof fetchUrlSchema> {
           } catch {
             // already closed
           }
-          throw new Error(
-            `Remote file exceeds ${FETCH_URL_MAX_BYTES} byte cap (read ${total} bytes).`,
-          )
+          throw new Error(`Remote file exceeds ${FETCH_URL_MAX_BYTES} byte cap (read ${total} bytes).`)
         }
         chunks.push(value)
       }
@@ -1009,9 +995,7 @@ function readUrlTool(): AgentTool<typeof readUrlSchema> {
 
       const lenHeader = res.headers.get('content-length')
       if (lenHeader && Number(lenHeader) > READ_URL_MAX_BYTES) {
-        throw new Error(
-          `Remote resource ${lenHeader} bytes exceeds ${READ_URL_MAX_BYTES} byte cap.`,
-        )
+        throw new Error(`Remote resource ${lenHeader} bytes exceeds ${READ_URL_MAX_BYTES} byte cap.`)
       }
 
       const body = res.body
@@ -1246,5 +1230,9 @@ function sanitizeManifestField(s: string): string {
  */
 function sanitizeFileNameForPrompt(name: string): string {
   // eslint-disable-next-line no-control-regex
-  return name.replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
+  return name
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
 }

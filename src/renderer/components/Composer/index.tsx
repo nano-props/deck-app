@@ -7,6 +7,7 @@ import { useAiStore, canSendSelector } from '#/renderer/stores/ai.ts'
 import { useAttachments } from '#/renderer/stores/attachments.ts'
 import { useChatStore } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
+import { useTheme } from '#/renderer/stores/theme.ts'
 import { Button, IconButton } from '#/renderer/components/ui/Button.tsx'
 import { TextArea } from '#/renderer/components/ui/TextArea.tsx'
 import { Tooltip } from '#/renderer/components/ui/Tooltip.tsx'
@@ -23,6 +24,10 @@ import { humanBytes } from '#/renderer/components/Composer/format.ts'
 
 export function Composer() {
   const t = useI18n((s) => s.t)
+  const lang = useI18n((s) => s.lang)
+  const langPref = useI18n((s) => s.pref)
+  const theme = useTheme((s) => s.resolved)
+  const themePref = useTheme((s) => s.pref)
   const streaming = useAiStore((s) => s.streaming)
   const unreadyReason = useAiStore((s) => s.unreadyReason)
   const setError = useAiStore((s) => s.setError)
@@ -214,7 +219,7 @@ export function Composer() {
     const userNodeId = useChatStore.getState().appendUser(fullText)
 
     try {
-      const res = await window.deck.aiSend(fullText)
+      const res = await window.deck.aiSend(fullText, { lang, langPref, theme, themePref })
       if (!res?.ok) {
         setError(res?.error || t('chat.status.sendFailed'))
         // Roll back the optimistic append for refusals where the agent

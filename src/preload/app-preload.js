@@ -119,7 +119,7 @@ contextBridge.exposeInMainWorld('deck', {
   setChromeTheme: (theme) => ipcRenderer.invoke('app:set-chrome-theme', theme),
 
   // ---- AI chat ------------------------------------------------------------
-  aiSend: (text) => ipcRenderer.invoke('ai:send', text),
+  aiSend: (text, uiContext) => ipcRenderer.invoke('ai:send', text, uiContext),
   aiAbort: () => ipcRenderer.invoke('ai:abort'),
   aiReset: () => ipcRenderer.invoke('ai:reset'),
 

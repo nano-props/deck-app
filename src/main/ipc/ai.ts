@@ -6,6 +6,19 @@ import { deleteChatSession, listDeckChatSessions } from '#/main/chats.ts'
 import { t } from '#/main/i18n/index.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
 import { appWindowByWebContents } from '#/main/window-registry.ts'
+import type { ChatUiContext } from '#/main/ai/session/types.ts'
+
+function parseChatUiContext(raw: unknown): ChatUiContext | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const v = raw as Partial<ChatUiContext>
+  const lang = v.lang === 'en' || v.lang === 'zh' || v.lang === 'ko' ? v.lang : undefined
+  const langPref =
+    v.langPref === 'en' || v.langPref === 'zh' || v.langPref === 'ko' || v.langPref === 'auto' ? v.langPref : undefined
+  const theme = v.theme === 'light' || v.theme === 'dark' ? v.theme : undefined
+  const themePref =
+    v.themePref === 'light' || v.themePref === 'dark' || v.themePref === 'auto' ? v.themePref : undefined
+  return lang && langPref && theme && themePref ? { lang, langPref, theme, themePref } : undefined
+}
 
 /**
  * AI chat + attachment staging. The Agent instance itself lives on the
@@ -21,14 +34,14 @@ import { appWindowByWebContents } from '#/main/window-registry.ts'
 export function wireAiIpc(): void {
   ipcMain.handle(
     'ai:send',
-    chromeOnly(async (event, text: unknown) => {
+    chromeOnly(async (event, text: unknown, uiContext: unknown) => {
       if (typeof text !== 'string' || text.trim().length === 0) {
         return { ok: false as const, reason: 'error' as const, error: 'empty message' }
       }
       const w = appWindowByWebContents(event.sender)
       const session = w?.getAiSession()
       if (!session) return { ok: false as const, reason: 'no-session' as const, error: 'no active AI session' }
-      const result = await session.send(text)
+      const result = await session.send(text, parseChatUiContext(uiContext))
       if (result.ok) return { ok: true as const }
       return { ok: false as const, reason: result.reason, error: result.message }
     }),
@@ -182,7 +195,7 @@ export function wireAiIpc(): void {
       // a path that escapes returns false (defence-in-depth). Renderer
       // uses the result to decide whether to drop the row optimistically.
       const ok = deleteChatSession(deck.sourcePath, sessionPath)
-      return ok ? ({ ok: true as const }) : ({ ok: false as const })
+      return ok ? { ok: true as const } : { ok: false as const }
     }),
   )
 }

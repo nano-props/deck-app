@@ -15,7 +15,7 @@ import { getSecret, type ProviderId } from '#/main/secrets.ts'
 import { getSettings, resolveModel, type Settings } from '#/main/settings.ts'
 import { contextTokensFromBranch } from '#/main/ai/session/context-usage.ts'
 import { buildSystemPrompt } from '#/main/ai/session/system-prompt.ts'
-import type { DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
+import type { ChatUiContext, DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
 
 /** webContents.send wrapper that no-ops once the view is gone. */
 function safeSend(sender: WebContents, channel: string, payload: unknown): void {
@@ -77,6 +77,7 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   const { sender, rootDir, chatKey } = params
 
   const systemPrompt = await buildSystemPrompt(params)
+  let systemPromptUiContextKey = ''
 
   const tools = createDeckTools({
     rootDir,
@@ -232,7 +233,7 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     emitContextUsage()
   }
 
-  async function send(text: string): Promise<SendResult> {
+  async function send(text: string, uiContext?: ChatUiContext): Promise<SendResult> {
     // Reject overlapping sends. Without this, pi-agent throws "Agent is
     // already processing a prompt" — we'd catch and turn that into a
     // deck:fatal, which the renderer treats as a permanent error and
@@ -271,6 +272,13 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
       // Without this assign, changes to thinkingLevel in Settings
       // wouldn't take effect until the user reopened the deck.
       agent.state.thinkingLevel = settings.ai.thinkingLevel
+      if (uiContext) {
+        const nextUiContextKey = uiContextKey(uiContext)
+        if (nextUiContextKey !== systemPromptUiContextKey) {
+          agent.state.systemPrompt = await buildSystemPrompt(params, uiContext)
+          systemPromptUiContextKey = nextUiContextKey
+        }
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       safeSend(sender, 'ai:event', { type: 'deck:fatal', error: message })
@@ -387,4 +395,8 @@ function isSyntheticAbortMessage(m: AgentMessage): boolean {
   if (m.role !== 'assistant') return false
   if (m.stopReason !== 'aborted' && m.stopReason !== 'error') return false
   return m.content.every((c) => c.type === 'text' && c.text.length === 0)
+}
+
+function uiContextKey(uiContext: ChatUiContext): string {
+  return `${uiContext.lang}\0${uiContext.langPref}\0${uiContext.theme}\0${uiContext.themePref}`
 }

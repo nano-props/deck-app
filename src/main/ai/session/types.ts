@@ -11,8 +11,15 @@ import type { WebContents } from 'electron'
  */
 export type SendResult = { ok: true } | { ok: false; reason: 'busy' | 'not-ready' | 'error'; message: string }
 
+export interface ChatUiContext {
+  lang: 'en' | 'zh' | 'ko'
+  langPref: 'en' | 'zh' | 'ko' | 'auto'
+  theme: 'light' | 'dark'
+  themePref: 'light' | 'dark' | 'auto'
+}
+
 export interface DeckAiSession {
-  send(text: string): Promise<SendResult>
+  send(text: string, uiContext?: ChatUiContext): Promise<SendResult>
   /** Abort the in-flight turn. Resolves once the agent settles, so a
    *  follow-up send won't race the still-shutting-down agent. */
   abort(): Promise<void>

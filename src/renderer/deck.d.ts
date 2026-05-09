@@ -10,6 +10,7 @@ import type { AiReadiness } from '#/main/ai/provider.ts'
 import type { DeckChatSummary } from '#/main/chats.ts'
 import type { MenuActionId, MenuNode } from '#/main/menu/index.ts'
 import type { AppState } from '#/main/app-window/index.ts'
+import type { ChatUiContext } from '#/main/ai/session/types.ts'
 
 // ---- App / window state -----------------------------------------------------
 
@@ -40,7 +41,10 @@ interface DeckBridge {
    *  at. Returns null when there's no deck mounted yet. The renderer
    *  draws an <img> at this rect under modal overlays so a translucent
    *  mask shows the deck through it instead of the empty chrome bg. */
-  captureDeckView: () => Promise<{ dataUrl: string; rect: { x: number; y: number; width: number; height: number } } | null>
+  captureDeckView: () => Promise<{
+    dataUrl: string
+    rect: { x: number; y: number; width: number; height: number }
+  } | null>
   /** Toggle the focused window's native fullscreen state. Mirrors the
    *  View → Toggle Full Screen menu item. Topbar stays visible. */
   toggleFullScreen: () => Promise<void>
@@ -64,6 +68,7 @@ interface DeckBridge {
   // to roll back the optimistic chat-list append.
   aiSend: (
     text: string,
+    uiContext?: ChatUiContext,
   ) => Promise<{ ok: true } | { ok: false; reason: 'busy' | 'not-ready' | 'error' | 'no-session'; error: string }>
   aiAbort: () => Promise<void>
   aiReset: () => Promise<void>
@@ -93,7 +98,10 @@ interface DeckBridge {
     rejected?: { name: string; reason: string }[]
     error?: string
   }>
-  pickAttachments: () => Promise<{ ok: boolean; files: { path: string; name: string; size: number; mimeType: string }[] }>
+  pickAttachments: () => Promise<{
+    ok: boolean
+    files: { path: string; name: string; size: number; mimeType: string }[]
+  }>
   pathForDroppedFile: (file: File) => string
   onAiEvent: (cb: (ev: AiEvent) => void) => () => void
 
@@ -115,9 +123,7 @@ interface DeckBridge {
   i18n: {
     get: () => Promise<{ lang: Lang; pref: LangPref; dict: Record<DictKey, string> }>
     setPref: (pref: LangPref) => Promise<{ lang: Lang; pref: LangPref; dict: Record<DictKey, string> }>
-    onChange: (
-      cb: (payload: { lang: Lang; pref: LangPref; dict: Record<DictKey, string> }) => void,
-    ) => () => void
+    onChange: (cb: (payload: { lang: Lang; pref: LangPref; dict: Record<DictKey, string> }) => void) => () => void
   }
 
   // ---- Settings overlay --------
@@ -132,7 +138,9 @@ interface DeckBridge {
       provider?: ProviderId
       model?: string
       apiKey?: string
-      custom?: Partial<Record<'custom-openai' | 'custom-anthropic' | 'custom-responses', { baseUrl: string; model: string }>>
+      custom?: Partial<
+        Record<'custom-openai' | 'custom-anthropic' | 'custom-responses', { baseUrl: string; model: string }>
+      >
     }) => Promise<{ ok: boolean; text?: string; error?: string; provider?: ProviderId; model?: string }>
     aiReadiness: () => Promise<AiReadiness>
   }
