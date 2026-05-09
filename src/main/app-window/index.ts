@@ -468,6 +468,12 @@ export class AppWindow {
     if (this.subView === next) return
     this.deckCtrl.hideForLayoutFlip()
     this.subView = next
+    // When entering Play mode, move focus to the deck content so arrow
+    // keys / space work immediately without requiring a manual click.
+    // Edit mode keeps focus in the chrome (chat pane) for typing.
+    if (next === 'play') {
+      this.deckCtrl.focusContent()
+    }
     this.broadcastState()
   }
 
@@ -626,6 +632,11 @@ export class AppWindow {
     // flipping into Edit is instant and carries the full transcript.
     await this.ensureAiSession()
     this.ensureDeckWatcher()
+    // When entering Play mode directly (e.g., opening a Pack), move focus
+    // to deck content so keyboard navigation works immediately.
+    if (subView === 'play') {
+      this.deckCtrl.focusContent()
+    }
     this.broadcastState()
   }
 

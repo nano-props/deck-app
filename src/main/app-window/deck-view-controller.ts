@@ -276,6 +276,15 @@ export class DeckViewController {
    */
   focusContentIfLocked(): void {
     if (!this.locked) return
+    this.focusContent()
+  }
+
+  /**
+   * Move keyboard focus into the deck's webContents unconditionally.
+   * Called when entering Player mode so arrow keys / space work immediately
+   * without requiring a manual click on the deck area.
+   */
+  focusContent(): void {
     if (!this.view || this.view.webContents.isDestroyed()) return
     this.view.webContents.focus()
   }
