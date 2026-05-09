@@ -23,6 +23,7 @@
 import { Menu as MenuIcon, Play, Pencil, Save, RotateCcw, Settings as SettingsIcon, Maximize2 } from 'lucide-react'
 import { useAppStore } from '#/renderer/stores/app.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
+import { useSettingsModal } from '#/renderer/stores/settings-modal.ts'
 import { IconButton } from '#/renderer/components/ui/Button.tsx'
 import { Tooltip } from '#/renderer/components/ui/Tooltip.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
@@ -84,7 +85,7 @@ export function Topbar() {
                 // intercept hover from reaching the underlying button —
                 // otherwise Radix Tooltip's pointer-enter detection silently
                 // misses the trigger when the cursor lands on the dot.
-                dirty && "after:absolute after:top-1 after:right-1 after:size-1.5 after:rounded-full after:bg-blue-500 after:content-[''] after:pointer-events-none",
+                dirty && "after:absolute after:top-1 after:right-1 after:size-1.5 after:rounded-full after:bg-accent after:content-[''] after:pointer-events-none",
               )}
             >
               <Save />
@@ -130,11 +131,7 @@ export function Topbar() {
           <IconButton
             id="settingsBtn"
             aria-label={t('topbar.settings.aria')}
-            onClick={() => {
-              // Open dispatched via the same channel main uses for the
-              // Settings menu item. The SettingsOverlay listens for it.
-              window.dispatchEvent(new CustomEvent('deck:open-settings'))
-            }}
+            onClick={() => void useSettingsModal.getState().requestOpen()}
           >
             <SettingsIcon />
           </IconButton>
@@ -152,6 +149,12 @@ export function Topbar() {
  * The segmented control shows current state directly: highlighted
  * segment = current sub-view. Clicking the inactive segment switches.
  */
+// Why this isn't `bits.tsx::Segmented`: visual idiom differs (macOS-style
+// raised pill via shadow vs. flat bg-line highlight), size is fixed at
+// 24px to match neighboring IconButtons, segments carry icons + per-side
+// tooltips. Generalizing Segmented to cover both call sites would add
+// size + active-style + node-label + tooltip-slot variants for one extra
+// caller; the duplication is shallow enough to keep them separate.
 function ModeToggle({ subView }: { subView: 'edit' | 'play' }) {
   const t = useI18n((s) => s.t)
   // Sizing target: total height = 24px to match neighboring IconButtons

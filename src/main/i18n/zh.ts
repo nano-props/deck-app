@@ -198,6 +198,11 @@ export const zh: Record<DictKey, string> = {
   'settings.apiKey.status.saved': '已为 {provider} 保存密钥。留空保持不变,粘贴新密钥可替换。',
   'settings.apiKey.status.default': '通过 safeStorage 存储在系统钥匙串中。',
   'settings.toggleReveal.title': '显示 / 隐藏',
+  'settings.toggleReveal.show': '显示',
+  'settings.toggleReveal.hide': '隐藏',
+  'settings.apiKey.clearInput': '清空输入',
+  'settings.apiKey.deleteSaved': '删除已保存的 API key',
+  'settings.apiKey.deleteConfirm': '确定删除 {provider} 已保存的 API key 吗？',
   'settings.save': '保存',
   'settings.clearKey': '清除密钥',
   'settings.testConnection': '测试连接',
@@ -217,10 +222,6 @@ export const zh: Record<DictKey, string> = {
   'settings.thinking.medium': '中',
   'settings.thinking.high': '高',
   'settings.thinking.xhigh': '超高',
-  'settings.bash': '启用 bash 工具',
-  'settings.bash.hint':
-    '允许 AI 运行 shell 命令（macOS 沙箱：只能写入演示文稿目录、无网络访问）。其他系统暂不支持。',
-  'settings.bash.unavailable': '当前系统不支持 bash 沙箱（仅 macOS）。',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': '移除',

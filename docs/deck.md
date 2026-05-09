@@ -61,7 +61,7 @@ All paths are under `app.getPath('userData')`:
 
 ```
 userData/
-├── settings.json             # theme, AI provider choice, per-provider model, custom-endpoint configs
+├── settings.json             # AI provider choice, per-provider model, custom-endpoint configs, thinking level, compaction thresholds, UI language
 ├── secrets.json              # API keys, encrypted via Electron safeStorage (OS keychain / DPAPI / secret-service)
 ├── recents.json              # MRU list of recently opened Decks (max 10)
 └── chats/                    # AI session transcripts
@@ -69,7 +69,7 @@ userData/
         └── <timestamp>_<sid>.jsonl
 ```
 
-- `settings.json`, `secrets.json`, `recents.json`: plain JSON, rewritten on change. API keys in `secrets.json` are base64 ciphertext produced by `safeStorage.encryptString` — the app refuses to store plaintext when the OS keychain is unavailable.
+- `settings.json`, `secrets.json`, `recents.json`: plain JSON, rewritten on change. API keys in `secrets.json` are base64 ciphertext produced by `safeStorage.encryptString` — the app refuses to store plaintext when the OS keychain is unavailable. **Theme is intentionally NOT in `settings.json`**: it lives in the renderer's `localStorage` under `deck:theme`, because an inline boot script in `index.html` has to resolve it before any IPC round-trip to avoid a white→dark flash on app launch.
 - `chats/<deckId>/<…>.jsonl`: append-only session log managed by `@earendil-works/pi-coding-agent`'s `SessionManager`. The `deckId` hashes the deck's user-facing identity (the `.deck` file path or the directory the user opened), NOT the temp-extraction `rootDir` — a Pack's rootDir is a fresh tmpdir on every open and would split the chat history across opens otherwise. Resuming the most recent session for a deck continues it; starting fresh creates a new file.
 - There is no longer a `workspaces/` directory. Pack edits live in `os.tmpdir()/deck-app/<uuid>/` for the lifetime of the open and are removed after the close-time rezip.
 
@@ -146,15 +146,21 @@ The left/right split is driven by real geometry. `TOPBAR_PX = 32` lives in `src/
 
 - **Conversational generation**: _"Make a 10-slide deck about Transformers"_, _"Change slide 3 to a dark theme"_.
 - **Tool use** — we reuse the tool factories from [`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), wrapped with a sandbox that rejects any path outside the Deck Source (with a read-only allowlist for the bundled `skills/` directory so SKILL.md can be read by absolute path):
-  - `read_file` — read any file in the Deck Source or `skills/`.
-  - `write_file` — create or overwrite a file inside the Deck Source.
-  - `edit_file` — string-replace edit inside a single file.
-  - `list_dir` — list entries inside the Deck Source.
-  - `add_asset` — our own tool for ingesting the binary payloads the renderer stages (images / fonts / video). Takes `{ path, base64 }`; writes under `assets/` by default.
+  - `read` — read any file in the Deck Source or `skills/`.
+  - `write` — create or overwrite a file inside the Deck Source.
+  - `edit` — string-replace edit inside a single file.
+  - `ls` — list entries inside the Deck Source.
+  - `grep` — search file contents for a regex (Node-native scanner; skips `node_modules` / `.git` / dotfiles / binaries by default).
+  - `find` — locate files by glob (Node-native walker).
+  - `add_asset` — Deck-specific: ingest the binary payloads the renderer stages (images / fonts / video). Takes `{ path, base64 }`; writes under `assets/` by default.
+  - `delete_file` — Deck-specific: remove a single file. Refuses directories and the reserved files (`deck.json`, `index.html`).
+  - `move_file` — Deck-specific: rename / relocate a file inside the Deck Source. Both endpoints stay sandboxed; cross-device renames fall back to copy + delete; refuses to clobber or relocate the reserved files.
+  - `fetch_url` — Deck-specific: download an http(s) URL into the Deck Source (default: `assets/<name>`). 25 MB cap, http(s) only, routes through Electron's `net.fetch` so the user's session / proxy applies.
+  - `validate_deck` — Deck-specific, read-only: parses `deck.json` and scans `index.html` for missing `src` / `href` references. Use after structural changes to confirm the deck still loads.
 
-  `bash`, `grep`, `find`, and `list_skills` / `read_skill` are **intentionally absent**. No shell access in a desktop app; no external binaries auto-downloaded at runtime. See the comment block at the top of `src/main/ai/tools.ts` for the full rationale.
+  `bash` and `list_skills` / `read_skill` are **intentionally absent**. No shell access in a desktop app (the prior `sandbox-exec`-based bash tool was removed in favor of the fine-grained read/write/edit/ls/grep/find surface). pi's defaults for `grep` / `find` shell out to `rg` / `fd` and silently download those binaries on first use — we override the operations with Node-native implementations so there are no surprise external binaries at runtime. Skills are surfaced via absolute paths in the system prompt and read with the standard `read` tool. See the comment block at the top of `src/main/ai/tools.ts` for the full rationale.
 
-- **Context**: the system prompt includes a two-level listing of the Deck Source plus the `deck.json` summary, so the model can orient without a preliminary `list_dir` call.
+- **Context**: the system prompt includes a two-level listing of the Deck Source plus the `deck.json` summary, so the model can orient without a preliminary `ls` call.
 - **Models**: provider-agnostic. Built-in choices (`src/main/ai/provider.ts`):
   - Anthropic — `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5`.
   - OpenAI — `gpt-5.1`, `gpt-5`, `gpt-5-mini`.

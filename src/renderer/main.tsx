@@ -1,6 +1,7 @@
 // React entry. Imports stores for their side-effect subscriptions, then
 // mounts <App />.
 
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 
@@ -26,4 +27,13 @@ window.addEventListener('unhandledrejection', (e) => {
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found in index.html')
-createRoot(root).render(<App />)
+// StrictMode is dev-only (stripped in production). It mounts each
+// component twice on first render to surface effects that aren't
+// idempotent / lack proper cleanups. All current effects have been
+// audited to handle the double-fire safely (dedup'd ResizeObserver
+// pushes, debounced localStorage writes, ipcRenderer.off cleanups).
+createRoot(root).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)

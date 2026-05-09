@@ -1,26 +1,7 @@
 {
-  "compilerOptions": {
-    "strict": true,
-    "target": "ES2024",
-    "module": "NodeNext",
-    "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "moduleResolution": "NodeNext",
-    "paths": {
-      "#/*": ["./src/*"]
-    },
-    "types": ["node", "bun"],
-    "resolveJsonModule": true,
-    "allowJs": true,
-    "checkJs": false,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "skipLibCheck": true
-  },
-  "include": ["src/**/*.ts", "src/**/*.js", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "dist", "release", "src/renderer"]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.main.json" },
+    { "path": "./tsconfig.renderer.json" }
+  ]
 }

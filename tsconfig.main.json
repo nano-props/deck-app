@@ -2,9 +2,8 @@
   "compilerOptions": {
     "target": "ES2024",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
     "paths": {
       "#/*": ["./src/*"]
@@ -12,14 +11,16 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
+    "allowJs": true,
+    "checkJs": false,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": []
+    "types": ["node", "bun"]
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"],
-  "exclude": ["node_modules", "dist", "release"]
+  "include": ["src/**/*.ts", "src/**/*.js", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist", "release", "src/renderer"]
 }

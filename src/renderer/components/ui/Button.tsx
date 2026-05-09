@@ -28,8 +28,7 @@ export const button = tv({
       ghost: cn('h-9 px-3.5 text-[13px] bg-transparent text-ink border-transparent', 'hover:bg-line'),
       danger: cn(
         'h-9 px-3.5 text-[13px] bg-transparent border-transparent',
-        'text-[#c43a3a] hover:bg-line',
-        "dark:text-[#ff7a7a]",
+        'text-danger hover:bg-line',
       ),
     },
     size: {
@@ -52,7 +51,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { className, variant, size, type = 'button', ...rest },
   ref,
 ) {
-  return <button ref={ref} type={type} className={cn(button({ variant, size }), className)} {...rest} />
+  // The `data-on-solid` marker tells nested `.kbd` chips (see styles.css)
+  // to flip to a translucent fill that reads against a solid-color
+  // button background. Coupling it to the `primary` variant here keeps
+  // the styling self-consistent — callers don't have to remember to
+  // pair the two manually, and it can't be misapplied to a surface-bg
+  // variant (which would render an invisible kbd chip).
+  const onSolid = variant === 'primary' ? '' : undefined
+  return (
+    <button
+      ref={ref}
+      type={type}
+      data-on-solid={onSolid}
+      className={cn(button({ variant, size }), className)}
+      {...rest}
+    />
+  )
 })
 
 // ---- Icon button --------------------------------------------------------

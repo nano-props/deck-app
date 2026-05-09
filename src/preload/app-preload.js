@@ -215,13 +215,9 @@ contextBridge.exposeInMainWorld('deck', {
     setApiKey: (provider, key) => ipcRenderer.invoke('settings:set-key', provider, key),
     clearApiKey: (provider) => ipcRenderer.invoke('settings:clear-key', provider),
     encryptionAvailable: () => ipcRenderer.invoke('settings:encryption-available'),
-    ping: () => ipcRenderer.invoke('settings:ping'),
+    ping: (overrides) => ipcRenderer.invoke('settings:ping', overrides),
     /** Returns { ready: boolean, reason?: string } — used to gate the
      *  composer Send button when the active provider isn't usable yet. */
     aiReadiness: () => ipcRenderer.invoke('settings:ai-readiness'),
-    /** True when the current OS supports the bash-sandbox path (macOS
-     *  with sandbox-exec). Settings UI uses this to disable the toggle
-     *  on unsupported platforms. */
-    bashAvailable: () => ipcRenderer.invoke('settings:bash-available'),
   },
 })

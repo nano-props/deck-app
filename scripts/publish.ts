@@ -3,7 +3,7 @@
 // and Windows (portable .exe x64), tags the current commit with the
 // package.json version, and uploads every artifact via `gh release create`.
 //
-// Usage: ./scripts/publish.ts [--proxy http://127.0.0.1:7890]
+// Usage: ./scripts/publish.ts [dryrun|--dryrun|--dry-run] [--proxy http://127.0.0.1:7890]
 import { $ } from 'bun'
 import { mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
@@ -15,9 +15,19 @@ $.cwd(repoRoot)
 
 const APP_NAME = 'Deck'
 
-const { values } = parseArgs({
-  options: { proxy: { type: 'string' } },
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: {
+    proxy: { type: 'string' },
+    dryrun: { type: 'boolean' },
+    'dry-run': { type: 'boolean' },
+  },
 })
+const isDryRun =
+  values.dryrun === true ||
+  values['dry-run'] === true ||
+  positionals.includes('dryrun') ||
+  positionals.includes('dry-run')
 
 if (values.proxy) {
   for (const k of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']) {
@@ -26,19 +36,23 @@ if (values.proxy) {
   console.log(`Using proxy: ${values.proxy}`)
 }
 
+if (isDryRun) {
+  console.log('Dry run: building artifacts only; skipping git tag, git push, and GitHub release upload.')
+}
+
 const { version } = (await Bun.file(path.join(repoRoot, 'package.json')).json()) as {
   version: string
 }
 const tag = `v${version}`
 
 // Refuse to publish from a dirty tree — the tag should point at a known commit.
-if ((await $`git status --porcelain`.text()).trim() !== '') {
+if (!isDryRun && (await $`git status --porcelain`.text()).trim() !== '') {
   console.error('Error: working directory is not clean. Commit or stash changes first.')
   process.exit(1)
 }
 
 // Refuse to overwrite an existing tag. Bumping requires a package.json change.
-if ((await $`git rev-parse ${tag}`.quiet().nothrow()).exitCode === 0) {
+if (!isDryRun && (await $`git rev-parse ${tag}`.quiet().nothrow()).exitCode === 0) {
   console.error(`Error: tag ${tag} already exists. Bump version in package.json first.`)
   process.exit(1)
 }
@@ -93,25 +107,39 @@ try {
   const exe = path.join(stash, path.basename(exeSrc))
   renameSync(exeSrc, exe)
 
-  await $`git tag -a ${tag} -m ${`Release ${tag}`}`
-  await $`git push origin ${tag}`
+  if (isDryRun) {
+    await $`rm -rf release`
+    mkdirSync(path.join(repoRoot, 'release'), { recursive: true })
+    const artifacts = [...dmgs, exe].map((src) => {
+      const dest = path.join(repoRoot, 'release', path.basename(src))
+      renameSync(src, dest)
+      return dest
+    })
+    console.log('Dry run complete. Artifacts:')
+    for (const artifact of artifacts) {
+      console.log(`- ${path.relative(repoRoot, artifact)}`)
+    }
+  } else {
+    await $`git tag -a ${tag} -m ${`Release ${tag}`}`
+    await $`git push origin ${tag}`
 
-  console.log(`Creating GitHub release ${tag} ...`)
-  try {
-    await $`gh release create ${tag} ${dmgs} ${exe} --title ${tag} --notes ${`Release ${tag}`}`
-  } catch (err) {
-    // The release didn't get created — leaving the tag in place orphans it.
-    // Roll back the remote tag and the local tag so the next attempt isn't
-    // blocked by "tag already exists" and so the upstream history doesn't
-    // collect dangling tags pointing at unreleased commits.
-    console.error('gh release create failed; rolling back tag.')
-    await $`git push origin :refs/tags/${tag}`.nothrow()
-    await $`git tag -d ${tag}`.nothrow()
-    throw err
+    console.log(`Creating GitHub release ${tag} ...`)
+    try {
+      await $`gh release create ${tag} ${dmgs} ${exe} --title ${tag} --notes ${`Release ${tag}`}`
+    } catch (err) {
+      // The release didn't get created — leaving the tag in place orphans it.
+      // Roll back the remote tag and the local tag so the next attempt isn't
+      // blocked by "tag already exists" and so the upstream history doesn't
+      // collect dangling tags pointing at unreleased commits.
+      console.error('gh release create failed; rolling back tag.')
+      await $`git push origin :refs/tags/${tag}`.nothrow()
+      await $`git tag -d ${tag}`.nothrow()
+      throw err
+    }
+
+    await $`rm -rf release`
+    console.log(`Published ${tag}`)
   }
-
-  await $`rm -rf release`
-  console.log(`Published ${tag}`)
 } finally {
   // Always clean the stash, even on failure — a leftover `release-publish/`
   // would not block the next attempt, but it would silently mix prior-run

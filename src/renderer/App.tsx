@@ -18,7 +18,12 @@ import { AppMenu } from '#/renderer/components/AppMenu.tsx'
 import { TooltipProvider } from '#/renderer/components/ui/Tooltip.tsx'
 
 export function App() {
-  const { mode, subView, isFullScreen } = useAppStore()
+  // Per-field selectors so App only re-renders when one of these three
+  // fields changes — the wider AppState (loading / deck / dirty) churns
+  // for unrelated reasons.
+  const mode = useAppStore((s) => s.mode)
+  const subView = useAppStore((s) => s.subView)
+  const isFullScreen = useAppStore((s) => s.isFullScreen)
 
   // Mirror state onto <body> data-* attributes for legacy CSS / platform
   // selectors that target them.

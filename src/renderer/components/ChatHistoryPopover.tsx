@@ -11,6 +11,7 @@ import { enUS, zhCN, ko } from 'date-fns/locale'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import type { Lang } from '#/main/i18n/index.ts'
 import { cn } from '#/renderer/lib/cn.ts'
+import { POPOVER_SURFACE } from '#/renderer/components/ui/popover-surface.ts'
 
 const LOCALES: Record<Lang, Locale> = { en: enUS, zh: zhCN, ko }
 
@@ -64,9 +65,9 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
           align="start"
           sideOffset={6}
           className={cn(
-            'z-[100] flex max-h-[60vh] min-w-[280px] max-w-[420px] flex-col overflow-hidden',
-            'rounded-xl border border-line-2 bg-surface shadow-card-lift',
-            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1',
+            POPOVER_SURFACE,
+            'flex max-h-[60vh] min-w-[280px] max-w-[420px] flex-col rounded-xl',
+            'data-[state=open]:slide-in-from-bottom-1',
           )}
         >
           {sessions === null && <div className="px-4 py-6 text-center text-[12px] text-ink-4" />}
@@ -124,6 +125,7 @@ function SessionRow({
     <div
       role="menuitem"
       tabIndex={0}
+      aria-current={active ? 'true' : undefined}
       onClick={onSwitch}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -146,7 +148,7 @@ function SessionRow({
       <button
         type="button"
         aria-label={t('composer.history.delete.aria')}
-        className="inline-flex size-6 items-center justify-center rounded text-ink-4 opacity-0 transition-opacity hover:bg-line hover:text-[#c43a3a] group-hover:opacity-100 focus-visible:opacity-100"
+        className="inline-flex size-6 items-center justify-center rounded text-ink-4 opacity-0 transition-opacity hover:bg-line hover:text-danger group-hover:opacity-100 focus-visible:opacity-100"
         onClick={(e) => {
           e.stopPropagation()
           onDelete()

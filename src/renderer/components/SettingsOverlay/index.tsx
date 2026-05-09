@@ -1,12 +1,20 @@
 // Settings modal — Theme + Language + AI provider/key form.
 // Wraps Radix Dialog so focus trap + Esc + outside-click come for free.
+//
+// Open / close + snapshot underlay live in `useSettingsModal` so other
+// components (Topbar button, main-process menu push, future hotkeys)
+// can drive the modal without a CustomEvent relay. This component owns
+// the side-effects: hide/show the deckView, refresh AI readiness on
+// close, and time the close-fade-then-clear-snapshot dance.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import * as RD from '@radix-ui/react-dialog'
 import * as RTabs from '@radix-ui/react-tabs'
 import { X } from 'lucide-react'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { useAiStore } from '#/renderer/stores/ai.ts'
+import { useAppStore } from '#/renderer/stores/app.ts'
+import { useSettingsModal } from '#/renderer/stores/settings-modal.ts'
 import { IconButton } from '#/renderer/components/ui/Button.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
 import { AppearanceTab } from '#/renderer/components/SettingsOverlay/AppearanceTab.tsx'
@@ -23,46 +31,28 @@ function deckRevealDelayMs(): number {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : FADE_OUT_DELAY_MS
 }
 
-type DeckSnapshot = { dataUrl: string; rect: { x: number; y: number; width: number; height: number } }
-
 export function SettingsOverlay() {
   const t = useI18n((s) => s.t)
-  const [open, setOpen] = useState(false)
-  // Snapshot of the deckView painted at its last-known bounds. Held
-  // under the modal so the translucent mask actually has the deck
-  // behind it — without this, hiding the deckView leaves only the
-  // chromeView's empty background showing through, which reads as a
-  // flat gray. Cleared after the close fade so the next open captures
-  // a fresh frame (the deck may have changed in between).
-  const [snapshot, setSnapshot] = useState<DeckSnapshot | null>(null)
+  // Subscribe to reactive state via selectors so React re-renders when
+  // they change. Actions (`requestOpen` / `close` / `_clearSnapshot`)
+  // are fetched via `getState()` at call time — zustand actions have
+  // stable identity across renders, so subscribing to them via
+  // selectors would just add noise without ever causing a re-render.
+  const open = useSettingsModal((s) => s.open)
+  const snapshot = useSettingsModal((s) => s.snapshot)
   // Tracks whether the modal has ever opened in this component's lifetime.
   // Used to skip the close-side effects on initial mount, where `open` is
   // false but no real "close" has occurred — without this we'd fire a
   // pointless IPC + readiness refresh every time Editor loads.
   const hasOpenedRef = useRef(false)
 
-  // Open via Topbar button (CustomEvent) AND main-process menu push.
-  // Capture the deck frame BEFORE flipping `open` — otherwise the modal
-  // fades in over the empty chromeView for a frame while we wait on the
-  // capturePage round-trip.
+  // Subscribe to main-process pushes (menu → "Settings…"). Topbar's
+  // button calls requestOpen() directly via the store, no IPC needed.
   useEffect(() => {
-    const openWithCapture = async () => {
-      try {
-        const snap = await window.deck.captureDeckView()
-        if (snap) setSnapshot(snap)
-      } catch {
-        // capturePage can fail mid-teardown; modal still opens, just
-        // without the deck behind it (matches the legacy behavior).
-      }
-      setOpen(true)
-    }
-    const onCustom = () => void openWithCapture()
-    window.addEventListener('deck:open-settings', onCustom)
-    const off = window.deck.onOpenSettings(() => void openWithCapture())
-    return () => {
-      window.removeEventListener('deck:open-settings', onCustom)
-      off()
-    }
+    const off = window.deck.onOpenSettings(() => {
+      void useSettingsModal.getState().requestOpen()
+    })
+    return off
   }, [])
 
   // Refresh the AI readiness gate when the overlay closes — the user
@@ -103,7 +93,7 @@ export function SettingsOverlay() {
       // the modal's backdrop to chrome bg for a frame.
       rafId = requestAnimationFrame(() => {
         rafId = 0
-        setSnapshot(null)
+        useSettingsModal.getState()._clearSnapshot()
       })
     }, deckRevealDelayMs())
     return () => {
@@ -113,7 +103,16 @@ export function SettingsOverlay() {
   }, [open])
 
   return (
-    <RD.Root open={open} onOpenChange={setOpen}>
+    <RD.Root
+      open={open}
+      onOpenChange={(next) => {
+        // Radix calls onOpenChange(false) for Esc / outside-click / Close
+        // button — we wire those to `close()`. We never actually receive
+        // `true` here because `open` only flips to true via store
+        // actions (Topbar button or main-process push), not via Radix.
+        if (!next) useSettingsModal.getState().close()
+      }}
+    >
       <RD.Portal>
         {snapshot ? (
           <img
@@ -132,6 +131,10 @@ export function SettingsOverlay() {
         ) : null}
         <RD.Overlay className="fixed inset-0 z-[100] bg-[rgb(10_10_10/0.55)] backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
         <RD.Content
+          // Radix nags in dev when DialogContent has no aria-describedby;
+          // we have a Title but no separate descriptive paragraph (the
+          // settings tabs ARE the body), so opt out of the warning by
+          // explicitly setting it to undefined.
           aria-describedby={undefined}
           className={cn(
             // Fixed dimensions so the modal doesn't resize between tabs —
@@ -159,11 +162,18 @@ export function SettingsOverlay() {
 
 function SettingsBody() {
   const t = useI18n((s) => s.t)
+  // AI tab is suppressed in Player (presentation) mode: the user is
+  // mid-demo and shouldn't be one click away from API keys / provider
+  // switches. Appearance still works (theme / language tweaks during a
+  // live deck are harmless). Hidden trigger + content together keeps
+  // the Tabs state machine consistent — defaultValue="appearance"
+  // matches whichever set of triggers is rendered.
+  const showAiTab = useAppStore((s) => s.subView !== 'play')
   return (
     <RTabs.Root defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
       <RTabs.List aria-label={t('settings.title')} className="flex shrink-0 gap-1 border-b border-line px-4 pt-2">
         <SettingsTab value="appearance" label={t('settings.appearance')} />
-        <SettingsTab value="ai" label={t('settings.ai')} />
+        {showAiTab && <SettingsTab value="ai" label={t('settings.ai')} />}
       </RTabs.List>
 
       {/* Tab pane — the only scrolling region. */}
@@ -171,9 +181,11 @@ function SettingsBody() {
         <RTabs.Content value="appearance" className="focus-visible:outline-none">
           <AppearanceTab />
         </RTabs.Content>
-        <RTabs.Content value="ai" className="focus-visible:outline-none">
-          <AiTab />
-        </RTabs.Content>
+        {showAiTab && (
+          <RTabs.Content value="ai" className="focus-visible:outline-none">
+            <AiTab />
+          </RTabs.Content>
+        )}
       </div>
     </RTabs.Root>
   )

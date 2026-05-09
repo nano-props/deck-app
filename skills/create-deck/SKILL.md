@@ -66,7 +66,7 @@ Four easy-to-miss rules. Read `reference/spec-lite.md` §4–§5 for the full CS
 - **No external network.** Strict CSP blocks all cross-origin fetches — no CDN scripts, no Google Fonts `<link>`, no remote images, no third-party `fetch()`. **Vendor everything** into the Deck Source and use relative paths. `data:` / `blob:` URLs are fine for images.
 - **No `window.deck` API.** `index.html` is a plain web page; nothing is injected.
 - **Pagination is the author's job.** The Deck App has no concept of a "slide". Wire your own `keydown` listener (the minimal template already does) or vendor a framework like reveal.js.
-- **Don't bind container keys.** `Esc`, `F11`, `Cmd+Ctrl+F` are swallowed by the Deck App; everything else (arrows, Space, letters, …) reaches the page.
+- **Don't bind container keys.** `Esc`, `F11`, `Cmd+Ctrl+F` are swallowed by the Deck App. Also: **don't bind any `Cmd`/`Ctrl` modifier combo** as a Deck shortcut — Electron's menu dispatcher intercepts most of them (`Cmd+W`/`R`/`E`/`S`/`,`/`N`/`O` etc.) before the page sees them. Plain keys (arrows, Space, letters, PageUp/Down) always reach the page.
 
 Forward compatibility: unknown `deck.json` fields are ignored. Don't block on schema validation.
 

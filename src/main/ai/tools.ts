@@ -1,11 +1,12 @@
 import {
-  createBashTool,
   createEditTool,
+  createFindTool,
   createLsTool,
   createReadTool,
   createWriteTool,
   withFileMutationQueue,
   type EditOperations,
+  type FindOperations,
   type LsOperations,
   type ReadOperations,
   type WriteOperations,
@@ -13,45 +14,46 @@ import {
 import { type AgentTool } from '@earendil-works/pi-agent-core'
 import { type Static, Type } from '@earendil-works/pi-ai'
 import { existsSync, statSync } from 'node:fs'
-import { access, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { createSandboxedBashOperations, isBashSandboxAvailable } from '#/main/ai/sandbox/bash-sandbox.ts'
+import { net } from 'electron'
+import {
+  compileGlob,
+  createDeckGrepTool,
+  IGNORED_DIRS,
+  walkFiles,
+  type GrepOps,
+} from '#/main/ai/grep-tool.ts'
 import { skillsRoot } from '#/main/skills.ts'
 
 /**
  * Tool surface for the Edit sub-view's Agent.
  *
- * We use pi-coding-agent's tool factories (read / write / edit / ls)
- * rather than hand-rolling them — they're the same tools the `pi` CLI
- * ships, so the prompt behavior and tool-calling ergonomics are
- * well-exercised. Every factory takes an `operations` object; we plug
- * in a *sandboxed* implementation that rejects any path outside the
+ * We use pi-coding-agent's tool factories (read / write / edit / ls /
+ * grep / find) rather than hand-rolling them — they're the same tools
+ * the `pi` CLI ships, so the prompt behavior and tool-calling ergonomics
+ * are well-exercised. Every factory takes an `operations` object; we
+ * plug in a *sandboxed* implementation that rejects any path outside the
  * Deck Source (plus a read-only allowlist for the bundled skills
  * directory, so the model can read SKILL.md by its absolute path).
  *
- * One Deck-specific tool remains: `add_asset`. pi has no base64 binary
- * inject tool, and we need one because renderer attachment chips arrive
- * over IPC as bytes. Writing via `write_file` would require the model
- * to base64-round-trip through its own transcript — wasteful.
+ * One Deck-specific tool: `add_asset`. pi has no base64 binary inject
+ * tool, and we need one because renderer attachment chips arrive over
+ * IPC as bytes. Writing via `write_file` would require the model to
+ * base64-round-trip through its own transcript — wasteful.
  *
- * Optional `bash` (off by default, opt-in via Settings → Enable bash):
- *   When enabled on macOS we register a bash tool that runs every
- *   command through `sandbox-exec` with read-anywhere /
- *   write-only-in-rootDir / no-network. That's strict enough that an
- *   adversarial command from the model can't exfiltrate or persist
- *   state outside the deck source, while still letting the agent
- *   reach for `sed`, `awk`, ImageMagick, etc. when scripted edits are
- *   easier than hand-rolling a tool. Linux/Windows currently get no
- *   bash — sandbox-exec is darwin-only and we don't ship an
- *   equivalent yet.
+ * grep / find: pi's defaults shell out to `rg` / `fd` and will silently
+ * download those binaries from GitHub on first use. We override that
+ * by providing custom `operations` — find runs through a Node glob
+ * implementation, grep runs a Node-native scanner. No external binaries,
+ * no surprise network I/O.
  *
  * Notably absent:
- *   - `grep` / `find` — pi's implementations spawn external binaries
- *     (`rg` / `fd`) and will silently download them to `~/.pi/agent/`
- *     on first use. That's fine in the CLI but crosses our "no
- *     unexpected network I/O" line for a desktop app. With bash on,
- *     the agent can still run `grep -r` / `find` against the deck
- *     inside the sandbox.
+ *   - `bash` — letting an LLM run arbitrary shell commands is an
+ *     unbounded capability; the read/write/edit/ls/grep/find surface
+ *     covers everything Deck authoring actually needs. Removed in
+ *     favor of fine-grained tools (see git history for the prior
+ *     sandbox-exec wrapper).
  *   - `list_skills` / `read_skill` — pi's convention is that the system
  *     prompt lists skills with absolute paths, and the model reads them
  *     with the standard `read` tool. We allowlist skillsRoot() below.
@@ -62,22 +64,13 @@ export interface DeckToolsContext {
   rootDir: string
   /**
    * Optional notifier invoked after a tool mutates the Deck Source
-   * (write / edit / add_asset). Used by the Edit sub-view to auto-reload
-   * the preview once the agent has finished editing. Path is relative
-   * to rootDir when the write landed in the Deck; absolute otherwise
-   * (shouldn't happen given sandbox, but the type is defensive).
+   * (write / edit / add_asset / delete_file / move_file / fetch_url).
+   * Used by the Edit sub-view to auto-reload the preview once the agent
+   * has finished editing. Path is relative to rootDir, POSIX-style.
+   * `move_file` fires it twice — once for the source, once for the
+   * destination — so a watcher / preview reload picks up both sides.
    */
   onFileChange?: (relPath: string) => void
-  /**
-   * Register the optional `bash` tool. Caller is expected to pass the
-   * *effective* gate (user opted in AND the OS supports the sandbox);
-   * we still re-check `isBashSandboxAvailable()` defensively so a
-   * misuse here can't bypass the isolation. See bash-sandbox.ts for
-   * the profile. Note: bash bypasses our `onFileChange` notifier —
-   * chokidar picks bash-driven writes up via the watcher path instead,
-   * so the preview still reloads (with the watcher's normal debounce).
-   */
-  enableBash?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +212,7 @@ function writeOps(ctx: DeckToolsContext): WriteOperations {
     writeFile: async (abs, content) => {
       await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       await writeFile(abs, content, 'utf-8')
-      const rel = toRelInsideRoot(abs, ctx.rootDir)
+      const rel = toRelPosix(abs, ctx.rootDir)
       if (rel !== null) ctx.onFileChange?.(rel)
     },
     mkdir: async (dir) => {
@@ -240,7 +233,7 @@ function editOps(ctx: DeckToolsContext): EditOperations {
     writeFile: async (abs, content) => {
       await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
       await writeFile(abs, content, 'utf-8')
-      const rel = toRelInsideRoot(abs, ctx.rootDir)
+      const rel = toRelPosix(abs, ctx.rootDir)
       if (rel !== null) ctx.onFileChange?.(rel)
     },
     access: async (abs) => {
@@ -265,6 +258,91 @@ function lsOps(rootDir: string): LsOperations {
       return readdir(abs)
     },
   }
+}
+
+function grepOps(rootDir: string): GrepOps {
+  return {
+    isDirectory: async (abs) => {
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
+      return (await stat(abs)).isDirectory()
+    },
+    readFile: async (abs) => {
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
+      return readFile(abs, 'utf-8')
+    },
+  }
+}
+
+/**
+ * Find ops with a Node-native glob impl. Providing a `glob` function
+ * short-circuits pi's fd path entirely (see pi-coding-agent's find.ts:
+ * `if (customOps?.glob) { ...; return; }` runs before `ensureTool('fd')`).
+ *
+ * Glob syntax + walk semantics are shared with grep via grep-tool.ts —
+ * keeping both tools consistent on what counts as "skip this directory"
+ * and what `**` means.
+ *
+ * Pi's loop only validates `exists()` upstream, so a model passing a
+ * file path would otherwise hit `readdir`'s ENOTDIR and get a confusing
+ * "no files found" (or worse — pi relativizes `[cwd]` against itself
+ * to a single empty-string line). We refuse that call up front.
+ */
+function findOps(rootDir: string): FindOperations {
+  return {
+    exists: async (abs) => {
+      await ensureInSandbox(abs, rootDir, /* writable */ false)
+      return existsSync(abs)
+    },
+    glob: async (pattern, cwd, options) => {
+      await ensureInSandbox(cwd, rootDir, /* writable */ false)
+
+      // stat throws on broken symlinks / permission denials; treat that
+      // as "not provably a file" and let the walk produce an empty result.
+      let cwdStats: import('node:fs').Stats | undefined
+      try {
+        cwdStats = await stat(cwd)
+      } catch {
+        // fall through
+      }
+      if (cwdStats?.isFile()) {
+        throw new Error(
+          `find expects a directory, got a file: ${cwd}. ` +
+            `Use the read tool to inspect a single file's contents.`,
+        )
+      }
+
+      const { re, anchored } = compileGlob(pattern)
+      const results: string[] = []
+      for await (const file of walkFiles(cwd, IGNORED_DIRS)) {
+        if (results.length >= options.limit) break
+        const rel = path.relative(cwd, file).replace(/\\/g, '/')
+        const target = anchored ? rel : path.basename(rel)
+        if (re.test(target)) results.push(file)
+      }
+      return results
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reserved-path policy
+// ---------------------------------------------------------------------------
+
+/**
+ * Files the agent must reach via `write` / `edit`, not via the
+ * convenience tools (`add_asset` for binaries, `delete_file` /
+ * `move_file` for structural changes). Clobbering or losing these by
+ * accident breaks the deck — the load path expects them at fixed names.
+ *
+ * Kept module-level so every tool that mutates the tree applies the
+ * same list. Compared as POSIX paths relative to rootDir.
+ */
+const RESERVED_DECK_FILES: ReadonlySet<string> = new Set(['deck.json', 'index.html'])
+
+function toRelPosix(abs: string, rootDir: string): string | null {
+  const rel = toRelInsideRoot(abs, rootDir)
+  if (rel === null) return null
+  return rel.split(path.sep).join('/')
 }
 
 // ---------------------------------------------------------------------------
@@ -308,9 +386,8 @@ function addAssetTool(ctx: DeckToolsContext): AgentTool<typeof addAssetSchema> {
         throw new Error(`Asset filename needs an extension: ${params.path}`)
       }
       // Reserved authoring files — agent uses `write` / `edit` for those.
-      const RESERVED = new Set(['deck.json', 'index.html'])
       const relPosix = rel.split(path.sep).join('/')
-      if (RESERVED.has(relPosix)) {
+      if (RESERVED_DECK_FILES.has(relPosix)) {
         throw new Error(`Refusing to overwrite ${relPosix} via add_asset; use write/edit instead.`)
       }
       const abs = path.resolve(ctx.rootDir, rel)
@@ -330,6 +407,438 @@ function addAssetTool(ctx: DeckToolsContext): AgentTool<typeof addAssetSchema> {
 }
 
 // ---------------------------------------------------------------------------
+// delete_file — remove a single file from the Deck Source
+// ---------------------------------------------------------------------------
+
+const deleteFileSchema = Type.Object(
+  {
+    path: Type.String({
+      description:
+        'Path of the file to delete. Relative paths resolve against the Deck Source root. ' +
+        'Directories are not supported — use repeated calls if needed.',
+    }),
+  },
+  { additionalProperties: false },
+)
+type DeleteFileParams = Static<typeof deleteFileSchema>
+
+function deleteFileTool(ctx: DeckToolsContext): AgentTool<typeof deleteFileSchema> {
+  return {
+    name: 'delete_file',
+    label: 'Delete file',
+    description:
+      'Permanently delete a single file inside the Deck Source. Refuses directories ' +
+      'and the reserved files (deck.json, index.html) — those are edited, not deleted. ' +
+      'Use this rather than emulating delete via write_file with empty content.',
+    parameters: deleteFileSchema,
+    execute: async (_id, params: DeleteFileParams) => {
+      const abs = path.resolve(ctx.rootDir, params.path)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      const relPosix = toRelPosix(abs, ctx.rootDir)
+      if (relPosix === null) {
+        // ensureInSandbox should already have thrown, but defense in depth.
+        throw new Error(`Path escapes the Deck sandbox: ${params.path}`)
+      }
+      if (relPosix === '') {
+        throw new Error('Refusing to delete the Deck Source root.')
+      }
+      if (RESERVED_DECK_FILES.has(relPosix)) {
+        throw new Error(`Refusing to delete ${relPosix}; use write/edit to modify it instead.`)
+      }
+      let st: import('node:fs').Stats
+      try {
+        st = await stat(abs)
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code
+        if (code === 'ENOENT') throw new Error(`File not found: ${relPosix}`)
+        throw e
+      }
+      if (st.isDirectory()) {
+        throw new Error(
+          `delete_file targets a directory: ${relPosix}. Directory removal is not supported.`,
+        )
+      }
+      await withFileMutationQueue(abs, async () => {
+        await unlink(abs)
+      })
+      ctx.onFileChange?.(relPosix)
+      return {
+        content: [{ type: 'text', text: `Deleted ${relPosix}` }],
+        details: { path: relPosix },
+      }
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// move_file — rename / move a file within the Deck Source
+// ---------------------------------------------------------------------------
+
+const moveFileSchema = Type.Object(
+  {
+    from: Type.String({ description: 'Existing path, relative to the Deck Source root.' }),
+    to: Type.String({
+      description:
+        'Destination path, relative to the Deck Source root. Parent directories are ' +
+        'created as needed. Overwriting an existing file is refused unless overwrite=true.',
+    }),
+    overwrite: Type.Optional(
+      Type.Boolean({
+        description: 'Allow replacing an existing file at the destination (default: false).',
+      }),
+    ),
+  },
+  { additionalProperties: false },
+)
+type MoveFileParams = Static<typeof moveFileSchema>
+
+function moveFileTool(ctx: DeckToolsContext): AgentTool<typeof moveFileSchema> {
+  return {
+    name: 'move_file',
+    label: 'Move file',
+    description:
+      'Rename or move a single file inside the Deck Source. Both endpoints must stay ' +
+      'within the Deck Source. Refuses to clobber or relocate the reserved files ' +
+      '(deck.json, index.html). Cross-device renames fall back to copy+delete.',
+    parameters: moveFileSchema,
+    execute: async (_id, params: MoveFileParams) => {
+      const fromAbs = path.resolve(ctx.rootDir, params.from)
+      const toAbs = path.resolve(ctx.rootDir, params.to)
+      await ensureInSandbox(fromAbs, ctx.rootDir, /* writable */ true)
+      await ensureInSandbox(toAbs, ctx.rootDir, /* writable */ true)
+      const fromRel = toRelPosix(fromAbs, ctx.rootDir)
+      const toRel = toRelPosix(toAbs, ctx.rootDir)
+      if (fromRel === null || toRel === null) {
+        throw new Error('Both `from` and `to` must be inside the Deck Source.')
+      }
+      if (fromRel === '' || toRel === '') {
+        throw new Error('Refusing to move the Deck Source root.')
+      }
+      if (fromRel === toRel) {
+        // No-op rename — return early so we don't churn the file watcher.
+        return {
+          content: [{ type: 'text', text: `move_file no-op: ${fromRel} == ${toRel}` }],
+          details: { from: fromRel, to: toRel, noop: true },
+        }
+      }
+      if (RESERVED_DECK_FILES.has(fromRel)) {
+        throw new Error(`Refusing to move reserved file ${fromRel}; edit it in place.`)
+      }
+      if (RESERVED_DECK_FILES.has(toRel)) {
+        throw new Error(
+          `Refusing to overwrite reserved file ${toRel} via move_file; use write/edit instead.`,
+        )
+      }
+
+      let fromStat: import('node:fs').Stats
+      try {
+        fromStat = await stat(fromAbs)
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code
+        if (code === 'ENOENT') throw new Error(`Source not found: ${fromRel}`)
+        throw e
+      }
+      if (fromStat.isDirectory()) {
+        throw new Error(
+          `move_file targets a directory: ${fromRel}. Directory moves are not supported.`,
+        )
+      }
+
+      if (existsSync(toAbs)) {
+        const toStat = statSync(toAbs)
+        if (toStat.isDirectory()) {
+          throw new Error(`Destination is a directory: ${toRel}. Pass a file path.`)
+        }
+        if (!params.overwrite) {
+          throw new Error(`Destination already exists: ${toRel}. Pass overwrite=true to replace.`)
+        }
+      }
+
+      await mkdir(path.dirname(toAbs), { recursive: true })
+      // Two file paths share one move — lock both (alphabetically) so a
+      // concurrent edit on either side serializes against us.
+      const [a, b] = fromAbs < toAbs ? [fromAbs, toAbs] : [toAbs, fromAbs]
+      await withFileMutationQueue(a, async () => {
+        await withFileMutationQueue(b, async () => {
+          try {
+            await rename(fromAbs, toAbs)
+          } catch (e) {
+            // EXDEV: source/dest live on different filesystems (rare but
+            // possible if rootDir is a bind-mount or a tmpdir on another
+            // device). Fall back to copy + unlink so move_file works
+            // anywhere. Anything else is a real error.
+            const code = (e as NodeJS.ErrnoException).code
+            if (code !== 'EXDEV') throw e
+            const buf = await readFile(fromAbs)
+            await writeFile(toAbs, buf)
+            await unlink(fromAbs)
+          }
+        })
+      })
+      // Notify both sides so the watcher / preview reload picks up
+      // disappearance and appearance.
+      ctx.onFileChange?.(fromRel)
+      ctx.onFileChange?.(toRel)
+      return {
+        content: [{ type: 'text', text: `Moved ${fromRel} → ${toRel}` }],
+        details: { from: fromRel, to: toRel },
+      }
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// validate_deck — sanity-check deck.json + index.html references
+// ---------------------------------------------------------------------------
+
+/**
+ * Pull all `src` / `href` values out of an HTML string. Intentionally
+ * regex-based (not a full HTML parser): the rendered page itself is
+ * what runs in production, and we just want a low-cost "did the model
+ * reference a path that doesn't exist". Misses fancy cases (CSS
+ * `url(...)`, dynamic `import()`, `<source srcset>`); good enough as a
+ * smoke test, and the model can still ask `read` for a deeper look.
+ *
+ * HTML comments are stripped before scanning so a commented-out
+ * `<img src="old.png">` doesn't produce a false-positive "missing
+ * referenced file" — the browser ignores those, and so should we.
+ */
+function extractHtmlRefs(html: string): string[] {
+  const stripped = html.replace(/<!--[\s\S]*?-->/g, '')
+  const out: string[] = []
+  const re = /\b(?:src|href)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi
+  for (const m of stripped.matchAll(re)) {
+    const v = m[2] ?? m[3] ?? m[4]
+    if (v) out.push(v)
+  }
+  return out
+}
+
+function isExternalOrInline(ref: string): boolean {
+  // External or non-file refs we don't try to validate.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(ref)) return true // http:, https:, data:, mailto:, etc.
+  if (ref.startsWith('//')) return true // protocol-relative
+  if (ref.startsWith('#')) return true // fragment
+  return false
+}
+
+const validateDeckSchema = Type.Object({}, { additionalProperties: false })
+type ValidateDeckParams = Static<typeof validateDeckSchema>
+
+function validateDeckTool(ctx: DeckToolsContext): AgentTool<typeof validateDeckSchema> {
+  return {
+    name: 'validate_deck',
+    label: 'Validate deck',
+    description:
+      'Sanity-check the Deck Source: parses deck.json and scans index.html for ' +
+      'src/href references that point to missing files. Read-only — does not modify ' +
+      'anything. Use after structural changes to confirm the deck is still loadable.',
+    parameters: validateDeckSchema,
+    execute: async (_id, _params: ValidateDeckParams) => {
+      const issues: string[] = []
+      const ok: string[] = []
+
+      // deck.json
+      const manifestAbs = path.join(ctx.rootDir, 'deck.json')
+      let manifest: { name?: unknown } | null = null
+      if (!existsSync(manifestAbs)) {
+        issues.push('deck.json: missing at the Deck Source root')
+      } else {
+        try {
+          const raw = await readFile(manifestAbs, 'utf-8')
+          const parsed = JSON.parse(raw) as { name?: unknown }
+          manifest = parsed
+          if (typeof parsed.name !== 'string' || parsed.name.trim() === '') {
+            issues.push('deck.json: `name` must be a non-empty string')
+          } else {
+            ok.push(`deck.json: name = ${parsed.name}`)
+          }
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e)
+          issues.push(`deck.json: invalid JSON (${reason})`)
+        }
+      }
+
+      // index.html
+      const indexAbs = path.join(ctx.rootDir, 'index.html')
+      if (!existsSync(indexAbs)) {
+        issues.push('index.html: missing at the Deck Source root')
+      } else {
+        let html: string
+        try {
+          html = await readFile(indexAbs, 'utf-8')
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e)
+          issues.push(`index.html: unreadable (${reason})`)
+          html = ''
+        }
+        const refs = extractHtmlRefs(html)
+        const checked = new Set<string>()
+        let missingCount = 0
+        for (const ref of refs) {
+          if (isExternalOrInline(ref)) continue
+          // Strip query / fragment — they're not part of the file path.
+          const cleaned = ref.replace(/[?#].*$/, '')
+          if (!cleaned) continue
+          if (checked.has(cleaned)) continue
+          checked.add(cleaned)
+          // Anchor refs at the Deck Source root (this is what the local
+          // server does — the deck is served with rootDir as the doc root).
+          const refAbs = path.resolve(ctx.rootDir, cleaned.replace(/^\/+/, ''))
+          // Even though refs are author-controlled, run the sandbox
+          // check so a stray `../foo` isn't reported as a Deck file.
+          try {
+            await ensureInSandbox(refAbs, ctx.rootDir, /* writable */ false)
+          } catch {
+            issues.push(`index.html: reference escapes the Deck Source: ${ref}`)
+            missingCount++
+            continue
+          }
+          if (!existsSync(refAbs)) {
+            issues.push(`index.html: missing referenced file: ${cleaned}`)
+            missingCount++
+          }
+        }
+        ok.push(`index.html: scanned ${checked.size} local refs, ${missingCount} missing`)
+      }
+
+      const summary = issues.length === 0 ? 'OK' : `${issues.length} issue(s)`
+      const lines = [`Deck validation: ${summary}`, ...issues.map((s) => `  ✗ ${s}`), '', 'Checks:', ...ok.map((s) => `  • ${s}`)]
+      return {
+        content: [{ type: 'text', text: lines.join('\n') }],
+        details: { issues, ok, manifest },
+      }
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// fetch_url — download a remote file into the Deck Source
+// ---------------------------------------------------------------------------
+
+const FETCH_URL_MAX_BYTES = 25 * 1024 * 1024 // 25 MB — enough for most images / fonts / short videos
+
+const fetchUrlSchema = Type.Object(
+  {
+    url: Type.String({ description: 'http(s) URL to download.' }),
+    path: Type.String({
+      description:
+        'Destination relative path inside the Deck Source. If it contains no "/" the ' +
+        'file lands under "assets/". The filename must have an extension.',
+    }),
+    overwrite: Type.Optional(
+      Type.Boolean({ description: 'Allow replacing an existing file (default: false).' }),
+    ),
+  },
+  { additionalProperties: false },
+)
+type FetchUrlParams = Static<typeof fetchUrlSchema>
+
+function fetchUrlTool(ctx: DeckToolsContext): AgentTool<typeof fetchUrlSchema> {
+  return {
+    name: 'fetch_url',
+    label: 'Fetch URL',
+    description:
+      `Download a remote file (http/https only) into the Deck Source. Default ` +
+      `location is assets/<name>; pass a full relative path to override. Caps at ` +
+      `${FETCH_URL_MAX_BYTES / (1024 * 1024)} MB. Refuses non-http(s) schemes and the ` +
+      `reserved files (deck.json, index.html).`,
+    parameters: fetchUrlSchema,
+    execute: async (_id, params: FetchUrlParams, signal) => {
+      // Scheme + host gate. We use Electron's `net.fetch` rather than
+      // global fetch because it routes through Electron's session
+      // (proxy / cookies the user expects), and it's the documented main
+      // -process HTTP client.
+      let parsed: URL
+      try {
+        parsed = new URL(params.url)
+      } catch {
+        throw new Error(`Invalid URL: ${params.url}`)
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`fetch_url only supports http(s); got ${parsed.protocol}`)
+      }
+
+      // Path policy mirrors add_asset.
+      if (path.isAbsolute(params.path) || params.path.split(/[/\\]/).some((seg) => seg === '..')) {
+        throw new Error(`fetch_url path must be relative and within the Deck (no "..").`)
+      }
+      const hasDir = params.path.includes('/')
+      const rel = hasDir ? params.path : path.posix.join('assets', params.path)
+      if (!path.extname(rel)) {
+        throw new Error(`Destination filename needs an extension: ${params.path}`)
+      }
+      const relPosix = rel.split(path.sep).join('/')
+      if (RESERVED_DECK_FILES.has(relPosix)) {
+        throw new Error(`Refusing to overwrite ${relPosix} via fetch_url; use write/edit instead.`)
+      }
+      const abs = path.resolve(ctx.rootDir, rel)
+      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      if (existsSync(abs) && !params.overwrite) {
+        throw new Error(
+          `Destination already exists: ${relPosix}. Pass overwrite=true to replace.`,
+        )
+      }
+
+      const res = await net.fetch(parsed.toString(), { redirect: 'follow', signal })
+      if (!res.ok) {
+        throw new Error(`fetch_url ${parsed.toString()} -> HTTP ${res.status} ${res.statusText}`)
+      }
+
+      // Cheap pre-check via Content-Length, then a hard cap during read
+      // (since servers can lie or omit the header).
+      const lenHeader = res.headers.get('content-length')
+      if (lenHeader && Number(lenHeader) > FETCH_URL_MAX_BYTES) {
+        throw new Error(
+          `Remote file ${lenHeader} bytes exceeds ${FETCH_URL_MAX_BYTES} byte cap.`,
+        )
+      }
+      const body = res.body
+      if (!body) {
+        throw new Error('fetch_url got an empty response body.')
+      }
+      const chunks: Uint8Array[] = []
+      let total = 0
+      const reader = body.getReader()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (!value) continue
+        total += value.byteLength
+        if (total > FETCH_URL_MAX_BYTES) {
+          // Best-effort cancel so the connection doesn't keep streaming.
+          try {
+            await reader.cancel()
+          } catch {
+            // already closed
+          }
+          throw new Error(
+            `Remote file exceeds ${FETCH_URL_MAX_BYTES} byte cap (read ${total} bytes).`,
+          )
+        }
+        chunks.push(value)
+      }
+      const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)))
+
+      await mkdir(path.dirname(abs), { recursive: true })
+      await withFileMutationQueue(abs, async () => {
+        await writeFile(abs, buf)
+      })
+      ctx.onFileChange?.(relPosix)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Fetched ${parsed.toString()} -> ${relPosix} (${buf.length} bytes)`,
+          },
+        ],
+        details: { url: parsed.toString(), path: relPosix, bytes: buf.length },
+      }
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public: tool set for a Deck editor session
 // ---------------------------------------------------------------------------
 
@@ -338,30 +847,19 @@ export function createDeckTools(ctx: DeckToolsContext): AgentTool<any>[] {
   // pi's factories accept relative paths from the model and resolve them
   // against `cwd`. rootDir is an absolute path (see deck-loader.ts), so
   // passing it directly works.
-  const tools: AgentTool<any>[] = [
+  return [
     createReadTool(rootDir, { operations: readOps(rootDir) }),
     createWriteTool(rootDir, { operations: writeOps(ctx) }),
     createEditTool(rootDir, { operations: editOps(ctx) }),
     createLsTool(rootDir, { operations: lsOps(rootDir) }),
+    createDeckGrepTool({ cwd: rootDir, operations: grepOps(rootDir) }),
+    createFindTool(rootDir, { operations: findOps(rootDir) }),
     addAssetTool(ctx),
+    deleteFileTool(ctx),
+    moveFileTool(ctx),
+    validateDeckTool(ctx),
+    fetchUrlTool(ctx),
   ]
-  if (ctx.enableBash && isBashSandboxAvailable()) {
-    // Profile construction can fail if rootDir contains characters that
-    // can't safely live inside a sandbox-exec literal (parens, quotes,
-    // etc.). We don't want that to take down the whole session — just
-    // log and skip the bash tool. The agent loses bash but keeps
-    // read/write/edit/ls/add_asset.
-    try {
-      tools.push(
-        createBashTool(rootDir, {
-          operations: createSandboxedBashOperations({ writableRoot: rootDir }),
-        }),
-      )
-    } catch (err) {
-      console.warn('[ai] bash tool disabled — could not build sandbox profile:', err)
-    }
-  }
-  return tools
 }
 
 // ---------------------------------------------------------------------------

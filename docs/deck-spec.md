@@ -120,6 +120,7 @@ All keys reach the page (arrows, Space, PageUp/Down, letter keys, and so on). Th
 - `Esc` — exit fullscreen / presentation mode.
 - `F11` / `Cmd+Ctrl+F` — toggle fullscreen.
 - Browser dev tools, window controls, and other OS-level shortcuts.
+- **Most `Cmd+…` / `Ctrl+…` combos bound to a menu item.** Anything declared as a menu accelerator (`Cmd+W`, `Cmd+R`, `Cmd+E`, `Cmd+S`, `Cmd+,`, `Cmd+N`, `Cmd+O`, `Cmd+Shift+W`, `Cmd+Shift+R`, `Cmd+Shift+S`, `Cmd+Shift+O`, `Cmd+Alt+P`, `Cmd+Alt+N`, `Cmd+Q`, plus the Edit-menu set: `Cmd+Z`, `Cmd+Shift+Z`/`Ctrl+Y`, `Cmd+X`, `Cmd+C`, `Cmd+V`, `Cmd+A`) is intercepted by Electron's menu dispatcher before it reaches the deck page. The exact list is implementation-detail — the rule for authors is: **don't bind a `Cmd`/`Ctrl` modifier combo as a Deck shortcut**, since most of them either are or could become a Deck App menu item. Plain keys (arrows, Space, letters, PageUp/Down, etc.) are always safe.
 
 This gives authors full freedom to use any slide framework they like — reveal.js, Swiper, a custom engine, plain scroll — without the Deck App getting in the way.
 

@@ -37,8 +37,8 @@ export function StatusBar({ text, attachStatus }: { text: string; attachStatus: 
     <span
       className={cn(
         'min-w-0 flex-1 truncate text-[11px] text-ink-3',
-        kind === 'err' && 'text-[#c43a3a] dark:text-[#ff9090]',
-        kind === 'warn' && 'text-[#b06a00] dark:text-[#f0b43c]',
+        kind === 'err' && 'text-danger',
+        kind === 'warn' && 'text-warning',
       )}
     >
       {message}

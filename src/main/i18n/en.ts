@@ -208,6 +208,11 @@ export const en = {
     'A key is saved for {provider}. Leave blank to keep it, or paste a new key to replace it.',
   'settings.apiKey.status.default': 'Stored in your OS keychain via safeStorage.',
   'settings.toggleReveal.title': 'Show / hide',
+  'settings.toggleReveal.show': 'Show',
+  'settings.toggleReveal.hide': 'Hide',
+  'settings.apiKey.clearInput': 'Clear input',
+  'settings.apiKey.deleteSaved': 'Delete saved key',
+  'settings.apiKey.deleteConfirm': 'Delete the saved API key for {provider}?',
   'settings.save': 'Save',
   'settings.clearKey': 'Clear key',
   'settings.testConnection': 'Test connection',
@@ -227,10 +232,6 @@ export const en = {
   'settings.thinking.medium': 'Medium',
   'settings.thinking.high': 'High',
   'settings.thinking.xhigh': 'Extra high',
-  'settings.bash': 'Enable bash tool',
-  'settings.bash.hint':
-    'Lets the AI run shell commands. Sandboxed on macOS: writes only inside the deck source, no network. Off on other platforms.',
-  'settings.bash.unavailable': 'Bash sandbox is unavailable on this OS (macOS only).',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': 'Remove',

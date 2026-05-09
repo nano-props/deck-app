@@ -73,11 +73,12 @@ window.addEventListener('keydown', (e) => {
 })
 ```
 
-All keys reach the page (arrows, Space, PageUp/Down, letters, …). The only keys the Deck App swallows are container-level shortcuts:
+All plain keys reach the page (arrows, Space, PageUp/Down, letters, …). The Deck App only swallows container-level shortcuts:
 
 - `Esc` — exit fullscreen / presentation mode.
 - `F11` / `Cmd+Ctrl+F` — toggle fullscreen.
 - Browser devtools, window controls, OS-level shortcuts.
+- **`Cmd+…` / `Ctrl+…` combos that match a menu accelerator** (`Cmd+W`, `Cmd+R`, `Cmd+E`, `Cmd+S`, `Cmd+,`, `Cmd+N`, `Cmd+O`, plus their `Shift`/`Alt` variants, plus the Edit-menu set `Cmd+Z`/`Cmd+X`/`Cmd+C`/`Cmd+V`/`Cmd+A`). Electron's menu intercepts these before the page sees them. **Practical rule: don't bind any `Cmd`/`Ctrl` combo as a Deck shortcut** — use plain keys instead.
 
 Authors are free to use any slide framework — reveal.js, Swiper, custom — as long as it's vendored.
 

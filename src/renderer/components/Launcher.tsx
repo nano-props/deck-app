@@ -115,7 +115,7 @@ export function Launcher() {
             </Button>
             <Button onClick={() => void window.deck.openDialog()} data-interactive>
               <span>{t('launcher.openFile')}</span>
-              <span className="rounded bg-line-2 px-1.5 text-[11px] font-mono text-ink-3">⌘O</span>
+              <span className="kbd">⌘O</span>
             </Button>
           </div>
 

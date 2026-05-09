@@ -43,6 +43,16 @@
   --color-btn-solid-text: #fafafa;
   --color-btn-solid-text-rgb: 255 255 255;
 
+  /* Semantic colors. RGB triplets are exposed too so callers can build
+   * tinted bg / border via `rgb(var(--color-danger-rgb) / 0.08)` style
+   * patterns without re-computing hex variants per call site. */
+  --color-danger: #c43a3a;
+  --color-danger-rgb: 196 58 58;
+  --color-success: #2f855a;
+  --color-success-rgb: 47 133 90;
+  --color-warning: #b06a00;
+  --color-warning-rgb: 176 106 0;
+
   --color-shadow-rgb: 10 10 10;
   --color-ambient-rgb: 10 10 10;
 
@@ -86,6 +96,13 @@ html[data-theme='dark'] {
   --color-btn-solid: #2f6bff;
   --color-btn-solid-hover: #4e82ff;
   --color-btn-solid-text: #ffffff;
+
+  --color-danger: #ff7a7a;
+  --color-danger-rgb: 255 122 122;
+  --color-success: #6ddb9a;
+  --color-success-rgb: 109 219 154;
+  --color-warning: #f0b43c;
+  --color-warning-rgb: 240 180 60;
 
   --color-shadow-rgb: 0 0 0;
   --color-ambient-rgb: 255 255 255;
@@ -208,6 +225,35 @@ button,
   -webkit-app-region: no-drag;
 }
 
+/* ============================================================== KBD CHIP
+ * Inline keycap chip — used by i18n strings (`<span class="kbd">⏎</span>`)
+ * for empty-state shortcut hints AND by Composer's Send button to render
+ * the ⏎ glyph next to the label. Defined as plain CSS (not @utility) so
+ * dangerouslySetInnerHTML strings from the dictionary can use it without
+ * Tailwind needing to see the class string at build time.
+ *
+ * Two variants via the parent: bare `<span class="kbd">` is the default
+ * outlined chip; inside a solid-colored button the `[data-on-solid]`
+ * marker on an ancestor swaps to a translucent fill that reads against
+ * the button's color. */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-line-2);
+  background: var(--color-bg-deep);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-ink-2);
+}
+[data-on-solid] .kbd {
+  border-color: transparent;
+  background: rgb(var(--color-btn-solid-text-rgb) / 0.18);
+  color: var(--color-btn-solid-text);
+}
+
 /* ===================================================== APP-MENU TRIGGER
  * macOS uses the OS menu bar, so the in-window hamburger trigger is
  * hidden. Win/Linux gets `data-chrome='overlay'` set in index.html
@@ -301,14 +347,15 @@ html[data-chrome='overlay'] .topbar {
 .markdown-body code {
   font-family: var(--font-mono);
   font-size: 12px;
-  background: var(--color-line);
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-line);
   border-radius: 4px;
   padding: 1px 5px;
 }
 .markdown-body pre {
   font-family: var(--font-mono);
   font-size: 12px;
-  background: var(--color-surface);
+  background: var(--color-bg-deep);
   border: 1px solid var(--color-line);
   border-radius: 6px;
   padding: 10px 12px;
@@ -350,6 +397,6 @@ html[data-chrome='overlay'] .topbar {
   text-align: left;
 }
 .markdown-body th {
-  background: var(--color-line);
+  background: var(--color-bg-deep);
   font-weight: 600;
 }

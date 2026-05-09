@@ -12,7 +12,6 @@ import {
   type ProviderId,
 } from '#/main/secrets.ts'
 import { getSettings, updateSettings, VALID_THINKING_LEVELS, type AiSettings } from '#/main/settings.ts'
-import { isBashSandboxAvailable } from '#/main/ai/sandbox/bash-sandbox.ts'
 import type { ThinkingLevel } from '@earendil-works/pi-agent-core'
 
 /**
@@ -77,16 +76,12 @@ export function wireSettingsIpc(): void {
         ? (p.ai.thinkingLevel as ThinkingLevel)
         : current.ai.thinkingLevel
 
-      const enableBash =
-        typeof p.ai.enableBash === 'boolean' ? p.ai.enableBash : current.ai.enableBash
-
       return updateSettings({
         ai: {
           provider,
           builtinModel: nextBuiltin,
           custom: nextCustom,
           thinkingLevel,
-          enableBash,
         },
       })
     }),
@@ -122,14 +117,25 @@ export function wireSettingsIpc(): void {
   )
   ipcMain.handle(
     'settings:ping',
-    chromeOnly(async () => pingAi()),
+    chromeOnly(async (_event, overrides?: unknown) => {
+      // Validate the override shape lightly — anything unknown is
+      // discarded so a malformed payload can't widen pingAi's input.
+      const o = (typeof overrides === 'object' && overrides) ? (overrides as Record<string, unknown>) : {}
+      const provider =
+        typeof o.provider === 'string' && (KNOWN_PROVIDERS as readonly string[]).includes(o.provider)
+          ? (o.provider as ProviderId)
+          : undefined
+      const model = typeof o.model === 'string' ? o.model : undefined
+      const apiKey = typeof o.apiKey === 'string' ? o.apiKey : undefined
+      const custom =
+        o.custom && typeof o.custom === 'object'
+          ? (o.custom as NonNullable<Parameters<typeof pingAi>[0]>['custom'])
+          : undefined
+      return pingAi({ provider, model, apiKey, custom })
+    }),
   )
   ipcMain.handle(
     'settings:ai-readiness',
     chromeOnly(async () => checkAiReadiness()),
-  )
-  ipcMain.handle(
-    'settings:bash-available',
-    chromeOnly(async () => isBashSandboxAvailable()),
   )
 }

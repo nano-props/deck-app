@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as RP from '@radix-ui/react-popover'
 import type { MenuActionId, MenuNode } from '#/main/menu/index.ts'
 import { cn } from '#/renderer/lib/cn.ts'
+import { POPOVER_SURFACE } from '#/renderer/components/ui/popover-surface.ts'
 
 const IS_MAC = /Mac/i.test(navigator.platform)
 
@@ -84,9 +85,8 @@ export function AppMenu() {
           align="start"
           sideOffset={4}
           className={cn(
-            'z-[100] min-w-[260px] max-w-[360px] overflow-hidden rounded-lg border border-line-2 bg-surface text-[13px] text-ink shadow-card-lift',
-            'data-[state=open]:animate-in data-[state=open]:fade-in-0',
-            '[-webkit-app-region:no-drag]',
+            POPOVER_SURFACE,
+            'min-w-[260px] max-w-[360px] rounded-lg text-[13px]',
           )}
           onOpenAutoFocus={(e) => e.preventDefault()}
           onKeyDown={onKeyDown}

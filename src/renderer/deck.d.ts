@@ -128,9 +128,13 @@ interface DeckBridge {
     setApiKey: (provider: ProviderId, key: string) => Promise<void>
     clearApiKey: (provider: ProviderId) => Promise<void>
     encryptionAvailable: () => Promise<boolean>
-    ping: () => Promise<{ ok: boolean; text?: string; error?: string; provider?: ProviderId; model?: string }>
+    ping: (overrides?: {
+      provider?: ProviderId
+      model?: string
+      apiKey?: string
+      custom?: Partial<Record<'custom-openai' | 'custom-anthropic' | 'custom-responses', { baseUrl: string; model: string }>>
+    }) => Promise<{ ok: boolean; text?: string; error?: string; provider?: ProviderId; model?: string }>
     aiReadiness: () => Promise<AiReadiness>
-    bashAvailable: () => Promise<boolean>
   }
 }
 

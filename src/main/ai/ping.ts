@@ -2,7 +2,7 @@ import { streamSimple, type Context } from '@earendil-works/pi-ai'
 import { buildModel } from '#/main/ai/provider.ts'
 import { t } from '#/main/i18n/index.ts'
 import { getSecret, type ProviderId } from '#/main/secrets.ts'
-import { getSettings, resolveModel } from '#/main/settings.ts'
+import { getSettings, resolveModel, type CustomProviderConfig } from '#/main/settings.ts'
 
 export interface PingResult {
   ok: boolean
@@ -16,16 +16,38 @@ export interface PingResult {
 }
 
 /**
+ * Optional overrides for `pingAi`. The Settings UI passes the user's
+ * *currently typed* form values (provider/model/key/custom baseUrl) so
+ * Test Connection validates the in-flight edit, not what's persisted —
+ * otherwise typing a new key, hitting Test, and seeing a stale-key
+ * failure would be misleading. Any field left undefined falls back to
+ * the saved settings / keychain.
+ */
+export interface PingOverrides {
+  provider?: ProviderId
+  model?: string
+  apiKey?: string
+  /** Only consulted for custom providers; safe to pass for builtins (ignored). */
+  custom?: Partial<Record<'custom-openai' | 'custom-anthropic' | 'custom-responses', CustomProviderConfig>>
+}
+
+/**
  * Send a one-shot "ping" to the configured provider/model and return the
  * assistant's reply. Used to validate settings end-to-end (key works,
  * network reaches the provider, the model id is accepted).
  */
-export async function pingAi(): Promise<PingResult> {
+export async function pingAi(overrides: PingOverrides = {}): Promise<PingResult> {
   const settings = await getSettings()
-  const { provider } = settings.ai
-  const modelId = resolveModel(settings)
+  const provider = overrides.provider ?? settings.ai.provider
+  const modelId =
+    overrides.model && overrides.model.trim().length > 0
+      ? overrides.model.trim()
+      : resolveModel(provider === settings.ai.provider ? settings : { ...settings, ai: { ...settings.ai, provider } })
 
-  const apiKey = await getSecret(provider)
+  // Prefer the live value (user typing in Settings) over whatever's in
+  // keychain. Empty string means "explicitly empty" — still falls back
+  // to keychain so a Test with no field input tests the saved key.
+  const apiKey = overrides.apiKey?.trim() || (await getSecret(provider))
   if (!apiKey) {
     return {
       ok: false,
@@ -38,12 +60,15 @@ export async function pingAi(): Promise<PingResult> {
     }
   }
 
+  // Custom providers need baseUrl; merge override → saved.
+  const mergedCustom = { ...settings.ai.custom, ...(overrides.custom ?? {}) } as typeof settings.ai.custom
+
   let model
   try {
     model = buildModel({
       provider,
       model: modelId,
-      custom: settings.ai.custom,
+      custom: mergedCustom,
     })
   } catch (e) {
     return {

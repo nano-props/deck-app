@@ -8,6 +8,7 @@ import { useAttachments } from '#/renderer/stores/attachments.ts'
 import { useChatStore } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Button, IconButton } from '#/renderer/components/ui/Button.tsx'
+import { TextArea } from '#/renderer/components/ui/TextArea.tsx'
 import { Tooltip } from '#/renderer/components/ui/Tooltip.tsx'
 import { ChatHistoryPopover } from '#/renderer/components/ChatHistoryPopover.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
@@ -65,6 +66,12 @@ export function Composer() {
   // event landing, a second click would otherwise enter `send()` and
   // race the first IPC. Guard locally so the gate is synchronous.
   const sendInFlightRef = useRef(false)
+  // Set by Escape during the attaching/IPC window before the agent
+  // streams. Each await in send() checks it and bails — the in-flight
+  // attachAssets/aiSend can't actually be cancelled mid-IPC, but we
+  // can refuse to act on their results so the user's "Esc to cancel"
+  // intent feels honored. Reset on every fresh send.
+  const sendAbortRef = useRef(false)
 
   async function send() {
     if (sendInFlightRef.current) return
@@ -78,6 +85,7 @@ export function Composer() {
     }
 
     sendInFlightRef.current = true
+    sendAbortRef.current = false
     // Clear the textarea immediately so the user can keep typing the
     // next prompt without waiting for the IPC round-trip. Stash the
     // captured text so we can restore it if the send rejects.
@@ -120,11 +128,28 @@ export function Composer() {
           inputIdx++
         }
         const encoded = await Promise.all(blobPromises)
+        if (sendAbortRef.current) {
+          // User pressed Esc during base64 encode. Restore the input,
+          // drop the in-flight flag, leave the chips so they can retry.
+          setText((prev) => (prev === '' ? capturedText : prev))
+          setAttachStatus('')
+          sendInFlightRef.current = false
+          return
+        }
         for (let k = 0; k < blobIndices.length; k++) {
           const slot = inputs[blobIndices[k]]
           if (slot && slot.kind === 'bytes') slot.base64 = encoded[k]
         }
         const r = await window.deck.attachAssets(inputs)
+        if (sendAbortRef.current) {
+          // User pressed Esc while main was writing files. Main has
+          // already staged them on disk (we can't undo that without a
+          // new IPC), but we can refuse to feed them to the agent.
+          setText((prev) => (prev === '' ? capturedText : prev))
+          setAttachStatus('')
+          sendInFlightRef.current = false
+          return
+        }
         if (!r?.ok) throw new Error(r?.error || 'attach failed')
         // Reconcile chips with main's verdict. Chips whose names appear
         // in `rejected` flip to red and stay so the user can see why and
@@ -170,6 +195,12 @@ export function Composer() {
 
     const fullText = attachmentBlock ? (userText ? `${attachmentBlock}\n\n${userText}` : attachmentBlock) : userText
     if (!fullText.trim()) {
+      sendInFlightRef.current = false
+      return
+    }
+    if (sendAbortRef.current) {
+      // Last chance to bail before committing to the agent.
+      setText((prev) => (prev === '' ? capturedText : prev))
       sendInFlightRef.current = false
       return
     }
@@ -223,10 +254,24 @@ export function Composer() {
       if (canSend) void send()
       return
     }
-    if (e.key === 'Escape' && streaming) {
-      e.preventDefault()
-      void window.deck.aiAbort()
-      return
+    if (e.key === 'Escape') {
+      // Two cancel paths:
+      //   - streaming: agent is mid-turn → server-side abort
+      //   - sendInFlight && !streaming: we're between Send and the
+      //     server's `agent_start` event, e.g. uploading attachments.
+      //     Set the local abort flag so each await in send() bails on
+      //     return; the IPCs themselves can't be killed mid-flight,
+      //     but we refuse to act on their results.
+      if (streaming) {
+        e.preventDefault()
+        void window.deck.aiAbort()
+        return
+      }
+      if (sendInFlightRef.current) {
+        e.preventDefault()
+        sendAbortRef.current = true
+        return
+      }
     }
     // History navigation only kicks in at the very edge of the textarea
     // so it doesn't fight ordinary multi-line navigation.
@@ -288,7 +333,7 @@ export function Composer() {
       )}
 
       <div className="relative">
-        <textarea
+        <TextArea
           ref={inputRef}
           rows={1}
           value={text}
@@ -303,24 +348,15 @@ export function Composer() {
           onPaste={staging.onPaste}
           placeholder={t('composer.placeholder')}
           aria-label={t('aria.chatInput')}
-          // The OS spellchecker flags Chinese / Japanese / Korean
-          // characters as misspelled because no installed dictionary
-          // matches. The red wavy lines are noise, not help.
-          spellCheck={false}
-          className={cn(
-            // min-h covers an empty box (1 line + padding); max-h caps
-            // growth so a multi-screen paste turns into an internal
-            // scroller instead of pushing the chat list off-screen.
-            'block w-full resize-none overflow-y-auto rounded-lg border border-line-2 bg-surface px-3 py-2.5',
-            'min-h-[2.25rem] max-h-[40vh] font-sans text-[13px] leading-snug text-ink',
-            'transition-colors focus:border-accent focus:outline-none focus:ring-3 focus:ring-[rgb(var(--color-accent-rgb)/0.18)]',
-            '[user-select:text] [-webkit-user-select:text]',
-          )}
+          // min-h covers an empty box (1 line + padding); max-h caps
+          // growth so a multi-screen paste turns into an internal
+          // scroller instead of pushing the chat list off-screen.
+          className="min-h-[2.25rem] max-h-[40vh] overflow-y-auto"
         />
         <div
           aria-hidden="true"
           className={cn(
-            'pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-[rgb(var(--color-accent-rgb)/0.55)] bg-[rgb(var(--color-accent-rgb)/0.06)]',
+            'pointer-events-none absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-[rgb(var(--color-accent-rgb)/0.55)] bg-[rgb(var(--color-accent-rgb)/0.06)]',
             'transition-opacity duration-100',
             staging.composerDrag ? 'opacity-100' : 'opacity-0',
           )}
@@ -406,9 +442,7 @@ export function Composer() {
                 }}
               >
                 <span>{t('composer.send')}</span>
-                <span className="rounded bg-[rgb(var(--color-btn-solid-text-rgb)/0.18)] px-1.5 text-[11px] font-mono">
-                  ⏎
-                </span>
+                <span className="kbd">⏎</span>
               </Button>
             </span>
           </Tooltip>

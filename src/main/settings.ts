@@ -67,14 +67,6 @@ export interface AiSettings {
    * back automatically.
    */
   thinkingLevel: ThinkingLevel
-  /**
-   * Enable the `bash` tool. Off by default — letting an LLM run shell
-   * commands is a serious capability bump. When on, bash runs via
-   * macOS sandbox-exec with read-anywhere / write-only-in-deck-source
-   * / no-network. Non-darwin platforms ignore this flag (no sandbox
-   * available, tool registration short-circuits).
-   */
-  enableBash: boolean
 }
 
 export interface Settings {
@@ -127,7 +119,6 @@ export const DEFAULT_SETTINGS: Settings = {
       'custom-responses': { ...EMPTY_CUSTOM },
     },
     thinkingLevel: 'medium',
-    enableBash: false,
   },
   ui: { lang: 'auto' },
   compaction: { ...DEFAULT_COMPACTION_SETTINGS },
@@ -184,7 +175,6 @@ async function doLoad(): Promise<Settings> {
         builtinModel?: Partial<AiSettings['builtinModel']>
         custom?: Partial<AiSettings['custom']>
         thinkingLevel?: unknown
-        enableBash?: unknown
       }
       ui?: Partial<UiSettings>
       compaction?: Partial<CompactionSettings>
@@ -210,15 +200,12 @@ async function doLoad(): Promise<Settings> {
     const thinkingLevel: ThinkingLevel = VALID_THINKING_LEVELS.includes(rawThinking as ThinkingLevel)
       ? (rawThinking as ThinkingLevel)
       : DEFAULT_SETTINGS.ai.thinkingLevel
-    const enableBash =
-      typeof parsed.ai?.enableBash === 'boolean' ? parsed.ai.enableBash : DEFAULT_SETTINGS.ai.enableBash
     cache = {
       ai: {
         provider,
         builtinModel: mergedBuiltin,
         custom: mergedCustom,
         thinkingLevel,
-        enableBash,
       },
       ui: { lang: uiLang },
       compaction: {

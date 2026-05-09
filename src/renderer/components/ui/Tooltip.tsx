@@ -45,6 +45,13 @@ export function Tooltip({ content, children, side = 'top', align = 'center', dis
             collisionPadding={8}
             className={cn(
               'z-[1000] max-w-[260px] rounded-md px-2 py-1.5 text-[11px] leading-snug',
+              // Light: near-black bubble on off-white bg via bg-ink/text-bg.
+              // Dark: opinionated soft-dark pill (lighter than bg, lighter
+              // than bg-deep) so the tooltip reads as "elevated UI element"
+              // rather than inverting to a bright white block. The hex is
+              // outside the standard token scale because the design wants
+              // ~5% brighter than bg-deep — adding a token just for this
+              // would clutter the palette.
               'bg-ink text-bg shadow-card',
               'dark:bg-[#2a2c30] dark:text-[#f2f3f5]',
               'data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95',

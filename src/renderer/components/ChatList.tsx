@@ -7,6 +7,8 @@
 // further away, we leave them where they are).
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import * as RC from '@radix-ui/react-collapsible'
+import { ChevronRight } from 'lucide-react'
 import { useChatStore, type ChatNode } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Scroller } from '#/renderer/components/Scroller.tsx'
@@ -81,7 +83,7 @@ const ChatNodeView = memo(function ChatNodeView({ node }: { node: ChatNode }) {
   if (node.kind === 'user') {
     return (
       <div className="flex flex-col items-end">
-        <div className="max-w-[82%] whitespace-pre-wrap rounded-xl border border-line bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink">
+        <div className="max-w-[82%] whitespace-pre-wrap rounded-xl border border-line-2 bg-bg-deep px-3 py-2 text-[13px] leading-relaxed text-ink dark:bg-surface">
           {node.text}
         </div>
       </div>
@@ -96,13 +98,7 @@ const ChatNodeView = memo(function ChatNodeView({ node }: { node: ChatNode }) {
   if (node.kind === 'error') {
     return (
       <div className="flex flex-col">
-        <div
-          className={cn(
-            'whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[13px] leading-relaxed',
-            'border bg-[rgb(196_58_58/0.08)] border-[rgb(196_58_58/0.25)] text-[#c43a3a]',
-            'dark:bg-[rgb(255_122_122/0.1)] dark:border-[rgb(255_122_122/0.3)] dark:text-[#ff9090]',
-          )}
-        >
+        <div className="whitespace-pre-wrap rounded-lg border bg-[rgb(var(--color-danger-rgb)/0.08)] border-[rgb(var(--color-danger-rgb)/0.25)] px-3 py-2.5 text-[13px] leading-relaxed text-danger">
           {node.text}
         </div>
       </div>
@@ -193,9 +189,9 @@ function ToolChip({ node }: { node: Extract<ChatNode, { kind: 'tool' }> }) {
   // Result text + pretty-printed args can each be ~MB for tool calls
   // like `read` against large files. Memoize on the source object so
   // sibling re-renders (parent ChatList re-render driven by streaming
-  // text on a different node) skip the work. The <details> body always
-  // renders into the DOM — even when collapsed — so this runs whether
-  // or not the user has expanded it.
+  // text on a different node) skip the work. Radix Collapsible.Content
+  // stays mounted while collapsed (it just toggles `data-state`), so
+  // these computations happen whether or not the user has expanded it.
   const summary = useMemo(() => summarizeArgs(node.args), [node.args])
   const argsJson = useMemo(() => JSON.stringify(node.args, null, 2), [node.args])
   const resultText = useMemo(
@@ -203,29 +199,38 @@ function ToolChip({ node }: { node: Extract<ChatNode, { kind: 'tool' }> }) {
     [node.result, node.running],
   )
   return (
-    <details className="overflow-hidden rounded-lg border border-line bg-surface font-mono text-[12px]">
-      <summary className="grid cursor-pointer select-none grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-2.5 py-2 hover:bg-line">
+    <RC.Root className="overflow-hidden rounded-lg border border-line bg-bg-deep font-mono text-[12px]">
+      <RC.Trigger
+        className={cn(
+          'group grid w-full cursor-pointer select-none grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-2.5 py-2 text-left',
+          'transition-colors hover:bg-line',
+          'focus:outline-none focus-visible:bg-line',
+        )}
+      >
         <span
           className={cn(
             'size-2 shrink-0 rounded-full',
             node.running && 'bg-accent animate-pulse',
-            !node.running && !node.isError && 'bg-[#2f855a]',
-            !node.running && node.isError && 'bg-[#c43a3a]',
+            !node.running && !node.isError && 'bg-success',
+            !node.running && node.isError && 'bg-danger',
           )}
         />
         <span className="font-semibold text-ink">{node.toolName}</span>
         <span className="truncate text-ink-3">{summary}</span>
-        <span className="text-[10px] text-ink-4">▸</span>
-      </summary>
-      <div className="border-t border-line bg-bg-deep px-2.5 py-2 text-[11px] text-ink-2">
+        <ChevronRight
+          className="size-3.5 text-ink-4 transition-transform duration-150 group-data-[state=open]:rotate-90"
+          aria-hidden
+        />
+      </RC.Trigger>
+      <RC.Content className="border-t border-line bg-bg px-2.5 py-2 text-[11px] text-ink-2">
         <div className="font-sans text-[10px] font-semibold uppercase tracking-wider text-ink-4">Arguments</div>
         <pre className="mt-0.5 mb-1.5 whitespace-pre-wrap">{argsJson}</pre>
         <div className="mt-1.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-ink-4">Result</div>
         <pre className="mt-0.5 max-h-[260px] overflow-y-auto whitespace-pre-wrap">
           {resultText || '(no result text)'}
         </pre>
-      </div>
-    </details>
+      </RC.Content>
+    </RC.Root>
   )
 }
 

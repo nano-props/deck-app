@@ -35,6 +35,13 @@ export class DeckViewController {
    */
   private locked = false
   private preLockBounds: Rect | null = null
+  // Set by `setVisible(false)` while a chrome-side overlay (Settings
+  // modal, etc.) covers the window. Without this, any subsequent
+  // `setBounds` push from the renderer would call `tryReveal` and snap
+  // the deckView back to visible — which manifests as "Settings modal
+  // is invisible in Player mode" because the deckView fills the entire
+  // content area there and re-shows on top of the modal.
+  private hiddenForOverlay = false
   // Plain field + assignment in the constructor body. Avoid the
   // `constructor(private readonly host)` parameter-property shorthand —
   // Electron's bundled Node runs us under "strip-only" TS, which rejects
@@ -91,6 +98,7 @@ export class DeckViewController {
     this.bounds = null
     this.locked = false
     this.preLockBounds = null
+    this.hiddenForOverlay = false
     try {
       this.host.contentView.removeChildView(view)
     } catch {
@@ -197,10 +205,20 @@ export class DeckViewController {
    * Hide/show the deckView so DOM overlays in the chromeView (e.g. the
    * Settings modal) can cover the full window. Cross-view layering is
    * by child-view order, not z-index — toggling visibility is the cheap fix.
+   *
+   * Hiding sets `hiddenForOverlay` so subsequent `setBounds` /
+   * `tryReveal` calls don't undo us; showing clears the flag and
+   * routes through `tryReveal` so geometry / load state are honored.
    */
   setVisible(visible: boolean): void {
     if (!this.view || this.view.webContents.isDestroyed()) return
-    this.view.setVisible(visible)
+    if (visible) {
+      this.hiddenForOverlay = false
+      this.tryReveal()
+    } else {
+      this.hiddenForOverlay = true
+      this.view.setVisible(false)
+    }
   }
 
   /**
@@ -253,6 +271,10 @@ export class DeckViewController {
       this.attached = true
     }
     this.view.setBounds(this.bounds)
+    // Respect overlay-hide: setBounds is reached from renderer-pushed
+    // resize events that fire even while Settings is up. Skipping the
+    // setVisible(true) keeps the deck hidden under the modal.
+    if (this.hiddenForOverlay) return
     this.view.setVisible(true)
   }
 }

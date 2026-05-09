@@ -200,6 +200,11 @@ export const ko: Record<DictKey, string> = {
     '{provider} 의 키가 저장되어 있습니다. 비워두면 유지하고, 새 키를 붙여넣으면 교체됩니다.',
   'settings.apiKey.status.default': 'safeStorage 를 통해 OS 키체인에 저장됩니다.',
   'settings.toggleReveal.title': '보이기 / 숨기기',
+  'settings.toggleReveal.show': '보이기',
+  'settings.toggleReveal.hide': '숨기기',
+  'settings.apiKey.clearInput': '입력 지우기',
+  'settings.apiKey.deleteSaved': '저장된 API key 삭제',
+  'settings.apiKey.deleteConfirm': '{provider}의 저장된 API key를 삭제할까요?',
   'settings.save': '저장',
   'settings.clearKey': '키 지우기',
   'settings.testConnection': '연결 테스트',
@@ -219,10 +224,6 @@ export const ko: Record<DictKey, string> = {
   'settings.thinking.medium': '중간',
   'settings.thinking.high': '높음',
   'settings.thinking.xhigh': '매우 높음',
-  'settings.bash': 'bash 도구 활성화',
-  'settings.bash.hint':
-    'AI가 셸 명령을 실행할 수 있게 합니다. macOS 샌드박스: 덱 소스에만 쓰기 가능, 네트워크 차단. 다른 OS에서는 비활성화됩니다.',
-  'settings.bash.unavailable': '이 OS에서는 bash 샌드박스를 사용할 수 없습니다 (macOS 전용).',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': '제거',

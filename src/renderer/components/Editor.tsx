@@ -87,7 +87,7 @@ export function Editor() {
         className="relative grid h-full min-h-0 min-w-0"
         style={{ gridTemplateColumns: `${chatWidth}px 1px 1fr` }}
       >
-        <section className="grid grid-rows-[1fr_auto] min-h-0 bg-bg-deep">
+        <section className="grid grid-rows-[1fr_auto] min-h-0 bg-bg">
           <ChatList />
           <Composer />
         </section>
@@ -108,7 +108,7 @@ export function Editor() {
           onPointerCancel={onPointerUp}
           onKeyDown={onKeyDown}
         />
-        <section ref={previewRef} className="relative bg-bg" />
+        <section ref={previewRef} className="relative bg-bg-deep" />
       </main>
     </section>
   )
