@@ -44,6 +44,11 @@ export class DeckViewController {
   // is invisible in Player mode" because the deckView fills the entire
   // content area there and re-shows on top of the modal.
   private hiddenForOverlay = false
+  // One-shot flag for deferring focus until the view finishes loading.
+  // Set by `focusContentIfNeeded()` when called before `loaded` is true;
+  // consumed once by `onLoadSettled`. Multiple calls before load settle
+  // are idempotent — we only need one focus after the view appears.
+  private focusOnceWhenReady = false
   // Plain field + assignment in the constructor body. Avoid the
   // `constructor(private readonly host)` parameter-property shorthand —
   // Electron's bundled Node runs us under "strip-only" TS, which rejects
@@ -106,6 +111,7 @@ export class DeckViewController {
     this.locked = false
     this.preLockBounds = null
     this.hiddenForOverlay = false
+    this.focusOnceWhenReady = false
     try {
       this.host.contentView.removeChildView(view)
     } catch {
@@ -280,12 +286,18 @@ export class DeckViewController {
   }
 
   /**
-   * Move keyboard focus into the deck's webContents unconditionally.
-   * Called when entering Player mode so arrow keys / space work immediately
-   * without requiring a manual click on the deck area.
+   * Move keyboard focus into the deck's webContents — idempotent.
+   *
+   * If the view is already loaded, focus immediately. If still loading,
+   * the focus is deferred to `onLoadSettled` via `focusOnceWhenReady`.
+   * Multiple calls before load settle are coalesced into a single focus.
    */
   focusContent(): void {
     if (!this.view || this.view.webContents.isDestroyed()) return
+    if (!this.loaded) {
+      this.focusOnceWhenReady = true
+      return
+    }
     this.view.webContents.focus()
   }
 
@@ -309,5 +321,10 @@ export class DeckViewController {
     // setVisible(true) keeps the deck hidden under the modal.
     if (this.hiddenForOverlay) return
     this.view.setVisible(true)
+    // Apply deferred focus now that the view is actually visible.
+    if (this.focusOnceWhenReady) {
+      this.focusOnceWhenReady = false
+      this.view.webContents.focus()
+    }
   }
 }
