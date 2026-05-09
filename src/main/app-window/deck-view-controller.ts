@@ -1,5 +1,7 @@
 import { BaseWindow, WebContentsView } from 'electron'
+import { appChrome } from '#/main/chrome-strategy.ts'
 import { createDeckView } from '#/main/deck-view.ts'
+import { installDragStrip } from '#/main/player-titlebar.ts'
 import { type Rect } from '#/main/window-shell.ts'
 
 /**
@@ -71,6 +73,11 @@ export class DeckViewController {
     this.view = view
     this.loaded = false
     this.attached = false
+    // macOS only: inject a transparent drag strip so the topbar stays
+    // draggable even if the deck's HTML has a `position:fixed; top:0`
+    // header that would otherwise steal hit-testing. Win/Linux use the
+    // native titleBarOverlay, which sits above web content already.
+    if (appChrome.playerInjectDragStrip) installDragStrip(view)
     void view.webContents.loadURL(serverUrl)
   }
 

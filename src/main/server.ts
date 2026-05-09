@@ -64,8 +64,13 @@ export function startDeckServer(rootDir: string): Promise<DeckServer> {
       resolve({
         port,
         url: `http://127.0.0.1:${port}/`,
+        // `server.close()` waits for all open keep-alive connections to
+        // drain on their own — that's seconds when a deckView still
+        // holds one. `closeAllConnections()` (Node 18.2+) drops them
+        // immediately so the close callback fires within a tick.
         close: () =>
           new Promise<void>((res) => {
+            server.closeAllConnections()
             server.close(() => res())
           }),
       })

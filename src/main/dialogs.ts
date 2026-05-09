@@ -35,7 +35,10 @@ export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
   // HOME on POSIX). The earlier `process.env.HOME || ''` fallback would
   // have produced a relative path on Windows, where HOME is typically
   // unset — the dialog would land in an unpredictable cwd.
-  const save = await dialog.showSaveDialog({
+  // Attach the dialog to `win` so it's window-modal (consistent with
+  // saveDeckAsInWindow) — without the parent it'd be app-modal and
+  // block other open windows too.
+  const save = await dialog.showSaveDialog(win.getBaseWindow(), {
     title: t('dialog.newDeck.title'),
     message: t('dialog.newDeck.message'),
     defaultPath: path.join(app.getPath('home'), 'my-deck.deck'),

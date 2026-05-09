@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { pathsEqual } from '#/main/util/path-identity.ts'
+import { createSerialQueue } from '#/main/util/serial-queue.ts'
 
 /**
  * MRU list of recently opened decks, persisted to `userData/recents.json`.
@@ -53,24 +54,11 @@ async function writeAtomic(data: RecentEntry[]): Promise<void> {
   await rename(tmp, file)
 }
 
-/**
- * Tail of the read-modify-write queue. Recents need the *whole* RMW
- * cycle serialized, not just the disk write — two concurrent recordOpen
- * calls would each read the old list, splice their own entry, and the
- * second writer overwrites the first's contribution. Chaining onto this
- * tail forces a strict happens-before ordering across recordOpen,
- * forgetRecent, and the prune-on-list path.
- *
- * Errors don't sink the chain — each task's catch keeps the tail
- * resolvable so one failure doesn't poison subsequent calls.
- */
-let queue: Promise<unknown> = Promise.resolve()
-
-function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-  const next = queue.then(fn)
-  queue = next.catch(() => {})
-  return next
-}
+// Recents need the *whole* RMW cycle serialized, not just the disk
+// write — two concurrent recordOpen calls would each read the old list,
+// splice their own entry, and the second writer overwrites the first's
+// contribution. See `createSerialQueue` for the chain semantics.
+const { enqueue } = createSerialQueue()
 
 /**
  * Return the MRU list, newest first, with stale entries (whose paths no

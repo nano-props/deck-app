@@ -91,7 +91,18 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
                     await window.deck.chats.switch(s.path).catch(() => {})
                   }}
                   onDelete={async () => {
-                    await window.deck.chats.delete(s.path).catch(() => {})
+                    // Update state only if delete actually succeeded —
+                    // otherwise we'd hide the chip while the file
+                    // remains, and reopening the popover (which refetches)
+                    // would resurrect it, looking like the delete bounced.
+                    let ok = false
+                    try {
+                      const r = await window.deck.chats.delete(s.path)
+                      ok = !!r?.ok
+                    } catch {
+                      ok = false
+                    }
+                    if (!ok) return
                     if (s.path === activePath) setActivePath(null)
                     setSessions((prev) => (prev ? prev.filter((x) => x.path !== s.path) : prev))
                   }}

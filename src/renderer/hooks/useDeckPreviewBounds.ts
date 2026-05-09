@@ -60,8 +60,16 @@ export function useDeckPreviewBounds() {
     return () => window.removeEventListener('resize', onResize)
   }, [measureAndPush])
 
-  return (node: HTMLElement | null) => {
-    ref.current = node
-    if (node) requestAnimationFrame(measureAndPush)
-  }
+  // Stable ref callback: an inline lambda would change identity on
+  // every render, and React's ref-callback semantics call old(null) +
+  // new(node) on every change — that would re-fire `measureAndPush`
+  // (and the `setPreviewBounds` IPC) each render even when the node
+  // hasn't actually changed.
+  return useCallback(
+    (node: HTMLElement | null) => {
+      ref.current = node
+      if (node) requestAnimationFrame(measureAndPush)
+    },
+    [measureAndPush],
+  )
 }

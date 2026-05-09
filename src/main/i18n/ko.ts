@@ -150,6 +150,8 @@ export const ko: Record<DictKey, string> = {
 
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': '생각 중…',
+  'chat.status.generating': '생성 중…',
+  'chat.status.runningTool': '{tool} 실행 중…',
   'chat.status.attaching': '첨부 중…',
   'chat.status.aiError': 'AI 오류',
   'chat.status.sendFailed': '보내기 실패',
@@ -224,6 +226,19 @@ export const ko: Record<DictKey, string> = {
   'settings.thinking.medium': '중간',
   'settings.thinking.high': '높음',
   'settings.thinking.xhigh': '매우 높음',
+  'settings.about': '정보',
+  'settings.about.description': '.deck 프레젠테이션을 위한 데스크톱 컨테이너.',
+  'settings.about.version': '버전',
+  'settings.about.repo': 'GitHub',
+  'settings.about.viewOnGithub': 'GitHub에서 보기',
+  'settings.about.website': 'Docs',
+  'settings.about.author': '작성자',
+  'settings.about.authorName': 'nano-props',
+  'settings.about.license': '라이선스',
+  'settings.about.licenseName': 'MIT',
+  'settings.about.build': '빌드',
+  'settings.about.electron': 'Electron',
+  'settings.about.commit': '커밋',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': '제거',

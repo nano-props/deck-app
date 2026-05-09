@@ -1,5 +1,6 @@
-import { Agent } from '@earendil-works/pi-agent-core'
+import { Agent, type AgentMessage, type ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { convertToLlm, shouldCompact } from '@earendil-works/pi-coding-agent'
+import type { WebContents } from 'electron'
 import { buildModel } from '#/main/ai/provider.ts'
 import { checkAiReadiness } from '#/main/ai/readiness.ts'
 import { createDeckTools } from '#/main/ai/tools.ts'
@@ -11,11 +12,42 @@ import {
   restoredMessages,
 } from '#/main/chats.ts'
 import { getSecret, type ProviderId } from '#/main/secrets.ts'
-import { getSettings, resolveModel } from '#/main/settings.ts'
+import { getSettings, resolveModel, type Settings } from '#/main/settings.ts'
 import { contextTokensFromBranch } from '#/main/ai/session/context-usage.ts'
-import { safeSend } from '#/main/ai/session/safe-send.ts'
 import { buildSystemPrompt } from '#/main/ai/session/system-prompt.ts'
 import type { DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
+
+/** webContents.send wrapper that no-ops once the view is gone. */
+function safeSend(sender: WebContents, channel: string, payload: unknown): void {
+  if (sender.isDestroyed()) return
+  try {
+    sender.send(channel, payload)
+  } catch {
+    // Destroyed between the check and the send — teardown race.
+  }
+}
+
+/**
+ * Race a Promise against a timeout. Returns `'settled'` if `p` finished
+ * first (errors swallowed), `'timeout'` otherwise. Releases the timer
+ * on whichever side wins — without `clearTimeout` we'd leak a pending
+ * timer for the full duration on every fast resolution.
+ *
+ * Callers that need to react to the timeout (e.g. skip a follow-up
+ * mutation that would corrupt state) must check the return value.
+ */
+async function withTimeout(p: Promise<unknown>, ms: number): Promise<'settled' | 'timeout'> {
+  let timer!: ReturnType<typeof setTimeout>
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), ms)
+  })
+  const settled: Promise<'settled'> = p.catch(() => undefined).then(() => 'settled')
+  try {
+    return await Promise.race([settled, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 /**
  * One Agent per AppWindow with a deck loaded.
@@ -56,16 +88,19 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
       safeSend(sender, 'ai:event', { type: 'deck:file_change', path: relPath })
       params.onMutation?.()
     },
+    capturePreview: params.capturePreview,
   })
 
-  // Seed the Agent with the currently-configured model so
-  // `initialState.model` is a real `Model<any>` (not a cast-over-undefined
-  // placeholder). `send` re-reads Settings on each turn so mid-session
-  // changes still take effect. If the user hasn't configured a provider
-  // yet `buildModel` throws — we let `send` surface that as a
-  // `deck:fatal` event and seed with a sentinel that `agent.prompt()`
-  // will never see (send overwrites it first).
+  // Try to seed with the currently-configured model. `send` re-reads
+  // Settings on every turn anyway, so this is purely for the pre-first-
+  // turn window: it lets `emitContextUsage` (called during
+  // history_replay) report a real contextWindow instead of pi's
+  // DEFAULT_MODEL placeholder (contextWindow=0). If buildModel throws —
+  // missing key, broken custom-endpoint config — we leave the field
+  // unset; pi falls back to DEFAULT_MODEL and the context indicator
+  // hides itself until `send` rebuilds with a usable model.
   let initialModel: ReturnType<typeof buildModel> | undefined
+  let initialThinking: ThinkingLevel | undefined
   try {
     const settings = await getSettings()
     initialModel = buildModel({
@@ -73,6 +108,7 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
       model: resolveModel(settings),
       custom: settings.ai.custom,
     })
+    initialThinking = settings.ai.thinkingLevel
   } catch {
     // Missing/invalid config — `send` will re-try and emit a fatal event.
   }
@@ -89,7 +125,13 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   const agent = new Agent({
     initialState: {
       systemPrompt,
-      model: initialModel as never,
+      // Omitted when buildModel threw; pi falls back to DEFAULT_MODEL.
+      // `send` overwrites this with a fresh model before any LLM call.
+      ...(initialModel ? { model: initialModel } : {}),
+      // Same logic: `send` re-reads thinkingLevel each turn so a
+      // settings change between turns lands on the next prompt.
+      // Default 'off' (pi's own default) when settings load failed.
+      ...(initialThinking ? { thinkingLevel: initialThinking } : {}),
       tools,
       // Seeding `messages` here means the next `agent.prompt()` call
       // sees the restored transcript as context — the model keeps
@@ -110,20 +152,27 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     },
   })
 
-  function emitContextUsage(): void {
-    if (!agent.state.model) return
-    const tokens = contextTokensFromBranch(sessionManager.getBranch())
-    // Custom providers have contextWindow=0 (see provider.ts — we
-    // don't know the real value) so the indicator is hidden for them.
+  /**
+   * Emit a context-usage event and return the (tokens, contextWindow)
+   * pair so callers running in the same event-loop tick can reuse them
+   * without re-walking the branch (the agent_end listener wants the
+   * same numbers to evaluate `shouldCompact`).
+   *
+   * Returns null when the model has no known contextWindow — placeholder
+   * (DEFAULT_MODEL) or custom provider without a declared window.
+   */
+  function emitContextUsage(): { tokens: number; contextWindow: number } | null {
     const contextWindow = agent.state.model.contextWindow
-    if (!contextWindow) return
+    if (!contextWindow) return null
+    const tokens = contextTokensFromBranch(sessionManager.getBranch())
     safeSend(sender, 'ai:event', { type: 'deck:context_usage', tokens, contextWindow })
+    return { tokens, contextWindow }
   }
 
   // Cached settings snapshot refreshed on each `send` — the subscribe
   // callback below can't be async, so it reads from here instead of
   // re-loading settings on every agent_end.
-  let runtimeSettingsSnapshot: Awaited<ReturnType<typeof getSettings>> | null = null
+  let runtimeSettingsSnapshot: Settings | null = null
 
   // Forward every agent event to the renderer. Subscribe returns an
   // unsubscribe fn; we call it from `dispose`.
@@ -135,29 +184,37 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   const unsubscribe = agent.subscribe((event) => {
     safeSend(sender, 'ai:event', event)
     if (event.type === 'agent_end' && event.messages.length > 0) {
-      try {
-        persistAgentMessages(sessionManager, event.messages)
-      } catch {
-        // Persistence should never crash the session; any I/O error
-        // here just means the transcript line won't survive restart.
+      // Drop the synthetic empty-assistant message that pi appends in
+      // its `handleRunFailure` path (see Agent.handleRunFailure: an
+      // aborted/errored run synthesizes an assistant turn with
+      // `content: [{type:'text',text:''}]` and stopReason
+      // 'aborted'/'error'). Persisting it bloats the transcript across
+      // every Stop press; restoring it on next open does nothing useful.
+      // We deliberately keep aborted/errored messages that *do* carry
+      // partial content — those represent real model output the user
+      // saw and should persist.
+      const persistable = event.messages.filter((m) => !isSyntheticAbortMessage(m))
+      if (persistable.length > 0) {
+        try {
+          persistAgentMessages(sessionManager, persistable)
+        } catch {
+          // Persistence should never crash the session; any I/O error
+          // here just means the transcript line won't survive restart.
+        }
       }
-      emitContextUsage()
+      const usage = emitContextUsage()
 
       // Proactive warning when context is nearly full. When pi exposes
       // `prepareCompaction` we can replace this with a real compact()
       // call — same event shape, different internals.
       try {
         const settings = runtimeSettingsSnapshot
-        if (settings && agent.state.model) {
-          const tokens = contextTokensFromBranch(sessionManager.getBranch())
-          const contextWindow = agent.state.model.contextWindow ?? 0
-          if (contextWindow && shouldCompact(tokens, contextWindow, settings.compaction)) {
-            safeSend(sender, 'ai:event', {
-              type: 'deck:context_warning',
-              tokens,
-              contextWindow,
-            })
-          }
+        if (usage && settings && shouldCompact(usage.tokens, usage.contextWindow, settings.compaction)) {
+          safeSend(sender, 'ai:event', {
+            type: 'deck:context_warning',
+            tokens: usage.tokens,
+            contextWindow: usage.contextWindow,
+          })
         }
       } catch {
         // Warning emission is best-effort.
@@ -195,10 +252,12 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     if (!readiness.ready) {
       return { ok: false, reason: 'not-ready', message: `AI not configured: ${readiness.reason}` }
     }
+    // Re-resolve model + key + compaction settings on each send so the
+    // user can change Settings mid-session and have the next message
+    // pick it up. A failure here happens BEFORE pi has emitted
+    // agent_start, so the renderer never enters streaming state — we
+    // need to push deck:fatal ourselves to surface the error.
     try {
-      // Re-resolve model + key + compaction settings on each send so
-      // the user can change Settings mid-session and have the next
-      // message pick it up.
       const settings = await getSettings()
       runtimeSettingsSnapshot = settings
       const model = buildModel({
@@ -207,15 +266,29 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
         custom: settings.ai.custom,
       })
       agent.state.model = model
+      // Settings → reasoning toggle is a per-turn knob; pi reads
+      // `_state.thinkingLevel` when it builds the next prompt's context.
+      // Without this assign, changes to thinkingLevel in Settings
+      // wouldn't take effect until the user reopened the deck.
+      agent.state.thinkingLevel = settings.ai.thinkingLevel
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      safeSend(sender, 'ai:event', { type: 'deck:fatal', error: message })
+      return { ok: false, reason: 'error', message }
+    }
 
+    // pi's `runWithLifecycle` already converts in-loop errors into a
+    // synthetic assistant message + agent_end (with stopReason='error'
+    // and `errorMessage`), which the renderer surfaces via its
+    // message_end handler. So `prompt()` is not expected to throw; if
+    // it ever does (pi-internal bug, sync setup throw), the catch
+    // returns the error to the IPC caller without re-emitting
+    // deck:fatal — that would double-render the error chip.
+    try {
       await agent.prompt(text)
       return { ok: true }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      // Genuine run failure — emit deck:fatal so the renderer's chat
-      // shows an error chip and resets streaming=false, AND return the
-      // error so the IPC caller can also reflect it.
-      safeSend(sender, 'ai:event', { type: 'deck:fatal', error: message })
       return { ok: false, reason: 'error', message }
     }
   }
@@ -235,15 +308,10 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   async function abort(): Promise<void> {
     if (!agent.state.isStreaming) return
     agent.abort()
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const timeout = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, 500)
-    })
-    try {
-      await Promise.race([agent.waitForIdle().catch(() => {}), timeout])
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
+    // Best-effort wait — a hung tool can't be allowed to pin the IPC
+    // caller. We don't branch on settled vs. timeout here: either way
+    // we hand control back so the renderer can issue the next send.
+    await withTimeout(agent.waitForIdle(), 500)
   }
 
   /**
@@ -262,17 +330,26 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
    *   4. Tell the renderer to drop its DOM.
    */
   async function reset(): Promise<void> {
-    // Wait without a timeout: reset rolls over the SessionManager and
-    // resets agent state. If we returned before the previous run truly
-    // settled, its `agent_end` listener would still fire and run
-    // `persistAgentMessages` against the SessionManager we just rolled
-    // over — landing the old transcript on the new session file. The
-    // 500ms ceiling in abort() is fine for the IPC-abort and
-    // window-close paths because those don't subsequently mutate the
-    // SessionManager; here a slow abort would corrupt persistence.
+    // We deliberately wait for the active run to settle (rather than
+    // bounding it like abort()'s 500ms) — its `agent_end` listener
+    // mutates the SessionManager we're about to roll over, and a
+    // premature return would land the old transcript on the new
+    // session file. The 10s ceiling is a last-resort guard so a
+    // hung tool can't pin the IPC channel and freeze the user's UI;
+    // in practice listeners settle in milliseconds.
     if (agent.state.isStreaming) {
       agent.abort()
-      await agent.waitForIdle().catch(() => {})
+      const outcome = await withTimeout(agent.waitForIdle(), 10_000)
+      if (outcome === 'timeout') {
+        // The listener never finished. Skipping the SessionManager rollover
+        // here is the lesser evil: the user will see a fresh chat on the
+        // next ai:event, but the in-flight run might still write to the
+        // old session file later. Better than corrupting the new file by
+        // mixing both turns into one transcript.
+        agent.reset()
+        safeSend(sender, 'ai:event', { type: 'deck:session_reset' })
+        return
+      }
     }
     resetDeckSessionManager(sessionManager)
     agent.reset()
@@ -283,9 +360,8 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     unsubscribe()
     if (agent.state.isStreaming) {
       agent.abort()
-      // Best effort — don't wait forever. If the run hangs, the window
-      // is going away anyway.
-      await Promise.race([agent.waitForIdle(), new Promise((r) => setTimeout(r, 500))])
+      // Best effort — window is going away anyway.
+      await withTimeout(agent.waitForIdle(), 500)
     }
   }
 
@@ -296,4 +372,19 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     dispose,
     getSessionFile: () => sessionManager.getSessionFile() ?? null,
   }
+}
+
+/**
+ * Identify the synthetic stub assistant message that pi emits when a
+ * run is aborted/errored before producing any output. pi constructs it
+ * with a single empty text block and stopReason 'aborted'/'error' (see
+ * Agent.handleRunFailure). Aborted runs that *did* produce partial
+ * output have a real (non-empty) content array and aren't matched here
+ * — those still represent model output the user saw and should
+ * persist.
+ */
+function isSyntheticAbortMessage(m: AgentMessage): boolean {
+  if (m.role !== 'assistant') return false
+  if (m.stopReason !== 'aborted' && m.stopReason !== 'error') return false
+  return m.content.every((c) => c.type === 'text' && c.text.length === 0)
 }

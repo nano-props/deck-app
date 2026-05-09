@@ -346,9 +346,10 @@
         border-color: var(--accent);
         color: var(--accent);
       }
-      .btn svg {
-        width: 14px;
-        height: 14px;
+      .btn.has-arrow::after {
+        content: '→';
+        font-size: 15px;
+        line-height: 1;
       }
 
       /* Hero visual: app-window mock showing what Deck opens */
@@ -570,29 +571,6 @@
         color: var(--ink-2);
         line-height: 1.6;
       }
-      .manifest-code {
-        background: var(--chip);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 16px 18px;
-        font:
-          500 13px/1.7 'JetBrains Mono',
-          monospace;
-        color: var(--ink);
-        white-space: pre;
-        overflow-x: auto;
-        min-width: 0;
-        max-width: 100%;
-      }
-      .manifest-code .k {
-        color: var(--accent);
-      }
-      .manifest-code .s {
-        color: var(--ink-2);
-      }
-      .manifest-code .c {
-        color: var(--mute);
-      }
       .field-list {
         display: flex;
         flex-direction: column;
@@ -686,7 +664,18 @@
         color: var(--mute);
         letter-spacing: 0.06em;
       }
-      .key-legend .dot {
+      .legend-row {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+        font:
+          500 11px 'JetBrains Mono',
+          monospace;
+        color: var(--mute);
+        letter-spacing: 0.06em;
+      }
+      .legend-dot {
         display: inline-block;
         width: 6px;
         height: 6px;
@@ -695,7 +684,7 @@
         margin-right: 6px;
         vertical-align: middle;
       }
-      .key-legend .dot.mute {
+      .legend-dot.mute {
         background: var(--line-2);
       }
 
@@ -897,6 +886,67 @@
         color: var(--accent);
         font-weight: 600;
       }
+      .skill-bridge .chat-visual {
+        white-space: normal;
+        font-family:
+          'Inter',
+          'PingFang SC',
+          'Noto Sans SC',
+          system-ui,
+          sans-serif;
+        font-size: 13.5px;
+        line-height: 1.55;
+        padding: 22px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .chat-msg {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        max-width: 92%;
+      }
+      .chat-msg.you {
+        align-self: flex-end;
+        background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+        border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
+      }
+      .chat-msg.ai {
+        align-self: flex-start;
+      }
+      .chat-msg.sys {
+        align-self: stretch;
+        max-width: 100%;
+        background: var(--bg);
+        border-style: dashed;
+      }
+      .chat-msg .chat-who {
+        font:
+          600 10px 'JetBrains Mono',
+          monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--mute);
+      }
+      .chat-msg.you .chat-who {
+        color: var(--accent);
+      }
+      .chat-msg.sys .chat-who {
+        color: var(--accent);
+      }
+      .chat-msg .chat-body {
+        color: var(--ink);
+      }
+      .chat-msg.sys .chat-body b {
+        font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-weight: 600;
+        color: var(--accent);
+      }
       @media (max-width: 860px) {
         .skill-bridge .wrap {
           grid-template-columns: 1fr;
@@ -1014,103 +1064,6 @@
         color: var(--mute);
       }
 
-      /* ===== Roadmap ===== */
-      .roadmap .lead {
-        margin-top: 18px;
-        color: var(--ink-2);
-        font-size: 17px;
-        max-width: 60ch;
-        line-height: 1.65;
-      }
-      .rm-grid {
-        margin-top: 48px;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-      }
-      .rm {
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 22px 22px 24px;
-        background: var(--surface);
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        min-height: 220px;
-      }
-      .rm-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .rm-label {
-        font:
-          600 10px 'JetBrains Mono',
-          monospace;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        padding: 4px 8px;
-        border-radius: 4px;
-      }
-      .rm-label.shipped {
-        color: var(--accent);
-        border: 1px solid var(--accent);
-      }
-      .rm-label.progress {
-        color: #fff;
-        background: var(--accent);
-        border: 1px solid var(--accent);
-      }
-      .rm-label.planned {
-        color: var(--mute);
-        border: 1px dashed var(--line-2);
-      }
-      .rm .tag {
-        font:
-          500 11px 'JetBrains Mono',
-          monospace;
-        color: var(--mute);
-        letter-spacing: 0.08em;
-      }
-      .rm h3 {
-        font-size: 20px;
-        letter-spacing: -0.015em;
-      }
-      .rm p {
-        font-size: 13.5px;
-        color: var(--ink-2);
-        line-height: 1.6;
-      }
-      .rm ul {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        margin-top: auto;
-      }
-      .rm ul li {
-        font:
-          500 12.5px 'JetBrains Mono',
-          monospace;
-        color: var(--ink-2);
-        padding-left: 16px;
-        position: relative;
-      }
-      .rm ul li::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0.55em;
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--accent);
-        opacity: 0.8;
-      }
-      .rm.planned ul li::before {
-        background: var(--line-2);
-      }
-
       /* ===== CTA ===== */
       .endcta {
         padding-top: 112px;
@@ -1177,14 +1130,6 @@
         color: var(--ink);
         background: var(--chip);
       }
-      footer .fineprint {
-        font:
-          500 11px 'JetBrains Mono',
-          monospace;
-        color: var(--mute);
-        letter-spacing: 0.08em;
-      }
-
       /* ===== Reveal on scroll ===== */
       .reveal {
         opacity: 0;
@@ -1250,9 +1195,6 @@
         .sec-list {
           grid-template-columns: 1fr;
         }
-        .rm-grid {
-          grid-template-columns: 1fr;
-        }
         table.compare-table,
         .compare-table thead,
         .compare-table tbody,
@@ -1316,7 +1258,6 @@
         <nav class="nav">
           <a href="#whatis" data-i18n="navWhat">What's a Deck</a>
           <a href="#how" data-i18n="navHow">How</a>
-          <a href="#roadmap" data-i18n="navRoadmap">What's next</a>
           <span class="sep"></span>
           <div class="lang-seg" id="langSeg">
             <button data-lang="zh">中</button>
@@ -1355,20 +1296,12 @@
       <div class="wrap">
         <div class="hero-head">
           <h1 class="reveal" data-i18n="heroTitle">Slides, reinvented.</h1>
-          <p class="lead reveal" data-i18n="heroLead">You talk. AI builds. Double-click to present.</p>
+          <p class="lead reveal" data-i18n="heroLead">
+            Tell your AI what you want to present. A few minutes later — open a real deck on your desktop.
+          </p>
           <div class="cta-row reveal">
-            <a class="btn primary" href="https://github.com/nano-props/deck-app/releases" target="_blank" rel="noreferrer">
+            <a class="btn primary has-arrow" href="https://github.com/nano-props/deck-app/releases" target="_blank" rel="noreferrer">
               <span data-i18n="heroCta1">Get Deck</span>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
             </a>
             <a class="btn ghost" href="#how" data-i18n="heroCta2"> Learn more </a>
           </div>
@@ -1381,7 +1314,7 @@
           </div>
           <div class="body">
             <div class="slide-mock">
-              <h2 data-i18n="mockTitle">Q3 <em>Board Review</em>.</h2>
+              <h2 data-i18n="mockTitle">Q3 <em>Performance Review</em>.</h2>
               <p data-i18n="mockBody">Where we stood, where we're going — 12 slides from a single prompt.</p>
               <div class="count"><span class="mono">01 / 12</span><span class="bar"></span></div>
             </div>
@@ -1420,128 +1353,80 @@
         <div class="inside-grid">
           <div class="manifest-card reveal">
             <div>
-              <div class="kicker" style="margin-bottom: 14px"><b data-i18n="insideKicker">What's inside</b></div>
-              <h3 data-i18n="insideTitle">Two files. That's the minimum.</h3>
+              <div class="kicker" style="margin-bottom: 14px"><b data-i18n="insideKicker">What goes in</b></div>
+              <h3 data-i18n="insideTitle">Put anything on a slide.</h3>
               <p class="sub" data-i18n="insideSub">
-                A <span class="mono">.deck</span> is a folder, zipped. It needs <span class="mono">deck.json</span> to
-                name itself, and <span class="mono">index.html</span> to show itself. Everything else — images, fonts,
-                scripts — is up to you.
+                Photos, charts, videos, your logo, a clickable demo — whatever helps you tell the story. Deck doesn't
+                box you into "title + bullets."
               </p>
             </div>
-            <pre class="manifest-code"><span class="c">// deck.json — the manifest</span>
-{
-  <span class="k">"name"</span>: <span class="s">"My Talk"</span>,
-  <span class="k">"author"</span>: <span class="s">"Ada"</span>,
-  <span class="k">"description"</span>: <span class="s">"A talk about Transformers"</span>,
-  <span class="k">"cover"</span>: <span class="s">"cover.png"</span>,
-  <span class="k">"version"</span>: <span class="s">"1.0.0"</span>
-}</pre>
             <div class="field-list">
               <div class="field-row">
-                <span class="name"><span class="req"></span>name</span
-                ><span class="desc" data-i18n="fName">The title. Shown in lists and the window.</span>
+                <span class="name"><span class="req"></span><span data-i18n="cName">Photos &amp; images</span></span
+                ><span class="desc" data-i18n="cDesc1"
+                  >Cover shots, product photos, screenshots — drop them right in.</span
+                >
               </div>
               <div class="field-row">
-                <span class="name"><span class="opt"></span>author</span
-                ><span class="desc" data-i18n="fAuthor">Who made it.</span>
+                <span class="name"><span class="req"></span><span data-i18n="cName2">Video &amp; audio</span></span
+                ><span class="desc" data-i18n="cDesc2">Play a clip, embed a demo reel, autoplay a soundtrack.</span>
               </div>
               <div class="field-row">
-                <span class="name"><span class="opt"></span>description</span
-                ><span class="desc" data-i18n="fDesc">One line about what it's for.</span>
+                <span class="name"><span class="req"></span><span data-i18n="cName3">Charts &amp; data</span></span
+                ><span class="desc" data-i18n="cDesc3">Live charts that update from your numbers, not flat images.</span>
               </div>
               <div class="field-row">
-                <span class="name"><span class="opt"></span>cover</span
-                ><span class="desc" data-i18n="fCover">Thumbnail image, for previews.</span>
+                <span class="name"><span class="opt"></span><span data-i18n="cName4">Animations</span></span
+                ><span class="desc" data-i18n="cDesc4"
+                  >Fade in a quote. Zoom into a map. Make the moment land.</span
+                >
               </div>
               <div class="field-row">
-                <span class="name"><span class="opt"></span>version</span
-                ><span class="desc" data-i18n="fVersion">Your deck's version number.</span>
+                <span class="name"><span class="opt"></span><span data-i18n="cName5">Interactive demos</span></span
+                ><span class="desc" data-i18n="cDesc5"
+                  >A working prototype. A 3D model people can spin. A tiny game.</span
+                >
               </div>
             </div>
-            <div
-              style="
-                display: flex;
-                gap: 16px;
-                flex-wrap: wrap;
-                margin-top: 4px;
-                font:
-                  500 11px 'JetBrains Mono',
-                  monospace;
-                color: var(--mute);
-                letter-spacing: 0.06em;
-              "
-            >
-              <span
-                ><span
-                  style="
-                    display: inline-block;
-                    width: 6px;
-                    height: 6px;
-                    border-radius: 50%;
-                    background: var(--accent);
-                    margin-right: 6px;
-                    vertical-align: middle;
-                  "
-                ></span
-                ><span data-i18n="fReq">required</span></span
-              >
-              <span
-                ><span
-                  style="
-                    display: inline-block;
-                    width: 6px;
-                    height: 6px;
-                    border-radius: 50%;
-                    background: var(--line-2);
-                    margin-right: 6px;
-                    vertical-align: middle;
-                  "
-                ></span
-                ><span data-i18n="fOpt">optional</span></span
-              >
+            <div class="legend-row">
+              <span><span class="legend-dot"></span><span data-i18n="cBasics">the basics</span></span>
+              <span><span class="legend-dot mute"></span><span data-i18n="cExtras">when you want more</span></span>
             </div>
           </div>
 
           <div class="keys-card reveal">
             <div>
-              <div class="kicker" style="margin-bottom: 14px"><b data-i18n="keysKicker">Keyboard</b></div>
-              <h3 data-i18n="keysTitle">Every key reaches your deck.</h3>
+              <div class="kicker" style="margin-bottom: 14px"><b data-i18n="keysKicker">On stage</b></div>
+              <h3 data-i18n="keysTitle">The keys you'd expect, all there.</h3>
               <p class="sub" data-i18n="keysSub">
-                No arrow keys hijacked. No space bar stolen. Deck stays out of your way — you decide what each key does.
-                Only a handful stay with the window itself.
+                Nothing to memorize. Arrow keys turn the page. Space moves you forward. Escape gets you out of full
+                screen. The same keys you've used your whole life.
               </p>
             </div>
             <div class="key-list">
               <div class="key-row">
                 <span><kbd>←</kbd> <kbd>→</kbd></span
-                ><span class="where" data-i18n="k1"
-                  ><b>Your deck</b> · page through, or whatever you wire them to.</span
-                >
+                ><span class="where" data-i18n="k1"><b>Page through</b> — back and forward, slide by slide.</span>
               </div>
               <div class="key-row">
                 <span><kbd>Space</kbd></span
-                ><span class="where" data-i18n="k2"
-                  ><b>Your deck</b> · next slide, play a video, trigger an animation.</span
-                >
-              </div>
-              <div class="key-row">
-                <span><kbd>A</kbd>–<kbd>Z</kbd></span
-                ><span class="where" data-i18n="k3"
-                  ><b>Your deck</b> · shortcuts are yours. Every letter key is forwarded.</span
-                >
-              </div>
-              <div class="key-row">
-                <span><kbd>Esc</kbd></span
-                ><span class="where" data-i18n="k4"><b>Deck App</b> · exits full-screen. Always.</span>
+                ><span class="where" data-i18n="k2"><b>Move forward</b> — next slide, next animation, play the video.</span>
               </div>
               <div class="key-row">
                 <span><kbd>F11</kbd></span
-                ><span class="where" data-i18n="k5"><b>Deck App</b> · toggles full-screen.</span>
+                ><span class="where" data-i18n="k5"><b>Go full screen</b> — fills the room. No browser bar in sight.</span>
+              </div>
+              <div class="key-row">
+                <span><kbd>Esc</kbd></span
+                ><span class="where" data-i18n="k4"><b>Exit full screen</b> — anytime, no panic.</span>
+              </div>
+              <div class="key-row">
+                <span data-i18n="k6Label"><span class="mono" style="color: var(--mute); font-size: 12px">Clicker</span></span
+                ><span class="where" data-i18n="k6"><b>Works too</b> — any presenter remote, plug and go.</span>
               </div>
             </div>
             <div class="key-legend">
-              <span><span class="dot"></span><span data-i18n="kL1">goes to your deck</span></span>
-              <span><span class="dot mute"></span><span data-i18n="kL2">handled by the app</span></span>
+              <span data-i18n="kLNote">Same as Keynote, PowerPoint, Google Slides.</span>
             </div>
           </div>
         </div>
@@ -1593,10 +1478,10 @@
                 </svg>
               </span>
             </div>
-            <h3 data-i18n="f2Title">AI writes it for you.</h3>
+            <h3 data-i18n="f2Title">From outline to finished deck.</h3>
             <p data-i18n="f2Desc">
-              Describe your talk, upload your notes, paste an outline. Your AI turns it into real slides you can
-              actually give.
+              Performance review, product launch, class lecture, wedding toast — describe it, and your AI turns it into
+              slides you can actually walk on stage with.
             </p>
             <div class="note" data-i18n="f2Note">Works with Claude, ChatGPT, and more</div>
           </div>
@@ -1664,24 +1549,24 @@
             <span class="n" data-i18n="s3S1N">STEP 01</span>
             <h4 data-i18n="s3S1Title">Say what you want.</h4>
             <p data-i18n="s3S1Desc">
-              "Turn these Q3 numbers into a board deck." Or drop in your notes, your script, your outline — whatever
+              "Turn these Q3 numbers into a performance deck." Or drop in your notes, your script, your outline — whatever
               you've got.
             </p>
           </div>
           <div class="step reveal">
             <span class="n" data-i18n="s3S2N">STEP 02</span>
-            <h4 data-i18n="s3S2Title">AI builds the deck.</h4>
+            <h4 data-i18n="s3S2Title">AI builds the slides.</h4>
             <p data-i18n="s3S2Desc">
-              Minutes later, a real <span class="mono">.deck</span> file lands on your computer. Not a link. Not a web
-              page. A file.
+              A few minutes later, a finished deck lands on your desktop — not a link, not a tab in the browser. Yours
+              to keep.
             </p>
           </div>
           <div class="step reveal">
             <span class="n" data-i18n="s3S3N">STEP 03</span>
             <h4 data-i18n="s3S3Title">Double-click. Present.</h4>
             <p data-i18n="s3S3Desc">
-              Full-screen window. Arrow keys to move. Esc to exit. The same file works on your laptop, your phone, or a
-              friend's Mac.
+              Full-screen, arrow keys, clicker — same as always. Take it to a meeting room, send it to a colleague, or
+              open it on your phone.
             </p>
           </div>
         </div>
@@ -1692,45 +1577,44 @@
     <section class="skill-bridge" id="skill">
       <div class="wrap reveal">
         <div>
-          <span class="pill" data-i18n="skillPill">The skill behind it</span>
+          <span class="pill" data-i18n="skillPill">From idea to deck</span>
           <h3 data-i18n="skillTitle">
-            Your AI knows how to do it, because of the <span class="mono">create-deck</span> skill.
+            Just talk to your AI, like you would a teammate.
           </h3>
           <p data-i18n="skillDesc">
-            A small set of instructions that teaches any AI tool the Deck format — pagination, sandbox rules, what to
-            avoid. Just say <b>deck</b> and your AI picks it up automatically.
+            Tell it what you're presenting, who it's for, how long it should be. Paste in your notes. The AI does the
+            layout, the visuals, the polish — and hands you back a finished deck.
           </p>
           <div class="cta-row">
             <a
-              class="btn primary"
+              class="btn primary has-arrow"
               href="https://github.com/nano-props/deck-app/tree/main/skills"
               target="_blank"
               rel="noreferrer"
             >
-              <span data-i18n="skillCta1">Get the skill</span>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
+              <span data-i18n="skillCta1">See how it works</span>
             </a>
           </div>
         </div>
-        <div class="visual" data-i18n="skillVisual">
-          <span class="c">// you</span> "Make me a <b>deck</b> for our new coffee app. 10 slides."
-
-          <span class="c">// your AI — picks up "deck",</span>
-          <span class="c">// runs the create-deck skill</span>
-          <span class="k">→</span> scaffolds deck.json <span class="k">→</span> writes index.html
-          <span class="k">→</span> packs coffee.deck
-
-          <span class="c">// you, 3 minutes later</span>
-          <span class="k">$</span> open coffee.deck
+        <div class="visual chat-visual" aria-hidden="true">
+          <div class="chat-msg you">
+            <span class="chat-who" data-i18n="chatWho1">You</span>
+            <span class="chat-body" data-i18n="chatBody1"
+              >Make me a 10-slide deck for our coffee app launch. Friendly tone, lots of product shots.</span
+            >
+          </div>
+          <div class="chat-msg ai">
+            <span class="chat-who" data-i18n="chatWho2">AI</span>
+            <span class="chat-body" data-i18n="chatBody2"
+              >On it — outlining the story, picking colors, drafting the slides. Two minutes.</span
+            >
+          </div>
+          <div class="chat-msg sys">
+            <span class="chat-who" data-i18n="chatWho3">Done</span>
+            <span class="chat-body" data-i18n="chatBody3">
+              <b>coffee-launch.deck</b> is on your desktop. Double-click to present.
+            </span>
+          </div>
         </div>
       </div>
     </section>
@@ -1834,80 +1718,13 @@
       </div>
     </section>
 
-    <!-- ===== Roadmap ===== -->
-    <section class="roadmap" id="roadmap">
-      <div class="wrap">
-        <div class="kicker reveal"><b data-i18n="s6Kicker">06</b> <span data-i18n="s6KickerSub">What's next</span></div>
-        <h2 class="reveal section-h2" data-i18n="s6Title">Today, tomorrow, and after.</h2>
-        <p class="lead reveal" data-i18n="s6Lead">Here's what you can do right now — and where we're going next.</p>
-
-        <div class="rm-grid">
-          <div class="rm reveal">
-            <div class="rm-head">
-              <span class="tag" data-i18n="rm1Tag">Today</span>
-              <span class="rm-label shipped" data-i18n="rmLShipped">Ready</span>
-            </div>
-            <h3 data-i18n="rm1Title">Open, edit, present.</h3>
-            <p data-i18n="rm1Desc">
-              Double-click any <span class="mono">.deck</span> to present. Open a folder to edit, with AI chat and live
-              preview side by side.
-            </p>
-            <ul>
-              <li data-i18n="rm1L1">Double-click to open</li>
-              <li data-i18n="rm1L2">Built-in AI chat + live preview</li>
-              <li data-i18n="rm1L3">Open Recent, works offline forever</li>
-            </ul>
-          </div>
-          <div class="rm reveal">
-            <div class="rm-head">
-              <span class="tag" data-i18n="rm2Tag">Tomorrow</span>
-              <span class="rm-label progress" data-i18n="rmLProgress">Soon</span>
-            </div>
-            <h3 data-i18n="rm2Title">More templates. Better flow.</h3>
-            <p data-i18n="rm2Desc">
-              A curated lineup of starter templates — minimal, tech, academic, keynote, long-scroll — plus a
-              distraction-free presentation mode.
-            </p>
-            <ul>
-              <li data-i18n="rm2L1">Starter template lineup</li>
-              <li data-i18n="rm2L2">Full-bleed presentation mode</li>
-              <li data-i18n="rm2L3">Deck gallery</li>
-            </ul>
-          </div>
-          <div class="rm planned reveal">
-            <div class="rm-head">
-              <span class="tag" data-i18n="rm3Tag">After</span>
-              <span class="rm-label planned" data-i18n="rmLPlanned">Later</span>
-            </div>
-            <h3 data-i18n="rm3Title">Export anywhere.</h3>
-            <p data-i18n="rm3Desc">Need a PDF? A video? A plain web page? One deck, every format — with a click.</p>
-            <ul>
-              <li data-i18n="rm3L1">PDF export</li>
-              <li data-i18n="rm3L2">Video recording</li>
-              <li data-i18n="rm3L3">Publish to the web</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- ===== End CTA ===== -->
     <section class="endcta">
       <div class="wrap">
         <h2 class="reveal" data-i18n="endTitle">Ready when you are.</h2>
         <div class="cta-row reveal">
-          <a class="btn primary" href="https://github.com/nano-props/deck-app/releases" target="_blank" rel="noreferrer">
+          <a class="btn primary has-arrow" href="https://github.com/nano-props/deck-app/releases" target="_blank" rel="noreferrer">
             <span data-i18n="endCta1">Get Deck</span>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
           </a>
           <a
             class="btn ghost"
@@ -1930,7 +1747,7 @@
           <span class="v mono">v0.1</span>
         </div>
         <div class="links">
-          <a href="#whatis" data-i18n="footWhat">What's a Deck</a>
+          <a href="#whatis" data-i18n="navWhat">What's a Deck</a>
           <a href="#how" data-i18n="footHow">How it works</a>
           <a href="#skill" data-i18n="footSkill">The skill</a>
           <a href="#security" data-i18n="footSafe">Safe &amp; private</a>
@@ -1947,13 +1764,13 @@
         en: {
           navWhat: "What's a Deck",
           navHow: 'How',
-          navRoadmap: "What's next",
           navCta: 'GitHub →',
           heroTitle: 'Slides, reinvented.',
-          heroLead: 'You talk. AI builds. Double-click to present.',
+          heroLead:
+            'Tell your AI what you want to present. A few minutes later — open a real deck on your desktop.',
           heroCta1: 'Get Deck',
           heroCta2: 'Learn more',
-          mockTitle: 'Q3 <em>Board Review</em>.',
+          mockTitle: 'Q3 <em>Performance Review</em>.',
           mockBody: "Where we stood, where we're going — 12 slides from a single prompt.",
 
           metaK1: 'file to share',
@@ -1961,28 +1778,33 @@
           metaK3: 'works offline, forever',
           metaK4: 'platforms · Mac, Windows, Linux',
 
-          insideKicker: "What's inside",
-          insideTitle: "Two files. That's the minimum.",
+          insideKicker: 'What goes in',
+          insideTitle: 'Put anything on a slide.',
           insideSub:
-            'A <span class="mono">.deck</span> is a folder, zipped. It needs <span class="mono">deck.json</span> to name itself, and <span class="mono">index.html</span> to show itself. Everything else — images, fonts, scripts — is up to you.',
-          fName: 'The title. Shown in lists and the window.',
-          fAuthor: 'Who made it.',
-          fDesc: "One line about what it's for.",
-          fCover: 'Thumbnail image, for previews.',
-          fVersion: "Your deck's version number.",
-          fReq: 'required',
-          fOpt: 'optional',
-          keysKicker: 'Keyboard',
-          keysTitle: 'Every key reaches your deck.',
+            "Photos, charts, videos, your logo, a clickable demo — whatever helps you tell the story. Deck doesn't box you into \"title + bullets.\"",
+          cName: 'Photos &amp; images',
+          cDesc1: 'Cover shots, product photos, screenshots — drop them right in.',
+          cName2: 'Video &amp; audio',
+          cDesc2: 'Play a clip, embed a demo reel, autoplay a soundtrack.',
+          cName3: 'Charts &amp; data',
+          cDesc3: 'Live charts that update from your numbers, not flat images.',
+          cName4: 'Animations',
+          cDesc4: 'Fade in a quote. Zoom into a map. Make the moment land.',
+          cName5: 'Interactive demos',
+          cDesc5: 'A working prototype. A 3D model people can spin. A tiny game.',
+          cBasics: 'the basics',
+          cExtras: 'when you want more',
+          keysKicker: 'On stage',
+          keysTitle: "The keys you'd expect, all there.",
           keysSub:
-            'No arrow keys hijacked. No space bar stolen. Deck stays out of your way — you decide what each key does. Only a handful stay with the window itself.',
-          k1: '<b>Your deck</b> · page through, or whatever you wire them to.',
-          k2: '<b>Your deck</b> · next slide, play a video, trigger an animation.',
-          k3: '<b>Your deck</b> · shortcuts are yours. Every letter key is forwarded.',
-          k4: '<b>Deck App</b> · exits full-screen. Always.',
-          k5: '<b>Deck App</b> · toggles full-screen.',
-          kL1: 'goes to your deck',
-          kL2: 'handled by the app',
+            "Nothing to memorize. Arrow keys turn the page. Space moves you forward. Escape gets you out of full screen. The same keys you've used your whole life.",
+          k1: '<b>Page through</b> — back and forward, slide by slide.',
+          k2: '<b>Move forward</b> — next slide, next animation, play the video.',
+          k4: '<b>Exit full screen</b> — anytime, no panic.',
+          k5: '<b>Go full screen</b> — fills the room. No browser bar in sight.',
+          k6Label: '<span class="mono" style="color: var(--mute); font-size: 12px">Clicker</span>',
+          k6: '<b>Works too</b> — any presenter remote, plug and go.',
+          kLNote: 'Same as Keynote, PowerPoint, Google Slides.',
 
           s2Kicker: '02',
           s2KickerSub: 'Why',
@@ -1991,9 +1813,9 @@
           f1Desc:
             'No browser tab. No loading spinner. It opens in its own window, full-screen ready, just like Keynote.',
           f1Note: 'Mac · Windows · Linux',
-          f2Title: 'AI writes it for you.',
+          f2Title: 'From outline to finished deck.',
           f2Desc:
-            'Describe your talk, upload your notes, paste an outline. Your AI turns it into real slides you can actually give.',
+            "Performance review, product launch, class lecture, wedding toast — describe it, and your AI turns it into slides you can actually walk on stage with.",
           f2Note: 'Works with Claude, ChatGPT, and more',
           f3Title: 'Anything you can imagine.',
           f3Desc: 'Animations, videos, live charts, 3D models, tiny games — if the web can do it, your deck can do it.',
@@ -2009,23 +1831,28 @@
           s3S1N: 'STEP 01',
           s3S1Title: 'Say what you want.',
           s3S1Desc:
-            '"Turn these Q3 numbers into a board deck." Or drop in your notes, your script, your outline — whatever you\'ve got.',
+            '"Turn these Q3 numbers into a performance deck." Or drop in your notes, your script, your outline — whatever you\'ve got.',
           s3S2N: 'STEP 02',
-          s3S2Title: 'AI builds the deck.',
+          s3S2Title: 'AI builds the slides.',
           s3S2Desc:
-            'Minutes later, a real <span class="mono">.deck</span> file lands on your computer. Not a link. Not a web page. A file.',
+            "A few minutes later, a finished deck lands on your desktop — not a link, not a tab in the browser. Yours to keep.",
           s3S3N: 'STEP 03',
           s3S3Title: 'Double-click. Present.',
           s3S3Desc:
-            "Full-screen window. Arrow keys to move. Esc to exit. The same file works on your laptop, your phone, or a friend's Mac.",
+            "Full-screen, arrow keys, clicker — same as always. Take it to a meeting room, send it to a colleague, or open it on your phone.",
 
-          skillPill: 'The skill behind it',
-          skillTitle: 'Your AI knows how to do it, because of the <span class="mono">create-deck</span> skill.',
+          skillPill: 'From idea to deck',
+          skillTitle: 'Just talk to your AI, like you would a teammate.',
           skillDesc:
-            'A small set of instructions that teaches any AI tool the Deck format — pagination, sandbox rules, what to avoid. Just say <b>deck</b> and your AI picks it up automatically.',
-          skillCta1: 'Get the skill',
-          skillVisual:
-            '<span class="c">// you</span>\n"Make me a <b>deck</b> for our\n new coffee app. 10 slides."\n\n<span class="c">// your AI — picks up "deck",</span>\n<span class="c">// runs the create-deck skill</span>\n<span class="k">→</span> scaffolds deck.json\n<span class="k">→</span> writes index.html\n<span class="k">→</span> packs coffee.deck\n\n<span class="c">// you, 3 minutes later</span>\n<span class="k">$</span> open coffee.deck',
+            "Tell it what you're presenting, who it's for, how long it should be. Paste in your notes. The AI does the layout, the visuals, the polish — and hands you back a finished deck.",
+          skillCta1: 'See how it works',
+          chatWho1: 'You',
+          chatBody1:
+            'Make me a 10-slide deck for our coffee app launch. Friendly tone, lots of product shots.',
+          chatWho2: 'AI',
+          chatBody2: 'On it — outlining the story, picking colors, drafting the slides. Two minutes.',
+          chatWho3: 'Done',
+          chatBody3: '<b>coffee-launch.deck</b> is on your desktop. Double-click to present.',
 
           s4Kicker: '04',
           s4KickerSub: 'Safe & private',
@@ -2057,39 +1884,10 @@
           cmpNo: 'No',
           cmpLow: 'Limited',
 
-          s6Kicker: '06',
-          s6KickerSub: "What's next",
-          s6Title: 'Today, tomorrow, and after.',
-          s6Lead: "Here's what you can do right now — and where we're going next.",
-          rm1Tag: 'Today',
-          rmLShipped: 'Ready',
-          rm1Title: 'Open, edit, present.',
-          rm1Desc:
-            'Double-click any <span class="mono">.deck</span> to present. Open a folder to edit, with AI chat and live preview side by side.',
-          rm1L1: 'Double-click to open',
-          rm1L2: 'Built-in AI chat + live preview',
-          rm1L3: 'Open Recent, works offline forever',
-          rm2Tag: 'Tomorrow',
-          rmLProgress: 'Soon',
-          rm2Title: 'More templates. Better flow.',
-          rm2Desc:
-            'A curated lineup of starter templates — minimal, tech, academic, keynote, long-scroll — plus a distraction-free presentation mode.',
-          rm2L1: 'Starter template lineup',
-          rm2L2: 'Full-bleed presentation mode',
-          rm2L3: 'Deck gallery',
-          rm3Tag: 'After',
-          rmLPlanned: 'Later',
-          rm3Title: 'Export anywhere.',
-          rm3Desc: 'Need a PDF? A video? A plain web page? One deck, every format — with a click.',
-          rm3L1: 'PDF export',
-          rm3L2: 'Video recording',
-          rm3L3: 'Publish to the web',
-
           endTitle: 'Ready when you are.',
           endCta1: 'Get Deck',
           endCta2: 'Get the skill',
 
-          footWhat: "What's a Deck",
           footHow: 'How it works',
           footSkill: 'The skill',
           footSafe: 'Safe & private',
@@ -2097,42 +1895,46 @@
         zh: {
           navWhat: '什么是 Deck',
           navHow: '怎么用',
-          navRoadmap: '未来',
           navCta: 'GitHub →',
           heroTitle: '幻灯片，重新发明。',
-          heroLead: '你说，AI 做。双击开讲。',
+          heroLead: '告诉 AI 你想讲什么。几分钟后 —— 一份能直接上台的演示，就在你的桌面上。',
           heroCta1: '获取 Deck',
           heroCta2: '了解更多',
-          mockTitle: 'Q3 <em>董事会汇报</em>。',
-          mockBody: '我们走到哪了，下一步去哪 —— 12 页，一个 prompt 做出来。',
+          mockTitle: 'Q3 <em>业绩汇报</em>。',
+          mockBody: '我们走到哪了，下一步去哪 —— 一句话，做出 12 页。',
 
           metaK1: '个文件，发给谁都能打开',
           metaK2: '个账号，什么都不用注册',
           metaK3: '离线可用，没有过期',
           metaK4: '个平台 · Mac、Windows、Linux',
 
-          insideKicker: '里面有什么',
-          insideTitle: '两个文件，就够了。',
+          insideKicker: '能放什么',
+          insideTitle: '一页幻灯片，能装下你的故事。',
           insideSub:
-            '一份 <span class="mono">.deck</span> 就是一个压缩后的文件夹。只要 <span class="mono">deck.json</span> 告诉它叫什么、<span class="mono">index.html</span> 告诉它怎么显示，其他的（图片、字体、脚本）随你放。',
-          fName: '标题。会显示在列表和窗口上。',
-          fAuthor: '作者是谁。',
-          fDesc: '一句话说明这份 Deck 是做什么的。',
-          fCover: '封面图，用于预览。',
-          fVersion: '你这份 Deck 的版本号。',
-          fReq: '必填',
-          fOpt: '可选',
-          keysKicker: '键盘',
-          keysTitle: '每一个键，都是你的。',
+            '照片、图表、视频、品牌 logo、可点击的演示 —— 只要对讲述有帮助的，都能放。Deck 不会把你框死在「标题 + 要点」里。',
+          cName: '照片和图片',
+          cDesc1: '封面、产品照、截图 —— 直接拖进来就行。',
+          cName2: '视频和音频',
+          cDesc2: '播一段宣传片、嵌一份 demo 录屏、配一段背景音乐。',
+          cName3: '图表和数据',
+          cDesc3: '会随数据更新的实时图表，而不是导出来的一张图。',
+          cName4: '动画',
+          cDesc4: '让一句话淡入，让一张地图缩进去 —— 把那一刻讲到位。',
+          cName5: '互动演示',
+          cDesc5: '能跑起来的原型、能旋转的 3D 模型、一个小游戏。',
+          cBasics: '基础内容',
+          cExtras: '想再进一步',
+          keysKicker: '上台时',
+          keysTitle: '该有的按键，都在那。',
           keysSub:
-            '方向键不会被劫持，空格键不会被吞掉。Deck 不挡你的路 —— 每个键要做什么，你自己决定。只有少数几个键留给窗口本身。',
-          k1: '<b>你的 Deck</b> · 翻页，或者任何你接上去的逻辑。',
-          k2: '<b>你的 Deck</b> · 下一页、播视频、触发动画都行。',
-          k3: '<b>你的 Deck</b> · 快捷键是你的。每一个字母都会交给你。',
-          k4: '<b>Deck App</b> · 退出全屏，永远。',
-          k5: '<b>Deck App</b> · 切换全屏。',
-          kL1: '交给你的 Deck',
-          kL2: '由 App 处理',
+            '不用记新东西。方向键翻页，空格往下走，Esc 退出全屏 —— 你这辈子用的都是这些键。',
+          k1: '<b>翻页</b> · 前一页、后一页，最自然不过。',
+          k2: '<b>往下走</b> · 下一页、下一段动画、视频开始播。',
+          k4: '<b>退出全屏</b> · 任何时候，按一下就出来。',
+          k5: '<b>进入全屏</b> · 撑满整个会议室，没有浏览器边栏。',
+          k6Label: '<span class="mono" style="color: var(--mute); font-size: 12px">遥控器</span>',
+          k6: '<b>也支持</b> · 任何演讲遥控器，插上就能用。',
+          kLNote: '和 Keynote、PowerPoint、Google Slides 完全一样。',
 
           s2Kicker: '02',
           s2KickerSub: '为什么',
@@ -2140,8 +1942,8 @@
           f1Title: '双击，就好了。',
           f1Desc: '不是一个浏览器标签页。没有加载转圈。一打开就是全屏的窗口，和 Keynote 一样干脆。',
           f1Note: 'Mac · Windows · Linux 都能用',
-          f2Title: 'AI 替你写完。',
-          f2Desc: '说一下你的主题、把笔记贴进去、丢一份大纲过去 —— AI 帮你变成能上台讲的幻灯片。',
+          f2Title: '从一个想法，到一份完整的 Deck。',
+          f2Desc: '业绩汇报、产品发布、课堂讲义、婚礼致辞 —— 你说一下场景，AI 帮你做成真正能上台讲的幻灯片。',
           f2Note: '支持 Claude、ChatGPT 等',
           f3Title: '你能想到的，它都能做。',
           f3Desc: '动画、视频、实时图表、3D 模型、小游戏 —— 网页能做的，你的 Deck 都能做。',
@@ -2156,22 +1958,27 @@
           s3Lead: '什么都不用学，也什么都不用装。告诉 AI 你要什么 —— 就完事了。',
           s3S1N: 'STEP 01',
           s3S1Title: '说一句话。',
-          s3S1Desc: '「把这份 Q3 数据做成一份董事会 Deck」。或者直接把笔记、讲稿、大纲丢过去 —— 你手头有什么都行。',
+          s3S1Desc: '「把这份 Q3 数据做成一份业绩 Deck」。或者直接把笔记、讲稿、大纲丢过去 —— 你手头有什么都行。',
           s3S2N: 'STEP 02',
-          s3S2Title: 'AI 做好整份 Deck。',
+          s3S2Title: 'AI 做好整份幻灯片。',
           s3S2Desc:
-            '几分钟后，一个真实的 <span class="mono">.deck</span> 文件落在你电脑里。不是链接，不是一个网页，是一个文件。',
+            '几分钟后，一份完成的 Deck 出现在你桌面上 —— 不是链接，不是浏览器标签页。是真正属于你的一份文件。',
           s3S3N: 'STEP 03',
           s3S3Title: '双击开讲。',
-          s3S3Desc: '全屏的窗口。方向键翻页，Esc 退出。同一个文件，自己的电脑、朋友的 Mac，都能直接打开。',
+          s3S3Desc:
+            '全屏、方向键、遥控器 —— 和你一直用的方式一样。带去会议室、发给同事、在手机上打开都行。',
 
-          skillPill: '背后的那个 Skill',
-          skillTitle: 'AI 能做，是因为有 <span class="mono">create-deck</span> skill。',
+          skillPill: '从想法到 Deck',
+          skillTitle: '像跟同事说话一样，告诉 AI 就行。',
           skillDesc:
-            '一份小小的说明书，教会任何 AI 工具怎么按 Deck 的格式来做 —— 分页、沙盒规则、哪些坑要避。你只要说一句 <b>Deck</b>，AI 就会自动调用这个 Skill。',
-          skillCta1: '获取 Skill',
-          skillVisual:
-            '<span class="c">// 你</span>\n「帮我给新的咖啡 App\n 做一份 10 页的 <b>deck</b>。」\n\n<span class="c">// 你的 AI —— 抓到「deck」，</span>\n<span class="c">// 自动启用 create-deck skill</span>\n<span class="k">→</span> 生成 deck.json\n<span class="k">→</span> 写 index.html\n<span class="k">→</span> 打包成 coffee.deck\n\n<span class="c">// 3 分钟后，你</span>\n<span class="k">$</span> open coffee.deck',
+            '说一下你要讲的内容、面对的是谁、大概多长。把笔记贴进去 —— 排版、配图、调色，AI 都替你搞定，最后给你一份做好的 Deck。',
+          skillCta1: '看看怎么用',
+          chatWho1: '你',
+          chatBody1: '帮我给新的咖啡 App 发布会做一份 10 页的 Deck。语气活泼一点，多放点产品图。',
+          chatWho2: 'AI',
+          chatBody2: '收到 —— 我先理一下故事线，挑配色，把每一页画出来。两分钟。',
+          chatWho3: '完成',
+          chatBody3: '<b>coffee-launch.deck</b> 已经放到你桌面上了。双击就能开讲。',
 
           s4Kicker: '04',
           s4KickerSub: '安全 & 私密',
@@ -2200,38 +2007,10 @@
           cmpNo: '不行',
           cmpLow: '有限',
 
-          s6Kicker: '06',
-          s6KickerSub: '未来',
-          s6Title: '今天、明天、以后。',
-          s6Lead: '现在能用什么，接下来会有什么 —— 都在这儿。',
-          rm1Tag: '今天',
-          rmLShipped: '已经好了',
-          rm1Title: '打开、编辑、开讲。',
-          rm1Desc:
-            '双击任意 <span class="mono">.deck</span> 直接开讲；打开一个文件夹就进编辑器 —— 左边 AI 聊天，右边实时预览。',
-          rm1L1: '双击打开',
-          rm1L2: '内置 AI 聊天 + 实时预览',
-          rm1L3: '最近打开 · 永远离线可用',
-          rm2Tag: '明天',
-          rmLProgress: '很快',
-          rm2Title: '更多模板，更顺的流程。',
-          rm2Desc: '一整套精选起步模板 —— 极简、科技、学术、Keynote、长滚动 —— 加上一个纯粹的全屏演示模式。',
-          rm2L1: '多套起步模板',
-          rm2L2: '全屏演示模式',
-          rm2L3: 'Deck 画廊',
-          rm3Tag: '以后',
-          rmLPlanned: '再等等',
-          rm3Title: '导出到任何地方。',
-          rm3Desc: '要 PDF？要视频？要纯网页？一份 Deck，一键切成任何格式。',
-          rm3L1: '导出 PDF',
-          rm3L2: '录制视频',
-          rm3L3: '发布到网页',
-
           endTitle: '准备好了，就来。',
           endCta1: '获取 Deck',
           endCta2: '获取 Skill',
 
-          footWhat: '什么是 Deck',
           footHow: '怎么用',
           footSkill: 'Skill',
           footSafe: '安全 & 私密',

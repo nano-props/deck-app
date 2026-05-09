@@ -53,7 +53,11 @@ export function wireI18nIpc(): void {
         if (w.isDestroyed()) continue
         const wc = w.getChromeWebContents()
         if (wc.isDestroyed()) continue
-        wc.send('app:i18n-changed', payload)
+        try {
+          wc.send('app:i18n-changed', payload)
+        } catch {
+          // Destroyed between the check and the send — teardown race.
+        }
       }
       return payload
     }),

@@ -179,9 +179,10 @@ export function wireAiIpc(): void {
         return { ok: true as const }
       }
       // deleteChatSession scopes the rmSync to the deck's chat directory;
-      // a path that escapes is a silent no-op (defence-in-depth).
-      deleteChatSession(deck.sourcePath, sessionPath)
-      return { ok: true as const }
+      // a path that escapes returns false (defence-in-depth). Renderer
+      // uses the result to decide whether to drop the row optimistically.
+      const ok = deleteChatSession(deck.sourcePath, sessionPath)
+      return ok ? ({ ok: true as const }) : ({ ok: false as const })
     }),
   )
 }

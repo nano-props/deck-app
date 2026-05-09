@@ -88,10 +88,15 @@ export async function createDeckFromTemplate(params: { destDir: string; name: st
     throw new Error('Starter template files are missing from the bundled skills directory.')
   }
 
+  // Use callback-form replace so `$&`, `$1`, etc. in the user's deck
+  // name aren't re-interpreted as backreferences. A name like `Foo$&Bar`
+  // would otherwise re-emit the `<deck-name>` placeholder verbatim.
+  const jsonValue = escapeForJsonString(params.name)
+  const htmlValue = escapeForHtmlText(params.name)
   const rawJson = await readFile(deckJsonSrc, 'utf8')
-  const deckJson = rawJson.replace(/<deck-name>/g, escapeForJsonString(params.name))
+  const deckJson = rawJson.replace(/<deck-name>/g, () => jsonValue)
   const rawHtml = await readFile(indexHtmlSrc, 'utf8')
-  const indexHtml = rawHtml.replace(/<deck-name>/g, escapeForHtmlText(params.name))
+  const indexHtml = rawHtml.replace(/<deck-name>/g, () => htmlValue)
 
   await mkdir(params.destDir, { recursive: true })
   await writeFile(path.join(params.destDir, 'deck.json'), deckJson, 'utf8')

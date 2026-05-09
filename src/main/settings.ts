@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ProviderId } from '#/main/secrets.ts'
+import { createSerialQueue } from '#/main/util/serial-queue.ts'
 
 /**
  * Compaction settings — shape taken from pi's runtime default so the type
@@ -213,8 +214,13 @@ async function doLoad(): Promise<Settings> {
         ...(parsed.compaction ?? {}),
       },
     }
-  } catch {
+  } catch (e) {
     // Corrupt file — reset to defaults. The next write will overwrite it.
+    // Log so the user can see in DevTools / console why their saved
+    // provider/keys/model are gone; without this they'd silently start
+    // over on Anthropic + sonnet defaults.
+    const reason = e instanceof Error ? e.message : String(e)
+    console.warn(`[settings] settings.json could not be loaded (${reason}); resetting to defaults`)
     cache = structuredClone(DEFAULT_SETTINGS)
   }
   return cache
@@ -224,34 +230,19 @@ export async function getSettings(): Promise<Settings> {
   return load()
 }
 
-/**
- * Tail of the write queue. Concurrent updateSettings calls would otherwise
- * race on the shared `.tmp` path (writeFile+rename pair) and on the
- * read-modify-write of `cache`. Chain each call onto the previous so
- * writes serialize without serializing reads.
- *
- * Errors in one update don't sink the chain — `.catch(() => {})` keeps
- * the tail resolvable so the next caller's await isn't poisoned.
- */
-let writeQueue: Promise<unknown> = Promise.resolve()
+// Concurrent updateSettings calls would otherwise race on the shared
+// `.tmp` path (writeFile+rename pair) and on the read-modify-write of
+// `cache`. See `createSerialQueue` for the chain semantics.
+const { enqueue: enqueueWrite } = createSerialQueue()
 
 /**
  * Shallow-merge `patch` into the current settings and persist. Callers that
  * need to change nested fields (e.g. just `ai.model`) should pass a fully
  * formed `ai` object — this intentionally doesn't deep-merge to avoid
  * partial-write ambiguity.
- *
- * Concurrent calls are serialized (see `writeQueue`) so two near-simultaneous
- * Save clicks can't clobber each other's `.tmp` file or interleave the
- * read-modify-write of `cache`.
  */
 export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = writeQueue.then(() => doUpdate(patch))
-  // Swallow errors in the chain tail so one failure doesn't poison
-  // subsequent updates; callers still see the rejection on their own
-  // returned promise.
-  writeQueue = next.catch(() => {})
-  return next
+  return enqueueWrite(() => doUpdate(patch))
 }
 
 async function doUpdate(patch: Partial<Settings>): Promise<Settings> {

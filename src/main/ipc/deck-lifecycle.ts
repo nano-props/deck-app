@@ -49,8 +49,9 @@ export function wireDeckLifecycleIpc(): void {
       const w = appWindowByWebContents(event.sender)
       if (w) {
         const ok = await w.openDeck(picked)
-        if (ok && w.getDeck()) {
-          recordOpen({ path: picked, name: w.getDeck()!.manifest.name }).catch(logRecentsError)
+        const deck = w.getDeck()
+        if (ok && deck) {
+          recordOpen({ path: picked, name: deck.manifest.name }).catch(logRecentsError)
         }
       }
     }),
@@ -71,8 +72,9 @@ export function wireDeckLifecycleIpc(): void {
       const w = appWindowByWebContents(event.sender)
       if (w) {
         const ok = await w.openDeck(input)
-        if (ok && w.getDeck()) {
-          recordOpen({ path: input, name: w.getDeck()!.manifest.name }).catch(logRecentsError)
+        const deck = w.getDeck()
+        if (ok && deck) {
+          recordOpen({ path: input, name: deck.manifest.name }).catch(logRecentsError)
         }
       }
     }),

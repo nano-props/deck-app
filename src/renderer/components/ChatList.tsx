@@ -1,10 +1,14 @@
 // Chat list — pure mapping of `chatStore.nodes` to message bubbles and
 // tool chips. No DOM mutation; React reconciles when the store updates.
 //
-// Auto-scroll: `useEffect` on `nodes` scrolls to bottom on any list
-// change (append OR streaming-text patch) unless the user has manually
-// scrolled away from the tail (within ~200px keeps auto-follow on;
-// further away, we leave them where they are).
+// Auto-scroll: while `followingRef` is true, every nodes change pins
+// scrollTop to the bottom (so streaming text stays in view). We tell
+// our own writes apart from user scrolls by remembering the scrollTop
+// we last wrote — a `scroll` event that reads back that exact value is
+// an echo of our write; any other value is the user. The flag re-arms
+// once the user returns to within a few px of the bottom. A pure
+// distance threshold (the old 200px window) couldn't make this
+// distinction during 20-40Hz streaming and kept yanking the view down.
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as RC from '@radix-ui/react-collapsible'
@@ -14,25 +18,34 @@ import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Scroller } from '#/renderer/components/Scroller.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
 
+const TAIL_EPSILON = 8
+
 export function ChatList() {
-  const t = useI18n((s) => s.t)
   const nodes = useChatStore((s) => s.nodes)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const followingRef = useRef(true)
+  const lastWrittenScrollTopRef = useRef(-1)
 
   useEffect(() => {
     const el = scrollerRef.current
     if (!el) return
     if (followingRef.current) {
-      el.scrollTop = el.scrollHeight
+      // Browsers clamp scrollTop to an integer on assign (CSS sub-pixel
+      // layout makes scrollHeight - clientHeight non-integer in some
+      // cases). Pre-clamp ourselves so the value we cache matches the
+      // value the next `scroll` event will read back.
+      const target = Math.floor(el.scrollHeight - el.clientHeight)
+      lastWrittenScrollTopRef.current = target
+      el.scrollTop = target
     }
   }, [nodes])
 
   const onScroll = () => {
     const el = scrollerRef.current
     if (!el) return
+    if (Math.floor(el.scrollTop) === lastWrittenScrollTopRef.current) return
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    followingRef.current = distance < 200
+    followingRef.current = distance <= TAIL_EPSILON
   }
 
   // External-link click delegation (assistant Markdown carries
@@ -46,33 +59,32 @@ export function ChatList() {
     window.deck.openExternal?.(href)
   }
 
-  const isEmpty = nodes.length === 0
-
   return (
     <Scroller scrollRef={scrollerRef} onScroll={onScroll} onClick={onClick}>
       <div className="flex flex-col gap-3.5 px-5 py-5" role="log" aria-live="polite">
-        {isEmpty && <ChatEmpty />}
+        {nodes.length === 0 && <ChatEmpty />}
         {nodes.map((n) => (
           <ChatNodeView key={n.id} node={n} />
         ))}
       </div>
     </Scroller>
   )
+}
 
-  function ChatEmpty() {
-    return (
-      <div className="px-1 py-4 text-[13px] leading-relaxed text-ink-3">
-        <div className="mb-2.5 text-[13px] font-semibold text-ink">{t('chat.empty.title')}</div>
-        <div>{t('chat.empty.body')}</div>
-        <ul className="mt-3 flex list-none flex-col gap-1.5 p-0 text-[12px] text-ink-4">
-          {/* The shortcuts entry contains <span class="kbd"> markup, so
-              we trust the dictionary string and dangerously-set it. */}
-          <li dangerouslySetInnerHTML={{ __html: t('chat.empty.shortcuts') }} />
-          <li>{t('chat.empty.dropTip')}</li>
-        </ul>
-      </div>
-    )
-  }
+function ChatEmpty() {
+  const t = useI18n((s) => s.t)
+  return (
+    <div className="px-1 py-4 text-[13px] leading-relaxed text-ink-3">
+      <div className="mb-2.5 text-[13px] font-semibold text-ink">{t('chat.empty.title')}</div>
+      <div>{t('chat.empty.body')}</div>
+      <ul className="mt-3 flex list-none flex-col gap-1.5 p-0 text-[12px] text-ink-4">
+        {/* The shortcuts entry contains <span class="kbd"> markup, so
+            we trust the dictionary string and dangerously-set it. */}
+        <li dangerouslySetInnerHTML={{ __html: t('chat.empty.shortcuts') }} />
+        <li>{t('chat.empty.dropTip')}</li>
+      </ul>
+    </div>
+  )
 }
 
 // Memoized so streaming `message_update` events (which mutate only the
@@ -147,13 +159,13 @@ function AssistantNode({ node }: { node: Extract<ChatNode, { kind: 'assistant' }
  */
 function ThinkingBlock({ text }: { text: string }) {
   const t = useI18n((s) => s.t)
-  const ref = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
   // useLayoutEffect (not useEffect): we want the scroll to happen in
   // the same frame as the new content paint — otherwise text streaming
   // at 20-40Hz produces a visible "scroll lag" where the bottom edge
   // briefly pulls back before the next tick catches up.
   useLayoutEffect(() => {
-    const el = ref.current
+    const el = innerRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
   }, [text])
@@ -165,12 +177,11 @@ function ThinkingBlock({ text }: { text: string }) {
       </div>
       {/* Cap height so a long reasoning trace doesn't push the chat
           pane around. Internal scroll auto-pins to the bottom (above). */}
-      <div
-        ref={ref}
-        className="max-h-[140px] overflow-y-auto whitespace-pre-wrap border-t border-line px-2.5 py-1.5 font-mono text-[11px] leading-snug text-ink-2"
-      >
-        {text || t('chat.thinking.empty')}
-      </div>
+      <Scroller scrollRef={innerRef} className="h-[140px] border-t border-line">
+        <div className="whitespace-pre-wrap px-2.5 py-1.5 font-mono text-[11px] leading-snug text-ink-2">
+          {text || t('chat.thinking.empty')}
+        </div>
+      </Scroller>
     </div>
   )
 }

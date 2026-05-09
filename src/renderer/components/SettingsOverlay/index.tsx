@@ -13,12 +13,12 @@ import * as RTabs from '@radix-ui/react-tabs'
 import { X } from 'lucide-react'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { useAiStore } from '#/renderer/stores/ai.ts'
-import { useAppStore } from '#/renderer/stores/app.ts'
 import { useSettingsModal } from '#/renderer/stores/settings-modal.ts'
 import { IconButton } from '#/renderer/components/ui/Button.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
 import { AppearanceTab } from '#/renderer/components/SettingsOverlay/AppearanceTab.tsx'
 import { AiTab } from '#/renderer/components/SettingsOverlay/AiTab.tsx'
+import { AboutTab } from '#/renderer/components/SettingsOverlay/AboutTab.tsx'
 
 // Match `animate-out` in styles.css (120ms) plus a frame of slack so the
 // overlay's final transparent paint commits before the deckView re-shows.
@@ -162,18 +162,12 @@ export function SettingsOverlay() {
 
 function SettingsBody() {
   const t = useI18n((s) => s.t)
-  // AI tab is suppressed in Player (presentation) mode: the user is
-  // mid-demo and shouldn't be one click away from API keys / provider
-  // switches. Appearance still works (theme / language tweaks during a
-  // live deck are harmless). Hidden trigger + content together keeps
-  // the Tabs state machine consistent — defaultValue="appearance"
-  // matches whichever set of triggers is rendered.
-  const showAiTab = useAppStore((s) => s.subView !== 'play')
   return (
     <RTabs.Root defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
       <RTabs.List aria-label={t('settings.title')} className="flex shrink-0 gap-1 border-b border-line px-4 pt-2">
         <SettingsTab value="appearance" label={t('settings.appearance')} />
-        {showAiTab && <SettingsTab value="ai" label={t('settings.ai')} />}
+        <SettingsTab value="ai" label={t('settings.ai')} />
+        <SettingsTab value="about" label={t('settings.about')} />
       </RTabs.List>
 
       {/* Tab pane — the only scrolling region. */}
@@ -181,11 +175,12 @@ function SettingsBody() {
         <RTabs.Content value="appearance" className="focus-visible:outline-none">
           <AppearanceTab />
         </RTabs.Content>
-        {showAiTab && (
-          <RTabs.Content value="ai" className="focus-visible:outline-none">
-            <AiTab />
-          </RTabs.Content>
-        )}
+        <RTabs.Content value="ai" className="focus-visible:outline-none">
+          <AiTab />
+        </RTabs.Content>
+        <RTabs.Content value="about" className="focus-visible:outline-none">
+          <AboutTab />
+        </RTabs.Content>
       </div>
     </RTabs.Root>
   )

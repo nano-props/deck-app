@@ -1,5 +1,5 @@
 import AdmZip from 'adm-zip'
-import { readdir, realpath, stat } from 'node:fs/promises'
+import { readdir, realpath, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 
 /**
@@ -153,10 +153,19 @@ export async function packDeck(rootDir: string, destPath: string): Promise<PackR
     zip.addLocalFile(absPath, folder === '.' ? '' : folder, basename)
   }
 
-  // writeZipPromise overwrites by default. The signature accepts
-  // `{ overwrite: true, perZipFileCallback }`; we pass overwrite
-  // explicitly to be robust against future default changes.
-  await zip.writeZipPromise(destPath, { overwrite: true })
+  // adm-zip writes the zip incrementally to disk — a mid-write failure
+  // (disk full, IO error) would leave a truncated/corrupt file at
+  // destPath, replacing whatever the user originally had there. Stage
+  // to a sibling `.tmp` and rename on success so destPath only ever
+  // moves between two complete-and-valid states.
+  const tmpPath = destPath + '.tmp'
+  try {
+    await zip.writeZipPromise(tmpPath, { overwrite: true })
+    await rename(tmpPath, destPath)
+  } catch (err) {
+    await rm(tmpPath, { force: true }).catch(() => {})
+    throw err
+  }
 
   const { size } = await stat(destPath)
   return { destPath, fileCount: entries.length, bytes: size }

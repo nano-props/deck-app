@@ -132,6 +132,25 @@ window.deck.onAiEvent((ev: AiEvent) => {
       break
     case 'agent_end':
       ai.setStreaming(false)
+      // Surface failures from pi's `handleRunFailure` path — that path
+      // synthesizes an `agent_end` with a stub assistant message but
+      // skips `message_end` (where we'd normally pick up errorMessage).
+      // Without this fallback, executor-level crashes (network setup,
+      // pre-stream throws) flip streaming off silently.
+      if (Array.isArray(ev.messages)) {
+        for (const m of ev.messages) {
+          if (
+            m &&
+            m.role === 'assistant' &&
+            (m.stopReason === 'error') &&
+            typeof m.errorMessage === 'string' &&
+            m.errorMessage.length > 0
+          ) {
+            chat.appendError(m.errorMessage)
+            break
+          }
+        }
+      }
       if (chat.pendingReload) {
         chat.setPendingReload(false)
         void window.deck.reloadPreview().catch(() => {})

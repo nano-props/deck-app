@@ -185,6 +185,14 @@ function AiGroup() {
     return () => clearTimeout(timer)
   }, [status])
 
+  // Track unflushed apiKey so the unmount path can commit it. blur
+  // commits normally, but if the user closes Settings (Esc / X / click
+  // outside) before blur fires, the keystrokes would otherwise be lost.
+  const apiKeyRef = useRef(apiKey)
+  apiKeyRef.current = apiKey
+  const providerRef = useRef(provider)
+  providerRef.current = provider
+
   // Unmount flush: if the user closes Settings during the debounce
   // window, fire the save synchronously so the edit doesn't get lost.
   // Fire-and-forget — the modal is gone, no UI to surface failures.
@@ -192,20 +200,26 @@ function AiGroup() {
     return () => {
       const persisted = persistedRef.current
       const cur = settingsForSaveRef.current
-      if (!persisted) return
-      const same =
-        cur.provider === persisted.ai.provider &&
-        cur.thinkingLevel === persisted.ai.thinkingLevel &&
-        (['anthropic', 'openai', 'google'] as const).every(
-          (k) => cur.builtinModel[k] === persisted.ai.builtinModel[k],
-        ) &&
-        (['custom-openai', 'custom-anthropic', 'custom-responses'] as const).every(
-          (k) =>
-            cur.custom[k]?.baseUrl === persisted.ai.custom[k]?.baseUrl &&
-            cur.custom[k]?.model === persisted.ai.custom[k]?.model,
-        )
-      if (same) return
-      void flushSave(cur)
+      if (persisted) {
+        const same =
+          cur.provider === persisted.ai.provider &&
+          cur.thinkingLevel === persisted.ai.thinkingLevel &&
+          (['anthropic', 'openai', 'google'] as const).every(
+            (k) => cur.builtinModel[k] === persisted.ai.builtinModel[k],
+          ) &&
+          (['custom-openai', 'custom-anthropic', 'custom-responses'] as const).every(
+            (k) =>
+              cur.custom[k]?.baseUrl === persisted.ai.custom[k]?.baseUrl &&
+              cur.custom[k]?.model === persisted.ai.custom[k]?.model,
+          )
+        if (!same) void flushSave(cur)
+      }
+      // Salvage an in-progress apiKey edit too — same rationale as
+      // settings flush but uses the keychain IPC.
+      const trimmedKey = apiKeyRef.current.trim()
+      if (trimmedKey) {
+        void window.deck.settings.setApiKey(providerRef.current, trimmedKey).catch(() => {})
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -261,7 +275,14 @@ function AiGroup() {
     // While the user is mid-typing in apiKey, defer ping. commitApiKey
     // clears apiKey on success, so this gate releases automatically.
     if (apiKey.length > 0) return
+    // Stale-result guard: a ping that's still in flight when the user
+    // changes provider/model would otherwise resolve into the new
+    // form's status display, briefly showing "ping ok for anthropic"
+    // while the form already reads openai. cleanup flips this so the
+    // resolved handler bails before calling setStatus.
+    let cancelled = false
     const timer = setTimeout(async () => {
+      if (cancelled) return
       setStatus({ kind: 'pinging' })
       try {
         const r = await window.deck.settings.ping({
@@ -271,6 +292,7 @@ function AiGroup() {
             ? { [pingPayload.provider]: pingPayload.customForProvider }
             : undefined,
         })
+        if (cancelled) return
         if (r.ok) {
           setStatus({
             kind: 'ok',
@@ -284,10 +306,14 @@ function AiGroup() {
           setStatus({ kind: 'err', msg: r.error ?? t('settings.status.pingFailed') })
         }
       } catch (e) {
+        if (cancelled) return
         setStatus({ kind: 'err', msg: e instanceof Error ? e.message : String(e) })
       }
     }, PING_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, configured, provider, pingPayload, apiKey === '', status.kind === 'saving'])
 

@@ -16,7 +16,7 @@ import { type Static, Type } from '@earendil-works/pi-ai'
 import { existsSync, statSync } from 'node:fs'
 import { access, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { net } from 'electron'
+import { net, nativeImage } from 'electron'
 import {
   compileGlob,
   createDeckGrepTool,
@@ -72,6 +72,14 @@ export interface DeckToolsContext {
    * destination — so a watcher / preview reload picks up both sides.
    */
   onFileChange?: (relPath: string) => void
+  /**
+   * Optional preview-snapshot capture, supplied by the session layer.
+   * When present, `screenshot_preview` is exposed to the agent so it
+   * can see the rendered deck. Absent in tests / unit-construction
+   * paths that don't own a live deckView — the tool is omitted in that
+   * case, so the model never sees a tool that would always fail.
+   */
+  capturePreview?: () => Promise<{ dataUrl: string } | null>
 }
 
 // ---------------------------------------------------------------------------
@@ -123,14 +131,30 @@ async function realpathSafe(p: string): Promise<string> {
   return path.resolve(p)
 }
 
+// Cache realpath of trusted roots (deck rootDir + editor-visible skill
+// dirs). These don't move during a session — re-walking the symlink
+// chain on every tool call wastes I/O proportional to tool-call rate
+// (read/grep/find can hit this hundreds of times per turn). Cache miss
+// is rare (one entry per deck session + one per skill dir).
+const realpathRootCache = new Map<string, Promise<string>>()
+function realpathRootCached(p: string): Promise<string> {
+  let cached = realpathRootCache.get(p)
+  if (!cached) {
+    cached = realpathSafe(p)
+    realpathRootCache.set(p, cached)
+  }
+  return cached
+}
+
 /**
  * Reject any path that escapes the writable sandbox. `writable` controls
  * whether the Editor-visible skill allowlist applies — it does for
  * read-only ops (read / ls) but NOT for mutating ops (write / edit)
  * because skills are shipped content, not user-authorable.
  *
- * We resolve `abs` AND each allowed root through `realpath` so symlinks
- * within the Deck Source can't be used to escape.
+ * The candidate path goes through `realpath` fresh (it can be a brand-
+ * new file the model is about to create); the trusted roots are cached
+ * (see `realpathRootCached`).
  */
 async function ensureInSandbox(abs: string, rootDir: string, writable: boolean): Promise<void> {
   const allowedReadRoots = writable ? [] : editorSkillRoots()
@@ -139,11 +163,11 @@ async function ensureInSandbox(abs: string, rootDir: string, writable: boolean):
     throw new Error(`Path escapes the Deck sandbox: ${abs}`)
   }
   const real = await realpathSafe(abs)
-  const realRoot = await realpathSafe(rootDir)
+  const realRoot = await realpathRootCached(rootDir)
   if (isInsideString(real, realRoot)) return
   if (!writable) {
     for (const root of allowedReadRoots) {
-      const realAllowedRoot = await realpathSafe(root)
+      const realAllowedRoot = await realpathRootCached(root)
       if (isInsideString(real, realAllowedRoot)) return
     }
   }
@@ -162,118 +186,166 @@ function toRelInsideRoot(abs: string, rootDir: string): string | null {
 // Operations factories — wrap pi's defaults with sandbox checks
 // ---------------------------------------------------------------------------
 
+/**
+ * Wrap an `(abs, ...) => R` function so it gates on `ensureInSandbox`
+ * before delegating. Suitable for ops where the only side effect is the
+ * one inside `fn` itself; ops that also need to fire `onFileChange` or
+ * run extra validation (writeFile, edit's writeFile) keep an explicit
+ * handler so the post-write step is visible at the call site.
+ *
+ * Call sites pass arrow lambdas (`(abs) => readFile(abs)`) rather than
+ * raw function references because the fs/promises overloads return
+ * `Buffer | string` depending on whether an `encoding` option is set,
+ * and TypeScript can't narrow that through a generic wrapper. Calling
+ * the function inside a lambda lets overload resolution pick the
+ * concrete return type at the call site.
+ */
+function sandboxed<A extends unknown[], R>(
+  rootDir: string,
+  writable: boolean,
+  fn: (abs: string, ...rest: A) => R | Promise<R>,
+): (abs: string, ...rest: A) => Promise<R> {
+  return async (abs, ...rest) => {
+    await ensureInSandbox(abs, rootDir, writable)
+    return fn(abs, ...rest)
+  }
+}
+
+// Minimal magic-byte probe mirroring pi's behavior: read the head,
+// match against the image types pi accepts inline.
+async function detectImageMimeType(abs: string): Promise<string | null> {
+  const buf = await readFile(abs)
+  if (buf.length < 4) return null
+  const b = buf
+  // JPEG FF D8 FF
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg'
+  // PNG 89 50 4E 47
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png'
+  // GIF "GIF8"
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif'
+  // WebP: RIFF....WEBP
+  if (
+    b.length >= 12 &&
+    b[0] === 0x52 &&
+    b[1] === 0x49 &&
+    b[2] === 0x46 &&
+    b[3] === 0x46 &&
+    b[8] === 0x57 &&
+    b[9] === 0x45 &&
+    b[10] === 0x42 &&
+    b[11] === 0x50
+  ) {
+    return 'image/webp'
+  }
+  return null
+}
+
 function readOps(rootDir: string): ReadOperations {
   return {
-    readFile: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return readFile(abs)
-    },
-    access: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      await access(abs)
-    },
+    readFile: sandboxed(rootDir, false, (abs) => readFile(abs)),
+    access: sandboxed(rootDir, false, (abs) => access(abs)),
     // pi's default detectImageMimeType opens the file with `fs.open` — it
     // happens to be called after `access` today, so our sandbox gate in
     // `access` catches escapes before it runs. Override here anyway so
     // the sandbox doesn't depend on pi's call order.
-    detectImageMimeType: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      // Minimal magic-byte probe mirroring pi's behavior: read the head,
-      // match against the image types pi accepts inline.
-      const buf = await readFile(abs)
-      if (buf.length < 4) return null
-      const b = buf
-      // JPEG FF D8 FF
-      if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg'
-      // PNG 89 50 4E 47
-      if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png'
-      // GIF "GIF8"
-      if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif'
-      // WebP: RIFF....WEBP
-      if (
-        b.length >= 12 &&
-        b[0] === 0x52 &&
-        b[1] === 0x49 &&
-        b[2] === 0x46 &&
-        b[3] === 0x46 &&
-        b[8] === 0x57 &&
-        b[9] === 0x45 &&
-        b[10] === 0x42 &&
-        b[11] === 0x50
-      ) {
-        return 'image/webp'
-      }
-      return null
-    },
+    detectImageMimeType: sandboxed(rootDir, false, detectImageMimeType),
+  }
+}
+
+/**
+ * Single source of truth for deck.json's expected shape. Returns a
+ * (possibly empty) list of human-readable problems. Shared by the
+ * write-time validator (which throws on any issue) and the
+ * `validate_deck` read-time tool (which collects them into a report) —
+ * extending the schema (e.g. requiring `version`) only needs one edit.
+ */
+function checkDeckJsonShape(parsed: unknown): string[] {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return ['must be a JSON object']
+  }
+  const issues: string[] = []
+  const name = (parsed as { name?: unknown }).name
+  if (typeof name !== 'string' || name.trim() === '') {
+    issues.push('`name` must be a non-empty string')
+  }
+  return issues
+}
+
+/**
+ * Hard-validate the contents the model is about to write to a reserved
+ * deck-source file. Today only `deck.json` has machine-checkable
+ * structure; we keep this file-by-file so it's obvious where to extend
+ * (e.g. a future schema check on index.html).
+ *
+ * Throwing here surfaces as a tool error in the chat — pi serializes
+ * the message and the model gets a chance to fix and retry. Without
+ * this guard a malformed `deck.json` would land on disk and break the
+ * next `loadDeck` call.
+ */
+function validateReservedFileContent(abs: string, rootDir: string, content: string): void {
+  const rel = toRelPosix(abs, rootDir)
+  if (rel !== 'deck.json') return
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    throw new Error(`Refusing to write deck.json: invalid JSON (${reason}).`)
+  }
+  const issues = checkDeckJsonShape(parsed)
+  if (issues.length > 0) {
+    throw new Error(`Refusing to write deck.json: ${issues.join('; ')}.`)
   }
 }
 
 function writeOps(ctx: DeckToolsContext): WriteOperations {
+  // pi's write tool wraps the entire mkdir+writeFile call in
+  // withFileMutationQueue already — we do NOT re-lock here or we'd
+  // deadlock (the mutex is not reentrant).
   return {
-    // pi's write tool wraps the entire mkdir+writeFile call in
-    // withFileMutationQueue already — we do NOT re-lock here or we'd
-    // deadlock (the mutex is not reentrant).
     writeFile: async (abs, content) => {
       await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      validateReservedFileContent(abs, ctx.rootDir, content)
       await writeFile(abs, content, 'utf-8')
       const rel = toRelPosix(abs, ctx.rootDir)
       if (rel !== null) ctx.onFileChange?.(rel)
     },
-    mkdir: async (dir) => {
-      await ensureInSandbox(dir, ctx.rootDir, /* writable */ true)
+    mkdir: sandboxed(ctx.rootDir, true, async (dir) => {
       await mkdir(dir, { recursive: true })
-    },
+    }),
   }
 }
 
 function editOps(ctx: DeckToolsContext): EditOperations {
+  // pi's edit tool holds the per-file mutex around access+readFile+
+  // writeFile, so we don't re-lock — the mutex is not reentrant.
+  // Edit is mutating, so the writable=true sandbox excludes the
+  // read-only skill allowlist.
   return {
-    // Same as writeOps: pi's edit tool holds the per-file mutex for
-    // access+readFile+writeFile. Re-locking here would deadlock.
-    readFile: async (abs) => {
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
-      return readFile(abs)
-    },
+    readFile: sandboxed(ctx.rootDir, true, (abs) => readFile(abs)),
     writeFile: async (abs, content) => {
       await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      validateReservedFileContent(abs, ctx.rootDir, content)
       await writeFile(abs, content, 'utf-8')
       const rel = toRelPosix(abs, ctx.rootDir)
       if (rel !== null) ctx.onFileChange?.(rel)
     },
-    access: async (abs) => {
-      await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
-      await access(abs)
-    },
+    access: sandboxed(ctx.rootDir, true, (abs) => access(abs)),
   }
 }
 
 function lsOps(rootDir: string): LsOperations {
   return {
-    exists: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return existsSync(abs)
-    },
-    stat: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return statSync(abs)
-    },
-    readdir: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return readdir(abs)
-    },
+    exists: sandboxed(rootDir, false, (abs) => existsSync(abs)),
+    stat: sandboxed(rootDir, false, (abs) => statSync(abs)),
+    readdir: sandboxed(rootDir, false, (abs) => readdir(abs)),
   }
 }
 
 function grepOps(rootDir: string): GrepOps {
   return {
-    isDirectory: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return (await stat(abs)).isDirectory()
-    },
-    readFile: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return readFile(abs, 'utf-8')
-    },
+    isDirectory: sandboxed(rootDir, false, async (abs) => (await stat(abs)).isDirectory()),
+    readFile: sandboxed(rootDir, false, (abs) => readFile(abs, 'utf-8')),
   }
 }
 
@@ -293,10 +365,7 @@ function grepOps(rootDir: string): GrepOps {
  */
 function findOps(rootDir: string): FindOperations {
   return {
-    exists: async (abs) => {
-      await ensureInSandbox(abs, rootDir, /* writable */ false)
-      return existsSync(abs)
-    },
+    exists: sandboxed(rootDir, false, (abs) => existsSync(abs)),
     glob: async (pattern, cwd, options) => {
       await ensureInSandbox(cwd, rootDir, /* writable */ false)
 
@@ -396,8 +465,19 @@ function addAssetTool(ctx: DeckToolsContext): AgentTool<typeof addAssetSchema> {
       }
       const abs = path.resolve(ctx.rootDir, rel)
       await ensureInSandbox(abs, ctx.rootDir, /* writable */ true)
+      // Tolerate a leading `data:<mime>;base64,` prefix — models
+      // occasionally hand the full data URL straight from a clipboard.
+      // Buffer.from silently strips invalid characters, so we also
+      // require the result to be non-empty for a non-empty input.
+      const stripped = params.base64.replace(/^data:[^;,]*;base64,/i, '').trim()
+      if (!stripped) {
+        throw new Error('add_asset: empty base64 payload.')
+      }
+      const buf = Buffer.from(stripped, 'base64')
+      if (buf.length === 0) {
+        throw new Error('add_asset: base64 decode produced 0 bytes — likely malformed input.')
+      }
       await mkdir(path.dirname(abs), { recursive: true })
-      const buf = Buffer.from(params.base64, 'base64')
       await withFileMutationQueue(abs, async () => {
         await writeFile(abs, buf)
       })
@@ -626,8 +706,95 @@ function isExternalOrInline(ref: string): boolean {
   return false
 }
 
+interface DeckCheckResult {
+  issues: string[]
+  ok: string[]
+  manifest: { name?: unknown } | null
+}
+
+async function checkDeckJson(rootDir: string): Promise<DeckCheckResult> {
+  const manifestAbs = path.join(rootDir, 'deck.json')
+  if (!existsSync(manifestAbs)) {
+    return { issues: ['deck.json: missing at the Deck Source root'], ok: [], manifest: null }
+  }
+  let raw: string
+  try {
+    raw = await readFile(manifestAbs, 'utf-8')
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    return { issues: [`deck.json: unreadable (${reason})`], ok: [], manifest: null }
+  }
+  let parsed: { name?: unknown }
+  try {
+    parsed = JSON.parse(raw) as { name?: unknown }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    return { issues: [`deck.json: invalid JSON (${reason})`], ok: [], manifest: null }
+  }
+  const shapeIssues = checkDeckJsonShape(parsed).map((s) => `deck.json: ${s}`)
+  const ok =
+    shapeIssues.length === 0 && typeof parsed.name === 'string'
+      ? [`deck.json: name = ${parsed.name}`]
+      : []
+  return { issues: shapeIssues, ok, manifest: parsed }
+}
+
+async function checkIndexHtml(rootDir: string): Promise<Pick<DeckCheckResult, 'issues' | 'ok'>> {
+  const indexAbs = path.join(rootDir, 'index.html')
+  if (!existsSync(indexAbs)) {
+    return { issues: ['index.html: missing at the Deck Source root'], ok: [] }
+  }
+  let html: string
+  try {
+    html = await readFile(indexAbs, 'utf-8')
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    return { issues: [`index.html: unreadable (${reason})`], ok: [] }
+  }
+  const issues: string[] = []
+  const checked = new Set<string>()
+  let missingCount = 0
+  for (const ref of extractHtmlRefs(html)) {
+    if (isExternalOrInline(ref)) continue
+    // Strip query / fragment — they're not part of the file path.
+    const cleaned = ref.replace(/[?#].*$/, '')
+    if (!cleaned || checked.has(cleaned)) continue
+    checked.add(cleaned)
+    // Anchor refs at the Deck Source root (this is what the local
+    // server does — the deck is served with rootDir as the doc root).
+    const refAbs = path.resolve(rootDir, cleaned.replace(/^\/+/, ''))
+    // Even though refs are author-controlled, run the sandbox check so
+    // a stray `../foo` is reported as escaping rather than as a Deck file.
+    try {
+      await ensureInSandbox(refAbs, rootDir, /* writable */ false)
+    } catch {
+      issues.push(`index.html: reference escapes the Deck Source: ${ref}`)
+      missingCount++
+      continue
+    }
+    if (!existsSync(refAbs)) {
+      issues.push(`index.html: missing referenced file: ${cleaned}`)
+      missingCount++
+    }
+  }
+  return {
+    issues,
+    ok: [`index.html: scanned ${checked.size} local refs, ${missingCount} missing`],
+  }
+}
+
+function formatDeckReport(result: DeckCheckResult): string {
+  const summary = result.issues.length === 0 ? 'OK' : `${result.issues.length} issue(s)`
+  return [
+    `Deck validation: ${summary}`,
+    ...result.issues.map((s) => `  ✗ ${s}`),
+    '',
+    'Checks:',
+    ...result.ok.map((s) => `  • ${s}`),
+  ].join('\n')
+}
+
 const validateDeckSchema = Type.Object({}, { additionalProperties: false })
-type ValidateDeckParams = Static<typeof validateDeckSchema>
 
 function validateDeckTool(ctx: DeckToolsContext): AgentTool<typeof validateDeckSchema> {
   return {
@@ -638,79 +805,17 @@ function validateDeckTool(ctx: DeckToolsContext): AgentTool<typeof validateDeckS
       'src/href references that point to missing files. Read-only — does not modify ' +
       'anything. Use after structural changes to confirm the deck is still loadable.',
     parameters: validateDeckSchema,
-    execute: async (_id, _params: ValidateDeckParams) => {
-      const issues: string[] = []
-      const ok: string[] = []
-
-      // deck.json
-      const manifestAbs = path.join(ctx.rootDir, 'deck.json')
-      let manifest: { name?: unknown } | null = null
-      if (!existsSync(manifestAbs)) {
-        issues.push('deck.json: missing at the Deck Source root')
-      } else {
-        try {
-          const raw = await readFile(manifestAbs, 'utf-8')
-          const parsed = JSON.parse(raw) as { name?: unknown }
-          manifest = parsed
-          if (typeof parsed.name !== 'string' || parsed.name.trim() === '') {
-            issues.push('deck.json: `name` must be a non-empty string')
-          } else {
-            ok.push(`deck.json: name = ${parsed.name}`)
-          }
-        } catch (e) {
-          const reason = e instanceof Error ? e.message : String(e)
-          issues.push(`deck.json: invalid JSON (${reason})`)
-        }
+    execute: async () => {
+      const manifest = await checkDeckJson(ctx.rootDir)
+      const html = await checkIndexHtml(ctx.rootDir)
+      const result: DeckCheckResult = {
+        issues: [...manifest.issues, ...html.issues],
+        ok: [...manifest.ok, ...html.ok],
+        manifest: manifest.manifest,
       }
-
-      // index.html
-      const indexAbs = path.join(ctx.rootDir, 'index.html')
-      if (!existsSync(indexAbs)) {
-        issues.push('index.html: missing at the Deck Source root')
-      } else {
-        let html: string
-        try {
-          html = await readFile(indexAbs, 'utf-8')
-        } catch (e) {
-          const reason = e instanceof Error ? e.message : String(e)
-          issues.push(`index.html: unreadable (${reason})`)
-          html = ''
-        }
-        const refs = extractHtmlRefs(html)
-        const checked = new Set<string>()
-        let missingCount = 0
-        for (const ref of refs) {
-          if (isExternalOrInline(ref)) continue
-          // Strip query / fragment — they're not part of the file path.
-          const cleaned = ref.replace(/[?#].*$/, '')
-          if (!cleaned) continue
-          if (checked.has(cleaned)) continue
-          checked.add(cleaned)
-          // Anchor refs at the Deck Source root (this is what the local
-          // server does — the deck is served with rootDir as the doc root).
-          const refAbs = path.resolve(ctx.rootDir, cleaned.replace(/^\/+/, ''))
-          // Even though refs are author-controlled, run the sandbox
-          // check so a stray `../foo` isn't reported as a Deck file.
-          try {
-            await ensureInSandbox(refAbs, ctx.rootDir, /* writable */ false)
-          } catch {
-            issues.push(`index.html: reference escapes the Deck Source: ${ref}`)
-            missingCount++
-            continue
-          }
-          if (!existsSync(refAbs)) {
-            issues.push(`index.html: missing referenced file: ${cleaned}`)
-            missingCount++
-          }
-        }
-        ok.push(`index.html: scanned ${checked.size} local refs, ${missingCount} missing`)
-      }
-
-      const summary = issues.length === 0 ? 'OK' : `${issues.length} issue(s)`
-      const lines = [`Deck validation: ${summary}`, ...issues.map((s) => `  ✗ ${s}`), '', 'Checks:', ...ok.map((s) => `  • ${s}`)]
       return {
-        content: [{ type: 'text', text: lines.join('\n') }],
-        details: { issues, ok, manifest },
+        content: [{ type: 'text', text: formatDeckReport(result) }],
+        details: result,
       }
     },
   }
@@ -805,6 +910,14 @@ function fetchUrlTool(ctx: DeckToolsContext): AgentTool<typeof fetchUrlSchema> {
       let total = 0
       const reader = body.getReader()
       while (true) {
+        if (signal?.aborted) {
+          try {
+            await reader.cancel()
+          } catch {
+            // already closed
+          }
+          throw new Error('fetch_url aborted.')
+        }
         const { value, done } = await reader.read()
         if (done) break
         if (!value) continue
@@ -843,6 +956,174 @@ function fetchUrlTool(ctx: DeckToolsContext): AgentTool<typeof fetchUrlSchema> {
 }
 
 // ---------------------------------------------------------------------------
+// read_url — fetch a remote http(s) resource as text without writing to disk
+// ---------------------------------------------------------------------------
+
+const READ_URL_MAX_BYTES = 2 * 1024 * 1024 // 2 MB — large enough for docs/specs, small enough not to bloat context
+const READ_URL_TEXT_TYPES = /^(?:text\/|application\/(?:json|xml|javascript|x-yaml|yaml))/i
+
+const readUrlSchema = Type.Object(
+  {
+    url: Type.String({ description: 'http(s) URL to read.' }),
+  },
+  { additionalProperties: false },
+)
+type ReadUrlParams = Static<typeof readUrlSchema>
+
+function readUrlTool(): AgentTool<typeof readUrlSchema> {
+  return {
+    name: 'read_url',
+    label: 'Read URL',
+    description:
+      `Read a remote http(s) text resource (HTML, Markdown, JSON, plain text) into the ` +
+      `chat context without writing it to disk. Use for docs, specs, READMEs, npm package ` +
+      `pages — anything you want to consult before editing. Capped at ` +
+      `${READ_URL_MAX_BYTES / (1024 * 1024)} MB and text content types only. For binary ` +
+      `assets use fetch_url, which writes to the Deck Source.`,
+    parameters: readUrlSchema,
+    execute: async (_id, params: ReadUrlParams, signal) => {
+      let parsed: URL
+      try {
+        parsed = new URL(params.url)
+      } catch {
+        throw new Error(`Invalid URL: ${params.url}`)
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`read_url only supports http(s); got ${parsed.protocol}`)
+      }
+
+      const res = await net.fetch(parsed.toString(), { redirect: 'follow', signal })
+      if (!res.ok) {
+        throw new Error(`read_url ${parsed.toString()} -> HTTP ${res.status} ${res.statusText}`)
+      }
+
+      // Refuse binary types up front so we don't waste a download on
+      // something we'd just stringify into garbage.
+      const contentType = res.headers.get('content-type') || ''
+      if (contentType && !READ_URL_TEXT_TYPES.test(contentType)) {
+        throw new Error(
+          `read_url expects text content; got ${contentType}. ` +
+            `Use fetch_url to download binaries to the Deck Source.`,
+        )
+      }
+
+      const lenHeader = res.headers.get('content-length')
+      if (lenHeader && Number(lenHeader) > READ_URL_MAX_BYTES) {
+        throw new Error(
+          `Remote resource ${lenHeader} bytes exceeds ${READ_URL_MAX_BYTES} byte cap.`,
+        )
+      }
+
+      const body = res.body
+      if (!body) throw new Error('read_url got an empty response body.')
+      const chunks: Uint8Array[] = []
+      let total = 0
+      const reader = body.getReader()
+      while (true) {
+        if (signal?.aborted) {
+          try {
+            await reader.cancel()
+          } catch {
+            // already closed
+          }
+          throw new Error('read_url aborted.')
+        }
+        const { value, done } = await reader.read()
+        if (done) break
+        if (!value) continue
+        total += value.byteLength
+        if (total > READ_URL_MAX_BYTES) {
+          try {
+            await reader.cancel()
+          } catch {
+            // already closed
+          }
+          throw new Error(`Remote resource exceeds ${READ_URL_MAX_BYTES} byte cap (read ${total} bytes).`)
+        }
+        chunks.push(value)
+      }
+      const text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf-8')
+      return {
+        content: [{ type: 'text', text }],
+        details: { url: parsed.toString(), bytes: total, contentType },
+      }
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// screenshot_preview — snapshot the rendered deck preview
+// ---------------------------------------------------------------------------
+
+// 1568 mirrors Anthropic's recommended long-edge for screenshots — large
+// enough to read body text in slides, small enough that token cost stays
+// reasonable. PNG keeps text crisp; JPEG would smear small fonts.
+const SCREENSHOT_MAX_LONG_EDGE = 1568
+
+const screenshotPreviewSchema = Type.Object({}, { additionalProperties: false })
+type ScreenshotPreviewParams = Static<typeof screenshotPreviewSchema>
+
+function screenshotPreviewTool(
+  capturePreview: NonNullable<DeckToolsContext['capturePreview']>,
+): AgentTool<typeof screenshotPreviewSchema> {
+  return {
+    name: 'screenshot_preview',
+    label: 'Screenshot preview',
+    description:
+      `Capture the live deck preview as a PNG and attach it to the conversation so you ` +
+      `can see what the user sees. Use after structural edits to verify layout, or when ` +
+      `the user asks about something visible. The preview hot-reloads after each edit; ` +
+      `if the screenshot still shows the pre-edit state, do another small action (e.g. ` +
+      `read the file you just wrote) and screenshot again — that gives the iframe a ` +
+      `chance to repaint.`,
+    parameters: screenshotPreviewSchema,
+    execute: async (_id, _params: ScreenshotPreviewParams) => {
+      const captured = await capturePreview()
+      if (!captured) {
+        throw new Error(
+          'Preview is not available right now (Play-only mode, no deck loaded, or the ' +
+            'preview view was destroyed).',
+        )
+      }
+      // Electron returns a "data:image/png;base64,..." URL. Strip the
+      // prefix so we hand the agent raw base64, matching ImageContent's
+      // contract (data is bytes, not a data URL).
+      const m = /^data:(image\/[a-z+.-]+);base64,(.*)$/i.exec(captured.dataUrl)
+      if (!m) throw new Error('Preview snapshot returned an unexpected data URL shape.')
+      let mimeType = m[1]
+      let base64 = m[2]
+
+      // Resize down so we don't ship a 4K Retina capture into every
+      // turn. nativeImage is already RGBA in memory, so we go through
+      // it for the resize and re-encode as PNG.
+      try {
+        const original = nativeImage.createFromDataURL(captured.dataUrl)
+        const size = original.getSize()
+        const longEdge = Math.max(size.width, size.height)
+        if (longEdge > SCREENSHOT_MAX_LONG_EDGE) {
+          const scale = SCREENSHOT_MAX_LONG_EDGE / longEdge
+          const resized = original.resize({
+            width: Math.round(size.width * scale),
+            height: Math.round(size.height * scale),
+            quality: 'good',
+          })
+          base64 = resized.toPNG().toString('base64')
+          mimeType = 'image/png'
+        }
+      } catch {
+        // Resize is best-effort; fall through with the raw capture if
+        // nativeImage rejects (corrupt PNG, etc.).
+      }
+
+      return {
+        content: [{ type: 'image', data: base64, mimeType }],
+        details: { mimeType, bytes: Math.floor((base64.length * 3) / 4) },
+      }
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public: tool set for a Deck editor session
 // ---------------------------------------------------------------------------
 
@@ -851,7 +1132,7 @@ export function createDeckTools(ctx: DeckToolsContext): AgentTool<any>[] {
   // pi's factories accept relative paths from the model and resolve them
   // against `cwd`. rootDir is an absolute path (see deck-loader.ts), so
   // passing it directly works.
-  return [
+  const tools: AgentTool<any>[] = [
     createReadTool(rootDir, { operations: readOps(rootDir) }),
     createWriteTool(rootDir, { operations: writeOps(ctx) }),
     createEditTool(rootDir, { operations: editOps(ctx) }),
@@ -863,7 +1144,12 @@ export function createDeckTools(ctx: DeckToolsContext): AgentTool<any>[] {
     moveFileTool(ctx),
     validateDeckTool(ctx),
     fetchUrlTool(ctx),
+    readUrlTool(),
   ]
+  // Only expose screenshot_preview when a capture function is wired —
+  // otherwise the model would call a tool that always errors.
+  if (ctx.capturePreview) tools.push(screenshotPreviewTool(ctx.capturePreview))
+  return tools
 }
 
 // ---------------------------------------------------------------------------
@@ -886,12 +1172,17 @@ export async function describeDeckSource(rootDir: string): Promise<string> {
     const topEntries = await readdir(rootDir, { withFileTypes: true })
     const topVisible = topEntries.filter((e) => !e.name.startsWith('.')).sort((a, b) => a.name.localeCompare(b.name))
     lines.push('Entries (two levels deep):')
-    for (const entry of topVisible) {
+    // Cap the top level the same way we cap children — a deck dropped
+    // alongside a sprawling assets dump shouldn't blow the system
+    // prompt. Truncation note follows the same `… N more` shape.
+    const topShown = topVisible.slice(0, MAX_CHILDREN_PER_DIR)
+    for (const entry of topShown) {
+      const safeName = sanitizeFileNameForPrompt(entry.name)
       if (!entry.isDirectory()) {
-        lines.push(`  - ${entry.name}`)
+        lines.push(`  - ${safeName}`)
         continue
       }
-      lines.push(`  - ${entry.name}/`)
+      lines.push(`  - ${safeName}/`)
       try {
         const childEntries = await readdir(path.join(rootDir, entry.name), { withFileTypes: true })
         const childVisible = childEntries
@@ -899,7 +1190,8 @@ export async function describeDeckSource(rootDir: string): Promise<string> {
           .sort((a, b) => a.name.localeCompare(b.name))
         const shown = childVisible.slice(0, MAX_CHILDREN_PER_DIR)
         for (const child of shown) {
-          lines.push(`      - ${child.name}${child.isDirectory() ? '/' : ''}`)
+          const safeChild = sanitizeFileNameForPrompt(child.name)
+          lines.push(`      - ${safeChild}${child.isDirectory() ? '/' : ''}`)
         }
         if (childVisible.length > shown.length) {
           lines.push(`      … ${childVisible.length - shown.length} more`)
@@ -907,6 +1199,9 @@ export async function describeDeckSource(rootDir: string): Promise<string> {
       } catch {
         lines.push(`      (could not list)`)
       }
+    }
+    if (topVisible.length > topShown.length) {
+      lines.push(`  … ${topVisible.length - topShown.length} more`)
     }
   } catch {
     lines.push('(could not list Deck Source root)')
@@ -917,12 +1212,39 @@ export async function describeDeckSource(rootDir: string): Promise<string> {
       const raw = await readFile(manifestPath, 'utf8')
       const parsed = JSON.parse(raw) as { name?: string; author?: string; description?: string }
       lines.push('', 'deck.json:')
-      if (parsed.name) lines.push(`  name: ${parsed.name}`)
-      if (parsed.author) lines.push(`  author: ${parsed.author}`)
-      if (parsed.description) lines.push(`  description: ${parsed.description}`)
+      // Sanitize untrusted manifest fields before they land in the
+      // system prompt — a malicious deck.json can use newlines or
+      // tag-shaped strings to redirect the model. Mirrors the same
+      // strip-and-truncate logic system-prompt.ts uses for `deckName`.
+      if (parsed.name) lines.push(`  name: ${sanitizeManifestField(parsed.name)}`)
+      if (parsed.author) lines.push(`  author: ${sanitizeManifestField(parsed.author)}`)
+      if (parsed.description) lines.push(`  description: ${sanitizeManifestField(parsed.description)}`)
     } catch {
       // malformed deck.json — the author will hit validation errors elsewhere
     }
   }
   return lines.join('\n')
+}
+
+function sanitizeManifestField(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+}
+
+/**
+ * Strip control chars and collapse whitespace from a filename before
+ * it lands in the system prompt. macOS / Linux allow newlines and
+ * other control chars in filenames; an attacker-crafted deck source
+ * could otherwise inject a fake instruction by naming a file
+ * `legit\n\nIgnore previous instructions...`. We don't truncate as
+ * aggressively as `sanitizeManifestField` because filenames are the
+ * model's primary handle on the tree.
+ */
+function sanitizeFileNameForPrompt(name: string): string {
+  // eslint-disable-next-line no-control-regex
+  return name.replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
 }

@@ -34,8 +34,12 @@ const ALLOWED_MIME_PREFIX = ['image/', 'video/', 'audio/', 'font/']
 type Translate = ReturnType<typeof useI18n.getState>['t']
 
 export function extOf(name: string): string {
+  // Skip a leading dot so dotfiles like `.gitignore` report ext='' (not
+  // `.gitignore`) — otherwise `extOf` would treat the whole filename as
+  // an extension and produce confusing reject messages.
   const dot = name.lastIndexOf('.')
-  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
+  if (dot <= 0) return ''
+  return name.slice(dot).toLowerCase()
 }
 
 export function kindToken(mime: string, name: string): 'image' | 'video' | 'audio' | 'font' | 'file' {

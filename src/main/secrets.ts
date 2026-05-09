@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { createSerialQueue } from '#/main/util/serial-queue.ts'
 
 /**
  * Encrypted secret storage for provider API keys.
@@ -102,16 +103,11 @@ async function writeAtomic(data: SecretsFile): Promise<void> {
   await rename(tmp, file)
 }
 
-/**
- * Tail of the read-modify-write queue for setSecret/clearSecret. Two
- * concurrent setSecret calls would otherwise each read the old map,
- * splice their own provider, and the second write would lose the first
- * provider's key. Chaining onto this tail forces a strict
- * happens-before ordering. Reads (getSecret / listConfiguredProviders)
- * stay outside — at worst they see a stale snapshot, never a
- * corrupted one (writes are atomic via rename).
- */
-let writeQueue: Promise<unknown> = Promise.resolve()
+// Serialize setSecret/clearSecret/wipeSecrets so the read-modify-write
+// cycle isn't interleaved across concurrent callers. Reads (getSecret /
+// listConfiguredProviders) stay outside — at worst they see a stale
+// snapshot, never a corrupted one (writes are atomic via rename).
+const { enqueue: enqueueWrite } = createSerialQueue()
 
 /**
  * Return the decrypted API key for `provider`, or undefined if none is
@@ -147,11 +143,7 @@ export async function getSecret(provider: ProviderId): Promise<string | undefine
  * clobber the first call's contribution.
  */
 export function setSecret(provider: ProviderId, key: string): Promise<void> {
-  const next = writeQueue.then(() => doSetSecret(provider, key))
-  // Swallow errors in the chain tail so one failure doesn't poison
-  // subsequent updates; callers still see the rejection on `next`.
-  writeQueue = next.catch(() => {})
-  return next
+  return enqueueWrite(() => doSetSecret(provider, key))
 }
 
 async function doSetSecret(provider: ProviderId, key: string): Promise<void> {
@@ -188,8 +180,14 @@ export async function listConfiguredProviders(): Promise<Record<ProviderId, bool
 /**
  * Delete the entire secrets file. Used on "Reset all secrets" or during
  * uninstall-style flows. Idempotent.
+ *
+ * Chained through the write queue so an in-flight setSecret can't
+ * `rename` a fresh file into place after we've unlinked — that ordering
+ * would resurrect a key we just declared deleted.
  */
-export async function wipeSecrets(): Promise<void> {
-  const file = secretsFile()
-  if (existsSync(file)) await unlink(file).catch(() => {})
+export function wipeSecrets(): Promise<void> {
+  return enqueueWrite(async () => {
+    const file = secretsFile()
+    if (existsSync(file)) await unlink(file).catch(() => {})
+  })
 }

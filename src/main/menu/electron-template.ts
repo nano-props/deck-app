@@ -93,7 +93,11 @@ export function pushMenuTreeToRenderers(tree: MenuNode[]): void {
     if (w.isDestroyed()) continue
     const wc = w.getChromeWebContents()
     if (wc.isDestroyed()) continue
-    wc.send('app:menu-tree', tree)
+    try {
+      wc.send('app:menu-tree', tree)
+    } catch {
+      // Destroyed between the check and the send — teardown race.
+    }
   }
 }
 

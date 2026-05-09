@@ -99,8 +99,9 @@ export function Editor() {
             'relative cursor-col-resize select-none bg-line transition-colors',
             'hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2',
             dragging && 'bg-accent',
-            // 12px hit area extending leftward into chat-pane.
-            "before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-3 before:bg-transparent",
+            // 4px hit area extending leftward — kept narrow so it
+            // doesn't overlap the chat-pane's overlay scrollbar rail.
+            "before:content-[''] before:absolute before:inset-y-0 before:right-0 before:w-1 before:bg-transparent",
           )}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}

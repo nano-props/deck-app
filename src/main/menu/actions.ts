@@ -86,7 +86,14 @@ function adjustFocusedZoomLevel(delta: number): void {
 
 export function openSettingsOverlayAction(): void {
   const w = focusedAppWindow()
-  w?.getChromeWebContents().send('app:open-settings-overlay')
+  if (!w) return
+  const wc = w.getChromeWebContents()
+  if (wc.isDestroyed()) return
+  try {
+    wc.send('app:open-settings-overlay')
+  } catch {
+    // Teardown race between isDestroyed and send.
+  }
 }
 
 async function openSomehow(picked: string): Promise<void> {
@@ -94,8 +101,9 @@ async function openSomehow(picked: string): Promise<void> {
   const target = focused && !focused.getDeck() ? focused : new AppWindow()
   if (target !== focused) target.focus()
   const ok = await target.openDeck(picked)
-  if (ok && target.getDeck()) {
-    recordOpen({ path: picked, name: target.getDeck()!.manifest.name }).catch((err) => {
+  const deck = target.getDeck()
+  if (ok && deck) {
+    recordOpen({ path: picked, name: deck.manifest.name }).catch((err) => {
       console.warn('[recents] recordOpen failed', err)
     })
   }

@@ -261,8 +261,10 @@ export class AppWindow {
     // window has set its `deck` yet) and proceed to extract twice.
     let claimed = false
     try {
-      if (this.deck) await this.closeDeck()
-
+      // Check registry / in-flight slot BEFORE closing the current deck
+      // — if the user picked a deck already loading elsewhere, we'd
+      // otherwise tear down their current deck for a flow that's about
+      // to bail with no replacement.
       const existing = findAppWindowBySourcePath(deckPath)
       if (existing && existing !== this) {
         existing.focus()
@@ -289,6 +291,10 @@ export class AppWindow {
         this.broadcastState()
         return false
       }
+
+      // Now safe to close the current deck — we've claimed the slot and
+      // are committed to opening `deckPath`.
+      if (this.deck) await this.closeDeck()
 
       loaded = await loadDeck(deckPath)
 
@@ -393,6 +399,19 @@ export class AppWindow {
       await this.teardownDeckWatcher()
     } catch (err) {
       console.warn('[AppWindow] teardownDeckWatcher threw', err)
+    }
+    // Tell the renderer to clear chat state BEFORE we dispose the AI
+    // session — once `dispose` unsubscribes the listener, any agent_end
+    // emitted by the abort path won't reach the renderer, leaving its
+    // `streaming` flag stuck true and stale chat nodes that the next
+    // `deck:history_replay` would concatenate with the new deck's
+    // transcript. session_reset clears nodes + streaming + attachments.
+    if (this.aiSession && !this.chromeView.webContents.isDestroyed()) {
+      try {
+        this.chromeView.webContents.send('ai:event', { type: 'deck:session_reset' })
+      } catch {
+        // teardown race
+      }
     }
     try {
       await this.teardownAiSession()
@@ -569,7 +588,11 @@ export class AppWindow {
 
   private broadcastState(): void {
     if (this.chromeView.webContents.isDestroyed()) return
-    this.chromeView.webContents.send('app:state', this.getState())
+    try {
+      this.chromeView.webContents.send('app:state', this.getState())
+    } catch {
+      // Destroyed between the check and the send — teardown race.
+    }
     // Rebuild the application menu so items that gate on deck shape
     // (e.g. File → Save, which only enables for Pack-kind decks)
     // reflect the new state.
@@ -613,6 +636,7 @@ export class AppWindow {
       chatKey: this.deck.sourcePath,
       deckName: this.deck.manifest.name,
       onMutation: () => this.markDirty(),
+      capturePreview: () => this.captureDeckView(),
     })
     // handleClosed may have already run during the second await,
     // nulling this.aiSession. Dispose immediately and bail.
@@ -645,15 +669,39 @@ export class AppWindow {
     if (!this.deck || this.chromeView.webContents.isDestroyed()) return
     // Tell the renderer to drop the prior chat DOM before we replay the
     // new transcript — otherwise the two would concatenate visually.
-    this.chromeView.webContents.send('ai:event', { type: 'deck:session_reset' })
-    const session = await createDeckAiSession({
-      sender: this.chromeView.webContents,
-      rootDir: this.deck.rootDir,
-      chatKey: this.deck.sourcePath,
-      deckName: this.deck.manifest.name,
-      sessionPath,
-      onMutation: () => this.markDirty(),
-    })
+    try {
+      this.chromeView.webContents.send('ai:event', { type: 'deck:session_reset' })
+    } catch {
+      // Destroyed between the check and the send — teardown race.
+    }
+    // If sessionPath has been removed/corrupted out from under us
+    // (external delete, partial transfer), don't leave the window
+    // session-less — fall back to the default session so the user can
+    // keep chatting. Caller's `chats:switch` IPC swallows the throw,
+    // but a session-less window forces the renderer into a no-session
+    // dead-end until the user reopens the deck.
+    let session: DeckAiSession
+    try {
+      session = await createDeckAiSession({
+        sender: this.chromeView.webContents,
+        rootDir: this.deck.rootDir,
+        chatKey: this.deck.sourcePath,
+        deckName: this.deck.manifest.name,
+        sessionPath,
+        onMutation: () => this.markDirty(),
+        capturePreview: () => this.captureDeckView(),
+      })
+    } catch (err) {
+      console.warn('[AppWindow] switchAiSession: failed to open requested session, falling back to default', err)
+      session = await createDeckAiSession({
+        sender: this.chromeView.webContents,
+        rootDir: this.deck.rootDir,
+        chatKey: this.deck.sourcePath,
+        deckName: this.deck.manifest.name,
+        onMutation: () => this.markDirty(),
+        capturePreview: () => this.captureDeckView(),
+      })
+    }
     if (!this.deck || this.chromeView.webContents.isDestroyed()) {
       await session.dispose().catch(() => {})
       return

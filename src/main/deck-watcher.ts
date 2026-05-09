@@ -50,10 +50,13 @@ export function watchDeckSource(rootDir: string, onChange: () => void): DeckWatc
   })
 
   let timer: NodeJS.Timeout | null = null
+  let closed = false
   const fire = () => {
+    if (closed) return
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null
+      if (closed) return
       try {
         onChange()
       } catch (err) {
@@ -73,6 +76,10 @@ export function watchDeckSource(rootDir: string, onChange: () => void): DeckWatc
 
   return {
     close: async () => {
+      // chokidar may dispatch buffered events while close() is pending —
+      // the `closed` flag short-circuits both the immediate fire and any
+      // already-scheduled timer so onChange can't run after teardown.
+      closed = true
       if (timer) clearTimeout(timer)
       timer = null
       await watcher.close()

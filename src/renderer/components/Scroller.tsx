@@ -37,14 +37,14 @@ export function Scroller({ scrollRef, onScroll, onClick, className, children }: 
   const railRef = useRef<HTMLDivElement>(null)
   const thumbRef = useRef<HTMLDivElement>(null)
 
-  // Forward inner element to parent via the optional ref. We set this on
-  // each render because innerRef is a stable mutable object — assigning
-  // is cheap and idempotent.
+  // Forward inner element to parent via the optional ref. innerRef is a
+  // stable mutable object so this is a one-time setup; rerun if the
+  // parent swaps in a different `scrollRef` (rare but cheap).
   useEffect(() => {
     if (scrollRef && 'current' in scrollRef) {
       ;(scrollRef as { current: HTMLDivElement | null }).current = innerRef.current
     }
-  })
+  }, [scrollRef])
 
   useEffect(() => {
     const content = innerRef.current

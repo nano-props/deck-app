@@ -178,16 +178,22 @@ export function openDeckChatSession(
  * SessionManager first if deleting the active session.
  *
  * `chatKey` is required so we can scope the delete to the deck's own
- * chat directory. A path outside that dir is silently ignored; this is
+ * chat directory. A path outside that dir is rejected; this is
  * defence-in-depth on top of the IPC handler's own validation.
+ *
+ * Returns true on success (or if the file was already gone), false on
+ * path-escape rejection or unlink failure — the renderer's history
+ * popover uses the boolean to decide whether to remove the row from
+ * its UI optimistically.
  */
-export function deleteChatSession(chatKey: string, sessionPath: string): void {
+export function deleteChatSession(chatKey: string, sessionPath: string): boolean {
   const dir = deckChatDir(chatKey)
-  if (!isPathInside(sessionPath, dir)) return
+  if (!isPathInside(sessionPath, dir)) return false
   try {
     rmSync(sessionPath, { force: true })
+    return true
   } catch {
-    // ignore — the next list() will skip it if gone, surface it if not
+    return false
   }
 }
 

@@ -74,7 +74,12 @@ interface ChatStore {
   reset: () => void
 }
 
+// Monotonic counters for node ids that need to be unique across the
+// session. We don't reuse `nodes.length` because removeNode can shrink
+// it, so the next append could pick a length that collides with a
+// surviving sibling (rare but the React reconciler hates it).
 let userCounter = 0
+let errorCounter = 0
 
 export const useChatStore = create<ChatStore>((set) => ({
   nodes: [],
@@ -137,9 +142,17 @@ export const useChatStore = create<ChatStore>((set) => ({
     })),
 
   appendError: (text) =>
-    set((s) => ({
-      nodes: [...s.nodes, { kind: 'error', id: `e-${s.nodes.length}-${Date.now()}`, text }],
-    })),
+    set((s) => {
+      // Dedup the tail: pi's failure paths can fire `message_end` *and*
+      // `agent_end` with the same errorMessage on the same assistant
+      // turn (and `deck:fatal` overlaps with both in some setup-failure
+      // cases). Showing one error chip per actual failure is the goal.
+      const last = s.nodes[s.nodes.length - 1]
+      if (last && last.kind === 'error' && last.text === text) return s
+      return {
+        nodes: [...s.nodes, { kind: 'error', id: `e-${++errorCounter}`, text }],
+      }
+    }),
 
   appendTool: (toolCallId, toolName, args) =>
     set((s) => {

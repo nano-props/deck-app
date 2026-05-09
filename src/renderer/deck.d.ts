@@ -142,7 +142,7 @@ interface DeckBridge {
 
 export type AiEvent =
   | { type: 'agent_start' }
-  | { type: 'agent_end' }
+  | { type: 'agent_end'; messages: AssistantMessageRef[] }
   | { type: 'message_start'; message: AssistantMessageRef }
   | { type: 'message_update'; message: AssistantMessageRef }
   | { type: 'message_end'; message: AssistantMessageRef }
@@ -177,6 +177,15 @@ export interface HistoryMessage {
 declare global {
   interface Window {
     deck: DeckBridge
+  }
+  // Injected by Vite's `define` from package.json at build time.
+  const __APP_VERSION__: string
+  // Injected by Vite's `define` at build time. `commit` may be empty if the
+  // build host has no git available; About tab handles that gracefully.
+  const __BUILD_INFO__: {
+    commit: string
+    electron: string
+    builtAt: string
   }
 }
 

@@ -75,4 +75,12 @@ export interface SessionParams {
    * "resume the most recent / start a fresh one".
    */
   sessionPath?: string
+  /**
+   * Snapshot the live deck preview as a PNG data URL. Wired to the
+   * `screenshot_preview` tool so the agent can see what it just edited.
+   * Returns null when the preview view isn't available (no deck loaded,
+   * Play-only mode, view destroyed). The session module is decoupled
+   * from AppWindow's preview internals — AppWindow injects this.
+   */
+  capturePreview?: () => Promise<{ dataUrl: string } | null>
 }

@@ -158,6 +158,8 @@ export const en = {
 
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': 'Thinking…',
+  'chat.status.generating': 'Generating…',
+  'chat.status.runningTool': 'Running {tool}…',
   'chat.status.attaching': 'Attaching…',
   'chat.status.aiError': 'AI error',
   'chat.status.sendFailed': 'Send failed',
@@ -232,6 +234,19 @@ export const en = {
   'settings.thinking.medium': 'Medium',
   'settings.thinking.high': 'High',
   'settings.thinking.xhigh': 'Extra high',
+  'settings.about': 'About',
+  'settings.about.description': 'Desktop container for .deck presentations.',
+  'settings.about.version': 'Version',
+  'settings.about.repo': 'GitHub',
+  'settings.about.viewOnGithub': 'View on GitHub',
+  'settings.about.website': 'Docs',
+  'settings.about.author': 'Author',
+  'settings.about.authorName': 'nano-props',
+  'settings.about.license': 'License',
+  'settings.about.licenseName': 'MIT',
+  'settings.about.build': 'Build',
+  'settings.about.electron': 'Electron',
+  'settings.about.commit': 'Commit',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': 'Remove',

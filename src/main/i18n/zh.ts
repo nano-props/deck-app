@@ -149,6 +149,8 @@ export const zh: Record<DictKey, string> = {
 
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': '思考中…',
+  'chat.status.generating': '生成中…',
+  'chat.status.runningTool': '运行 {tool}…',
   'chat.status.attaching': '附加中…',
   'chat.status.aiError': 'AI 错误',
   'chat.status.sendFailed': '发送失败',
@@ -222,6 +224,19 @@ export const zh: Record<DictKey, string> = {
   'settings.thinking.medium': '中',
   'settings.thinking.high': '高',
   'settings.thinking.xhigh': '超高',
+  'settings.about': '关于',
+  'settings.about.description': '用于 .deck 演示的桌面容器。',
+  'settings.about.version': '版本',
+  'settings.about.repo': 'GitHub',
+  'settings.about.viewOnGithub': '在 GitHub 上查看',
+  'settings.about.website': 'Docs',
+  'settings.about.author': '作者',
+  'settings.about.authorName': 'nano-props',
+  'settings.about.license': '许可证',
+  'settings.about.licenseName': 'MIT',
+  'settings.about.build': '构建',
+  'settings.about.electron': 'Electron',
+  'settings.about.commit': '提交',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': '移除',

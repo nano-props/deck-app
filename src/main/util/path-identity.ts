@@ -15,7 +15,11 @@ const CASE_INSENSITIVE = process.platform === 'darwin' || process.platform === '
 
 /** Canonical form for hashing or map-keying a path. */
 export function canonicalPath(p: string): string {
-  const resolved = path.resolve(p)
+  // NFC-normalize first so paths copy-pasted from different sources
+  // (browser, terminal, OS file picker) compare equal even when one
+  // arrives in NFD and the other in NFC — common on macOS, where the
+  // FS itself stores filenames in NFD but user input is typically NFC.
+  const resolved = path.resolve(p).normalize('NFC')
   return CASE_INSENSITIVE ? resolved.toLowerCase() : resolved
 }
 

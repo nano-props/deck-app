@@ -57,7 +57,11 @@ interface GrepDetails {
 }
 
 const DEFAULT_LIMIT = 100
-// Match pi's per-line cap so output looks the same as the rg-backed tool.
+// Per-line cap. pi-coding-agent's `truncateLine` defaults to the same
+// value (its private GREP_MAX_LINE_LENGTH = 500) so output looks the
+// same as the rg-backed tool. We pass it explicitly to keep this file
+// the source of truth — pi doesn't export the constant, so a future
+// pi-side change wouldn't tear our description out of sync.
 const MAX_LINE_LENGTH = 500
 
 // Directory names we never descend into. Decks rarely contain any of
@@ -311,30 +315,46 @@ export function createDeckGrepTool(opts: DeckGrepOptions): AgentTool<typeof grep
           return
         }
 
-        const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+        // Single-pass split on any of CRLF / CR / LF — saves two
+        // multi-MB string allocations vs. chained replace+split.
+        const lines = content.split(/\r\n|\r|\n/)
         const relPath = relPathOf(filePath)
+        // Track which line indices are matches (for `relPath:N:` vs
+        // `relPath-N-` formatting) and how far we've already emitted in
+        // this file (so overlapping context windows don't duplicate
+        // lines — rg uses `--` separators; we just dedupe outright).
+        const matchSet = new Set<number>()
         for (let i = 0; i < lines.length; i++) {
-          if (!matcher.test(lines[i])) continue
+          if (matcher.test(lines[i])) matchSet.add(i)
+        }
+        if (matchSet.size === 0) return
 
+        let lastEmitted = -1
+        for (const i of matchSet) {
+          // A match swallowed by the previous match's trailing context
+          // already shows up in the output (with `:` formatting from
+          // matchSet); don't count it against the limit a second time.
+          if (i <= lastEmitted) continue
+          if (matchCount >= limit) break
           matchCount++
           if (ctxLines === 0) {
-            const { text, wasTruncated } = truncateLine(lines[i])
+            const { text, wasTruncated } = truncateLine(lines[i], MAX_LINE_LENGTH)
             if (wasTruncated) linesTruncated = true
             outputLines.push(`${relPath}:${i + 1}: ${text}`)
+            lastEmitted = i
           } else {
-            const start = Math.max(0, i - ctxLines)
+            const start = Math.max(lastEmitted + 1, i - ctxLines)
             const end = Math.min(lines.length - 1, i + ctxLines)
             for (let j = start; j <= end; j++) {
-              const { text, wasTruncated } = truncateLine(lines[j])
+              const { text, wasTruncated } = truncateLine(lines[j], MAX_LINE_LENGTH)
               if (wasTruncated) linesTruncated = true
-              outputLines.push(j === i ? `${relPath}:${j + 1}: ${text}` : `${relPath}-${j + 1}- ${text}`)
+              const isMatch = matchSet.has(j)
+              outputLines.push(isMatch ? `${relPath}:${j + 1}: ${text}` : `${relPath}-${j + 1}- ${text}`)
             }
-          }
-          if (matchCount >= limit) {
-            matchLimitReached = true
-            return
+            lastEmitted = end
           }
         }
+        if (matchCount >= limit) matchLimitReached = true
       }
 
       if (isDir) {

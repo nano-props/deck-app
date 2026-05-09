@@ -48,8 +48,9 @@ async function openDeckSomewhere(deckPath: string): Promise<void> {
     focused && !focused.getDeck() ? focused : (allAppWindows().find((w) => !w.getDeck()) ?? new AppWindow())
   if (target !== focused) target.focus()
   const ok = await target.openDeck(deckPath)
-  if (ok && target.getDeck()) {
-    recordOpen({ path: deckPath, name: target.getDeck()!.manifest.name }).catch((err) => {
+  const deck = target.getDeck()
+  if (ok && deck) {
+    recordOpen({ path: deckPath, name: deck.manifest.name }).catch((err) => {
       console.warn('[recents] recordOpen failed', err)
     })
   }
