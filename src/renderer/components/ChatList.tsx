@@ -132,7 +132,7 @@ function AssistantNode({ node }: { node: Extract<ChatNode, { kind: 'assistant' }
       {node.text && (
         <div
           className={cn(
-            'text-[13px] leading-relaxed text-ink',
+            'markdown-body text-[13px] leading-relaxed text-ink',
             node.streaming && 'after:content-["▍"] after:text-ink-3 after:animate-pulse',
           )}
           dangerouslySetInnerHTML={{ __html: html }}
