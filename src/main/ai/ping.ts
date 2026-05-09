@@ -1,4 +1,4 @@
-import { streamSimple, type Context } from '@mariozechner/pi-ai'
+import { streamSimple, type Context } from '@earendil-works/pi-ai'
 import { buildModel } from '#/main/ai/provider.ts'
 import { t } from '#/main/i18n/index.ts'
 import { getSecret, type ProviderId } from '#/main/secrets.ts'

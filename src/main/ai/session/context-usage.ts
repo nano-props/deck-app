@@ -1,11 +1,11 @@
-import type { Usage } from '@mariozechner/pi-ai'
+import type { Usage } from '@earendil-works/pi-ai'
 import {
   calculateContextTokens,
   estimateTokens,
   getLastAssistantUsage,
   type SessionEntry,
   type SessionMessageEntry,
-} from '@mariozechner/pi-coding-agent'
+} from '@earendil-works/pi-coding-agent'
 
 /**
  * Estimate current context tokens. Prefers the authoritative `usage`

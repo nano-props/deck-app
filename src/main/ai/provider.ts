@@ -1,4 +1,4 @@
-import { getModel, type Api, type KnownProvider, type Model } from '@mariozechner/pi-ai'
+import { getModel, type Api, type KnownProvider, type Model } from '@earendil-works/pi-ai'
 import { isCustomProvider, type ProviderId } from '#/main/secrets.ts'
 import type { CustomProviderConfig } from '#/main/settings.ts'
 
@@ -17,7 +17,7 @@ export type CustomProviderId = Extract<ProviderId, `custom-${string}`>
  * model.
  *
  * Ids must match pi-ai's generated registry. See
- * `node_modules/@mariozechner/pi-ai/dist/models.generated.js` for the
+ * `node_modules/@earendil-works/pi-ai/dist/models.generated.js` for the
  * canonical list.
  */
 export const MODEL_CATALOG: Record<BuiltinProviderId, readonly string[]> = {

@@ -1,5 +1,5 @@
-import { Agent } from '@mariozechner/pi-agent-core'
-import { convertToLlm, shouldCompact } from '@mariozechner/pi-coding-agent'
+import { Agent } from '@earendil-works/pi-agent-core'
+import { convertToLlm, shouldCompact } from '@earendil-works/pi-coding-agent'
 import { buildModel } from '#/main/ai/provider.ts'
 import { checkAiReadiness } from '#/main/ai/readiness.ts'
 import { createDeckTools } from '#/main/ai/tools.ts'
