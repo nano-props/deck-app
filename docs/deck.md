@@ -45,7 +45,7 @@ One Electron binary, three views, **one window** (see §4.1):
 | Local HTTP server         | Node `http` + `serve-static`                                                                                      | `fastify` + `@fastify/static` |
 | Zip                       | `adm-zip`                                                                                                         | `yauzl` / `yazl`              |
 | File watcher              | `chokidar` (Editor auto-reload)                                                                                   | —                             |
-| AI SDK                    | `@mariozechner/pi-ai` + `pi-agent-core` + `pi-coding-agent`                                                       | —                             |
+| AI SDK                    | `@earendil-works/pi-ai` + `pi-agent-core` + `pi-coding-agent`                                                       | —                             |
 | Persistence               | JSON + JSONL under `app.getPath('userData')`; API keys via `safeStorage`                                          | —                             |
 
 ### Local server lifecycle
@@ -70,7 +70,7 @@ userData/
 ```
 
 - `settings.json`, `secrets.json`, `recents.json`: plain JSON, rewritten on change. API keys in `secrets.json` are base64 ciphertext produced by `safeStorage.encryptString` — the app refuses to store plaintext when the OS keychain is unavailable.
-- `chats/<deckId>/<…>.jsonl`: append-only session log managed by `@mariozechner/pi-coding-agent`'s `SessionManager`. The `deckId` hashes the deck's user-facing identity (the `.deck` file path or the directory the user opened), NOT the temp-extraction `rootDir` — a Pack's rootDir is a fresh tmpdir on every open and would split the chat history across opens otherwise. Resuming the most recent session for a deck continues it; starting fresh creates a new file.
+- `chats/<deckId>/<…>.jsonl`: append-only session log managed by `@earendil-works/pi-coding-agent`'s `SessionManager`. The `deckId` hashes the deck's user-facing identity (the `.deck` file path or the directory the user opened), NOT the temp-extraction `rootDir` — a Pack's rootDir is a fresh tmpdir on every open and would split the chat history across opens otherwise. Resuming the most recent session for a deck continues it; starting fresh creates a new file.
 - There is no longer a `workspaces/` directory. Pack edits live in `os.tmpdir()/deck-app/<uuid>/` for the lifetime of the open and are removed after the close-time rezip.
 
 ---
@@ -145,7 +145,7 @@ The left/right split is driven by real geometry. `TOPBAR_PX = 32` lives in `src/
 ### 5.3 AI capabilities
 
 - **Conversational generation**: _"Make a 10-slide deck about Transformers"_, _"Change slide 3 to a dark theme"_.
-- **Tool use** — we reuse the tool factories from [`@mariozechner/pi-coding-agent`](https://www.npmjs.com/package/@mariozechner/pi-coding-agent), wrapped with a sandbox that rejects any path outside the Deck Source (with a read-only allowlist for the bundled `skills/` directory so SKILL.md can be read by absolute path):
+- **Tool use** — we reuse the tool factories from [`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), wrapped with a sandbox that rejects any path outside the Deck Source (with a read-only allowlist for the bundled `skills/` directory so SKILL.md can be read by absolute path):
   - `read_file` — read any file in the Deck Source or `skills/`.
   - `write_file` — create or overwrite a file inside the Deck Source.
   - `edit_file` — string-replace edit inside a single file.

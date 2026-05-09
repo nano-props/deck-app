@@ -2,12 +2,7 @@ import { app, shell, webContents, type WebContents } from 'electron'
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { AppWindow } from '#/main/app-window/index.ts'
-import {
-  createNewDeckInWindow,
-  promptOpenDeck,
-  promptOpenFolder,
-  saveDeckAsInWindow,
-} from '#/main/dialogs.ts'
+import { createNewDeckInWindow, promptOpenDeck, saveDeckAsInWindow } from '#/main/dialogs.ts'
 import { recordOpen } from '#/main/recents.ts'
 import { focusedAppWindow } from '#/main/window-registry.ts'
 import type { MenuActionId } from '#/main/menu/types.ts'
@@ -19,7 +14,6 @@ export const ACTIONS: Record<MenuActionId, () => void | Promise<void>> = {
     new AppWindow()
   },
   'file.openFile': openFileMenuAction,
-  'file.openFolder': openFolderMenuAction,
   'file.editDeck': editCurrentDeck,
   'file.playDeck': playCurrentDeck,
   'file.save': saveCurrentDeckMenuAction,
@@ -109,11 +103,6 @@ async function openSomehow(picked: string): Promise<void> {
 
 async function openFileMenuAction(): Promise<void> {
   const picked = await promptOpenDeck()
-  if (picked) await openSomehow(picked)
-}
-
-async function openFolderMenuAction(): Promise<void> {
-  const picked = await promptOpenFolder()
   if (picked) await openSomehow(picked)
 }
 

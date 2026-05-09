@@ -30,7 +30,6 @@ export const zh: Record<DictKey, string> = {
   'menu.file.newDeck': '新建 Deck…',
   'menu.file.newWindow': '新建窗口',
   'menu.file.openFile': '打开 .deck…',
-  'menu.file.openFolder': '打开文件夹…',
   'menu.file.editDeck': '编辑 Deck',
   'menu.file.playDeck': '播放 Deck',
   'menu.file.save': '保存',
@@ -62,17 +61,12 @@ export const zh: Record<DictKey, string> = {
 
   // ---- Dialogs — open / new -----------------------------------------------
   'dialog.openDeck.title': '打开 .deck',
-  'dialog.openFolder.title': '打开 deck 文件夹',
-  'dialog.openFolder.message': '选择包含 deck.json 和 index.html 的文件夹',
   'dialog.failedToOpen.title': '打开 deck 失败',
   'dialog.failedToOpen.message': '打开 deck 失败',
   'dialog.cancel': '取消',
   'dialog.newDeck.title': '新建 deck',
-  'dialog.newDeck.message': '选择新建 deck 的保存位置',
+  'dialog.newDeck.message': '选择新建 .deck 文件的保存位置',
   'dialog.newDeck.button': '创建',
-  'dialog.pathExists.title': '路径已存在',
-  'dialog.pathExists.message': '"{name}" 已存在',
-  'dialog.pathExists.detail': '请换一个名称,或先删除已有路径。',
   'dialog.failedToCreate.title': '创建 deck 失败',
   'dialog.failedToCreate.message': '创建 deck 失败',
   'dialog.saveAs.title': '另存为 .deck',
@@ -90,7 +84,7 @@ export const zh: Record<DictKey, string> = {
   'dialog.sourceMissing.saveAs': '另存为…',
   'dialog.cantOpen.title': '无法打开',
   'dialog.cantOpen.message': '这看起来不像一个 Deck',
-  'dialog.cantOpen.detail': '请拖入 .deck 文件,或包含 deck.json 的文件夹。\n\n路径:{path}',
+  'dialog.cantOpen.detail': '请拖入 .deck 文件。\n\n路径:{path}',
   'dialog.ok': '好',
 
   // ---- Topbar buttons (title / aria-label) --------------------------------
@@ -109,10 +103,9 @@ export const zh: Record<DictKey, string> = {
 
   // ---- Launcher -----------------------------------------------------------
   'launcher.title': '打开一份 Deck。',
-  'launcher.lede': '选一个文件或文件夹,或者直接拖进来。',
+  'launcher.lede': '选一个 .deck 文件,或者直接拖进来。',
   'launcher.newDeck': '新建',
   'launcher.openFile': '打开文件',
-  'launcher.openFolder': '打开文件夹',
   'launcher.recent': '最近打开',
   'launcher.loading': '正在打开…',
   'launcher.forget': '忘记',
@@ -160,6 +153,8 @@ export const zh: Record<DictKey, string> = {
   'chat.status.aiError': 'AI 错误',
   'chat.status.sendFailed': '发送失败',
   'chat.status.empty': '(空回复)',
+  'chat.thinking.label': '思考中',
+  'chat.thinking.empty': '等待思考输出…',
 
   // ---- Aria labels --------------------------------------------------------
   'aria.chatInput': '聊天输入框',
@@ -214,6 +209,18 @@ export const zh: Record<DictKey, string> = {
   'settings.status.pingOk': 'OK — {provider}/{model}:{text}',
   'settings.status.pingFailed': '请求失败',
   'settings.encryption.unavailable': '此系统没有可用的钥匙串,API 密钥无法安全存储。',
+  'settings.thinking': '思考强度',
+  'settings.thinking.hint': '让模型在回答前进行思考的强度。不支持的模型会忽略该选项。',
+  'settings.thinking.off': '关闭',
+  'settings.thinking.minimal': '最少',
+  'settings.thinking.low': '低',
+  'settings.thinking.medium': '中',
+  'settings.thinking.high': '高',
+  'settings.thinking.xhigh': '超高',
+  'settings.bash': '启用 bash 工具',
+  'settings.bash.hint':
+    '允许 AI 运行 shell 命令（macOS 沙箱：只能写入演示文稿目录、无网络访问）。其他系统暂不支持。',
+  'settings.bash.unavailable': '当前系统不支持 bash 沙箱（仅 macOS）。',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': '移除',

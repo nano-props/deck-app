@@ -117,10 +117,6 @@ export function Launcher() {
               <span>{t('launcher.openFile')}</span>
               <span className="rounded bg-line-2 px-1.5 text-[11px] font-mono text-ink-3">⌘O</span>
             </Button>
-            <Button onClick={() => void window.deck.openFolder()} data-interactive>
-              <span>{t('launcher.openFolder')}</span>
-              <span className="rounded bg-line-2 px-1.5 text-[11px] font-mono text-ink-3">⌘⇧O</span>
-            </Button>
           </div>
 
           {recents.length > 0 && (

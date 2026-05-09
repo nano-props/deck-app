@@ -1,6 +1,7 @@
 import { app, dialog, shell } from 'electron'
 import { existsSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import type { AppWindow } from '#/main/app-window/index.ts'
 import { packDeck } from '#/main/deck-packer.ts'
@@ -20,67 +21,55 @@ export async function promptOpenDeck(): Promise<string | null> {
   return result.filePaths[0] ?? null
 }
 
-export async function promptOpenFolder(): Promise<string | null> {
-  const result = await dialog.showOpenDialog({
-    title: t('dialog.openFolder.title'),
-    message: t('dialog.openFolder.message'),
-    properties: ['openDirectory'],
-  })
-  if (result.canceled || result.filePaths.length === 0) return null
-  return result.filePaths[0] ?? null
-}
-
 /**
- * "+ New deck" flow: ask for a name, ask where to put it, copy the
- * starter template, open the new directory in `win` in edit mode.
+ * "+ New deck" flow: ask where to save a new `.deck` file, write the
+ * starter template into a tmpdir, pack it into the chosen path, then
+ * open the result in `win` in edit mode.
  *
- * Driven by two sequential dialogs because Electron doesn't have a
- * "name + save-as" composite picker. The friction is acceptable for a
- * one-time create action.
+ * Producing a single `.deck` file (rather than a bare directory) keeps
+ * the user-visible artifact aligned with Save As and hides the Source/
+ * folder concept from the default UX.
  */
 export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
   // `app.getPath('home')` is cross-platform (USERPROFILE on Windows,
   // HOME on POSIX). The earlier `process.env.HOME || ''` fallback would
-  // have produced a relative path 'my-deck' on Windows, where HOME is
-  // typically unset — the dialog would land in an unpredictable cwd.
+  // have produced a relative path on Windows, where HOME is typically
+  // unset — the dialog would land in an unpredictable cwd.
   const save = await dialog.showSaveDialog({
     title: t('dialog.newDeck.title'),
     message: t('dialog.newDeck.message'),
-    defaultPath: path.join(app.getPath('home'), 'my-deck'),
+    defaultPath: path.join(app.getPath('home'), 'my-deck.deck'),
+    filters: [{ name: 'Deck', extensions: ['deck'] }],
     buttonLabel: t('dialog.newDeck.button'),
-    properties: ['createDirectory'],
   })
   if (save.canceled || !save.filePath) return
 
-  const destDir = save.filePath
-  const baseName = path.basename(destDir)
+  // macOS auto-appends the extension from `filters`; Windows/Linux don't.
+  const destPath = save.filePath.toLowerCase().endsWith('.deck') ? save.filePath : `${save.filePath}.deck`
+  const baseName = path.parse(destPath).name
 
-  if (existsSync(destDir)) {
-    void dialog.showMessageBox({
-      type: 'error',
-      title: t('dialog.pathExists.title'),
-      message: t('dialog.pathExists.message', { name: baseName }),
-      detail: t('dialog.pathExists.detail'),
-    })
-    return
-  }
-
+  // Stage the template in a tmpdir, then pack to destPath. Using a
+  // tmpdir (instead of writing the template next to destPath) keeps
+  // failures atomic — if pack fails, the user's chosen path is never
+  // touched.
+  const stageDir = await mkdtemp(path.join(os.tmpdir(), 'deck-new-'))
   try {
-    await createDeckFromTemplate({ destDir, name: baseName })
+    await createDeckFromTemplate({ destDir: stageDir, name: baseName })
+    await packDeck(stageDir, destPath)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     void dialog.showMessageBox({
       type: 'error',
       title: t('dialog.failedToCreate.title'),
       message: t('dialog.failedToCreate.message'),
-      detail: `${message}\n\nTarget: ${destDir}`,
+      detail: `${message}\n\nTarget: ${destPath}`,
     })
-    // Best-effort cleanup if we partially wrote.
-    await rm(destDir, { recursive: true, force: true }).catch(() => {})
     return
+  } finally {
+    await rm(stageDir, { recursive: true, force: true }).catch(() => {})
   }
 
-  await win.openDeck(destDir, 'edit')
+  await win.openDeck(destPath, 'edit')
 }
 
 /**

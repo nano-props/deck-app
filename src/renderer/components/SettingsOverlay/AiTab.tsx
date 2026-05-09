@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Button, IconButton } from '#/renderer/components/ui/Button.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
+import type { ThinkingLevel } from '@earendil-works/pi-agent-core'
 import type { ProviderId } from '#/main/secrets.ts'
 import type { Settings } from '#/main/settings.ts'
 import { Field } from '#/renderer/components/SettingsOverlay/bits.tsx'
@@ -41,6 +42,9 @@ function AiGroup() {
   const [configured, setConfigured] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [apiKey, setApiKey] = useState('')
   const [revealed, setRevealed] = useState(false)
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('medium')
+  const [enableBash, setEnableBash] = useState(false)
+  const [bashAvailable, setBashAvailable] = useState(false)
   const [pingStatus, setPingStatus] = useState<{ kind: '' | 'ok' | 'err'; msg: string }>({
     kind: '',
     msg: '',
@@ -53,8 +57,12 @@ function AiGroup() {
       setProvider(s.ai.provider)
       setBuiltinModel({ ...s.ai.builtinModel })
       setCustom({ ...s.ai.custom })
+      setThinkingLevel(s.ai.thinkingLevel ?? 'medium')
+      setEnableBash(!!s.ai.enableBash)
       const cfg = await window.deck.settings.listConfiguredProviders()
       setConfigured(cfg)
+      const ba = await window.deck.settings.bashAvailable()
+      setBashAvailable(!!ba)
     })()
   }, [])
 
@@ -87,6 +95,8 @@ function AiGroup() {
           provider,
           builtinModel: { ...builtinModel } as Settings['ai']['builtinModel'],
           custom: { ...custom } as Settings['ai']['custom'],
+          thinkingLevel,
+          enableBash,
         },
       })
       const newKey = apiKey.trim()
@@ -191,6 +201,39 @@ function AiGroup() {
           spellCheck={false}
           autoComplete="off"
           className="h-9 rounded-md border border-line-2 bg-surface px-2.5 text-[13px] text-ink"
+        />
+      </Field>
+
+      <Field label={t('settings.thinking')} hint={t('settings.thinking.hint')}>
+        <select
+          value={thinkingLevel}
+          onChange={(e) => setThinkingLevel(e.target.value as ThinkingLevel)}
+          className="h-9 rounded-md border border-line-2 bg-surface px-2.5 text-[13px] text-ink"
+        >
+          <option value="off">{t('settings.thinking.off')}</option>
+          <option value="minimal">{t('settings.thinking.minimal')}</option>
+          <option value="low">{t('settings.thinking.low')}</option>
+          <option value="medium">{t('settings.thinking.medium')}</option>
+          <option value="high">{t('settings.thinking.high')}</option>
+          <option value="xhigh">{t('settings.thinking.xhigh')}</option>
+        </select>
+      </Field>
+
+      <Field
+        label={t('settings.bash')}
+        hint={bashAvailable ? t('settings.bash.hint') : t('settings.bash.unavailable')}
+      >
+        <input
+          type="checkbox"
+          // Show the persisted intent verbatim, even on unsupported
+          // platforms — flipping to false here would silently drop a
+          // setting the user made on another machine. The runtime gate
+          // (createDeckTools) already refuses to register bash when
+          // the OS can't sandbox it, so showing checked + disabled is
+          // honest: "you asked for this, but the current OS won't run it".
+          checked={enableBash}
+          disabled={!bashAvailable}
+          onChange={(e) => setEnableBash(e.target.checked)}
         />
       </Field>
 

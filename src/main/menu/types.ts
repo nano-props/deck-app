@@ -9,7 +9,6 @@ export type MenuActionId =
   | 'file.newDeck'
   | 'file.newWindow'
   | 'file.openFile'
-  | 'file.openFolder'
   | 'file.editDeck'
   | 'file.playDeck'
   | 'file.save'

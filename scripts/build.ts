@@ -7,7 +7,7 @@
 //
 // Usage: ./scripts/build.ts [install|i|win]
 import { $ } from 'bun'
-import { mkdirSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
@@ -24,18 +24,19 @@ const shouldInstall = mode === 'install' || mode === 'i'
 const target: 'mac' | 'win' = mode === 'win' ? 'win' : 'mac'
 
 async function findBuiltArtifact(): Promise<string | null> {
-  const pattern =
-    target === 'win'
-      ? // electron-builder's `portable` target produces a single .exe at the
-        // top level of release/. artifactName controls the filename.
-        `release/${APP_NAME}-*-portable.exe`
-      : // electron-builder picks the output dir based on arch: `mac-arm64` on
-        // Apple Silicon, `mac` / `mac-x64` on Intel. Let glob find whatever
-        // actually got produced.
-        `release/mac*/${APP_NAME}.app`
-  const glob = new Bun.Glob(pattern)
-  const [match] = await Array.fromAsync(glob.scan({ cwd: repoRoot, onlyFiles: false }))
-  return match ? path.join(repoRoot, match) : null
+  if (target === 'win') {
+    // electron-builder's `portable` target produces a single .exe at the
+    // top level of release/. artifactName controls the filename.
+    const glob = new Bun.Glob(`release/${APP_NAME}-*-portable.exe`)
+    const [match] = await Array.fromAsync(glob.scan({ cwd: repoRoot, onlyFiles: false }))
+    return match ? path.join(repoRoot, match) : null
+  }
+  // mac dir target may emit one directory per declared arch (`mac-arm64`,
+  // `mac` for x64). Pick the one matching the host so `install` puts the
+  // right binary in ~/Applications.
+  const hostDir = process.arch === 'arm64' ? 'mac-arm64' : 'mac'
+  const candidate = path.join(repoRoot, 'release', hostDir, `${APP_NAME}.app`)
+  return existsSync(candidate) ? candidate : null
 }
 
 // Clear any prior build output so `findBuiltArtifact` can't pick up a

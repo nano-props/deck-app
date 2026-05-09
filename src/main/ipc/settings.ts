@@ -11,7 +11,9 @@ import {
   setSecret,
   type ProviderId,
 } from '#/main/secrets.ts'
-import { getSettings, updateSettings, type AiSettings } from '#/main/settings.ts'
+import { getSettings, updateSettings, VALID_THINKING_LEVELS, type AiSettings } from '#/main/settings.ts'
+import { isBashSandboxAvailable } from '#/main/ai/sandbox/bash-sandbox.ts'
+import type { ThinkingLevel } from '@earendil-works/pi-agent-core'
 
 /**
  * Settings overlay channels: load/save the plaintext config, store keys
@@ -69,8 +71,23 @@ export function wireSettingsIpc(): void {
         }
       }
 
+      const thinkingLevel: ThinkingLevel = VALID_THINKING_LEVELS.includes(
+        p.ai.thinkingLevel as ThinkingLevel,
+      )
+        ? (p.ai.thinkingLevel as ThinkingLevel)
+        : current.ai.thinkingLevel
+
+      const enableBash =
+        typeof p.ai.enableBash === 'boolean' ? p.ai.enableBash : current.ai.enableBash
+
       return updateSettings({
-        ai: { provider, builtinModel: nextBuiltin, custom: nextCustom },
+        ai: {
+          provider,
+          builtinModel: nextBuiltin,
+          custom: nextCustom,
+          thinkingLevel,
+          enableBash,
+        },
       })
     }),
   )
@@ -110,5 +127,9 @@ export function wireSettingsIpc(): void {
   ipcMain.handle(
     'settings:ai-readiness',
     chromeOnly(async () => checkAiReadiness()),
+  )
+  ipcMain.handle(
+    'settings:bash-available',
+    chromeOnly(async () => isBashSandboxAvailable()),
   )
 }

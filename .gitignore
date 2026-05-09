@@ -5,6 +5,7 @@ node_modules
 out
 dist
 release
+release-publish
 *.tgz
 
 # code coverage

@@ -2,12 +2,7 @@ import { dialog, ipcMain } from 'electron'
 import { AppWindow } from '#/main/app-window/index.ts'
 import { isDeckPath } from '#/main/window-shell.ts'
 import { appWindowByWebContents } from '#/main/window-registry.ts'
-import {
-  createNewDeckInWindow,
-  promptOpenDeck,
-  promptOpenFolder,
-  saveDeckAsInWindow,
-} from '#/main/dialogs.ts'
+import { createNewDeckInWindow, promptOpenDeck, saveDeckAsInWindow } from '#/main/dialogs.ts'
 import { t } from '#/main/i18n/index.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
 import { recordOpen } from '#/main/recents.ts'
@@ -24,7 +19,7 @@ function logRecentsError(err: unknown): void {
  *
  * Channels:
  *   app:get-state / app:new-window      — window-level introspection + spawn
- *   app:open-dialog / app:open-folder / app:open-path / app:new-deck
+ *   app:open-dialog / app:open-path / app:new-deck
  *                                       — ways to populate the window with a deck
  *   app:close-deck / app:enter-editor / app:enter-player
  *                                       — sub-view transitions once a deck is loaded
@@ -50,20 +45,6 @@ export function wireDeckLifecycleIpc(): void {
     'app:open-dialog',
     chromeOnly(async (event) => {
       const picked = await promptOpenDeck()
-      if (!picked) return
-      const w = appWindowByWebContents(event.sender)
-      if (w) {
-        const ok = await w.openDeck(picked)
-        if (ok && w.getDeck()) {
-          recordOpen({ path: picked, name: w.getDeck()!.manifest.name }).catch(logRecentsError)
-        }
-      }
-    }),
-  )
-  ipcMain.handle(
-    'app:open-folder',
-    chromeOnly(async (event) => {
-      const picked = await promptOpenFolder()
       if (!picked) return
       const w = appWindowByWebContents(event.sender)
       if (w) {

@@ -51,13 +51,6 @@ export function buildMenuTree(): MenuNode[] {
     },
     { kind: 'separator' },
     { kind: 'leaf', id: 'file.openFile', label: t('menu.file.openFile'), accelerator: 'CmdOrCtrl+O', enabled: true },
-    {
-      kind: 'leaf',
-      id: 'file.openFolder',
-      label: t('menu.file.openFolder'),
-      accelerator: 'CmdOrCtrl+Shift+O',
-      enabled: true,
-    },
     { kind: 'separator' },
     {
       kind: 'leaf',

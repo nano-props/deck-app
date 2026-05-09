@@ -16,6 +16,11 @@ interface TextBlock {
   text: string
 }
 
+interface ThinkingBlock {
+  type: 'thinking'
+  thinking: string
+}
+
 interface ToolCallBlock {
   type: 'toolCall'
   id: string
@@ -29,6 +34,15 @@ function isTextBlock(c: unknown): c is TextBlock {
     typeof c === 'object' &&
     (c as { type?: unknown }).type === 'text' &&
     typeof (c as { text?: unknown }).text === 'string'
+  )
+}
+
+function isThinkingBlock(c: unknown): c is ThinkingBlock {
+  return (
+    !!c &&
+    typeof c === 'object' &&
+    (c as { type?: unknown }).type === 'thinking' &&
+    typeof (c as { thinking?: unknown }).thinking === 'string'
   )
 }
 
@@ -48,6 +62,14 @@ function assistantText(m: AssistantMessageRef): string {
     .filter(isTextBlock)
     .map((c) => c.text)
     .join('')
+}
+
+function assistantThinking(m: AssistantMessageRef): string {
+  if (!m || !Array.isArray(m.content)) return ''
+  return m.content
+    .filter(isThinkingBlock)
+    .map((c) => c.thinking)
+    .join('\n')
 }
 
 function userMessageText(m: HistoryMessage): string {
@@ -116,22 +138,24 @@ window.deck.onAiEvent((ev: AiEvent) => {
       }
       break
     case 'message_start':
-      if (ev.message?.role === 'assistant') {
-        chat.ensureAssistant(String(ev.message.timestamp ?? Date.now()))
+      if (ev.message?.role === 'assistant' && typeof ev.message.timestamp === 'number') {
+        chat.ensureAssistant(String(ev.message.timestamp))
       }
       break
     case 'message_update':
-      if (ev.message?.role === 'assistant') {
-        const key = String(ev.message.timestamp ?? Date.now())
+      if (ev.message?.role === 'assistant' && typeof ev.message.timestamp === 'number') {
+        const key = String(ev.message.timestamp)
         chat.ensureAssistant(key)
         chat.patchAssistant(key, assistantText(ev.message))
+        chat.patchAssistantThinking(key, assistantThinking(ev.message))
       }
       break
     case 'message_end':
-      if (ev.message?.role === 'assistant') {
-        const key = String(ev.message.timestamp ?? Date.now())
+      if (ev.message?.role === 'assistant' && typeof ev.message.timestamp === 'number') {
+        const key = String(ev.message.timestamp)
         chat.ensureAssistant(key)
         chat.patchAssistant(key, assistantText(ev.message))
+        // Don't repatch thinking here — finalizeAssistant clears it.
         chat.finalizeAssistant(key)
         if (ev.message.stopReason === 'error' && ev.message.errorMessage) {
           chat.appendError(ev.message.errorMessage)

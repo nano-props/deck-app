@@ -21,7 +21,6 @@ interface DeckBridge {
 
   // ---- Deck lifecycle --------
   openDialog: () => Promise<void>
-  openFolder: () => Promise<void>
   openPath: (p: string) => Promise<void>
   openDroppedFile: (file: File) => Promise<void>
   newDeck: () => Promise<void>
@@ -131,6 +130,7 @@ interface DeckBridge {
     encryptionAvailable: () => Promise<boolean>
     ping: () => Promise<{ ok: boolean; text?: string; error?: string; provider?: ProviderId; model?: string }>
     aiReadiness: () => Promise<AiReadiness>
+    bashAvailable: () => Promise<boolean>
   }
 }
 

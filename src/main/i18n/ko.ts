@@ -30,7 +30,6 @@ export const ko: Record<DictKey, string> = {
   'menu.file.newDeck': '새 Deck…',
   'menu.file.newWindow': '새 창',
   'menu.file.openFile': '.deck 열기…',
-  'menu.file.openFolder': '폴더 열기…',
   'menu.file.editDeck': 'Deck 편집',
   'menu.file.playDeck': 'Deck 재생',
   'menu.file.save': '저장',
@@ -62,17 +61,12 @@ export const ko: Record<DictKey, string> = {
 
   // ---- Dialogs — open / new -----------------------------------------------
   'dialog.openDeck.title': '.deck 열기',
-  'dialog.openFolder.title': 'deck 폴더 열기',
-  'dialog.openFolder.message': 'deck.json 과 index.html 이 들어 있는 폴더를 선택하세요',
   'dialog.failedToOpen.title': 'deck 열기 실패',
   'dialog.failedToOpen.message': 'deck 열기 실패',
   'dialog.cancel': '취소',
   'dialog.newDeck.title': '새 deck 만들기',
-  'dialog.newDeck.message': '새 deck 을 저장할 위치를 선택하세요',
+  'dialog.newDeck.message': '새 .deck 파일을 저장할 위치를 선택하세요',
   'dialog.newDeck.button': '만들기',
-  'dialog.pathExists.title': '경로가 이미 있습니다',
-  'dialog.pathExists.message': '"{name}" 이(가) 이미 있습니다',
-  'dialog.pathExists.detail': '다른 이름을 쓰거나 기존 경로를 먼저 지우세요.',
   'dialog.failedToCreate.title': 'deck 생성 실패',
   'dialog.failedToCreate.message': 'deck 생성 실패',
   'dialog.saveAs.title': '.deck 으로 다른 이름으로 저장',
@@ -90,7 +84,7 @@ export const ko: Record<DictKey, string> = {
   'dialog.sourceMissing.saveAs': '다른 이름으로 저장…',
   'dialog.cantOpen.title': '열 수 없음',
   'dialog.cantOpen.message': 'Deck 처럼 보이지 않습니다',
-  'dialog.cantOpen.detail': '.deck 파일이나 deck.json 이 들어 있는 폴더를 끌어다 놓으세요.\n\n경로: {path}',
+  'dialog.cantOpen.detail': '.deck 파일을 끌어다 놓으세요.\n\n경로: {path}',
   'dialog.ok': '확인',
 
   // ---- Topbar buttons (title / aria-label) --------------------------------
@@ -109,10 +103,9 @@ export const ko: Record<DictKey, string> = {
 
   // ---- Launcher -----------------------------------------------------------
   'launcher.title': 'Deck 을 여세요.',
-  'launcher.lede': '파일이나 폴더를 고르세요. 끌어다 놓아도 됩니다.',
+  'launcher.lede': '.deck 파일을 고르세요. 끌어다 놓아도 됩니다.',
   'launcher.newDeck': '새로 만들기',
   'launcher.openFile': '파일 열기',
-  'launcher.openFolder': '폴더 열기',
   'launcher.recent': '최근',
   'launcher.loading': '여는 중…',
   'launcher.forget': '잊기',
@@ -161,6 +154,8 @@ export const ko: Record<DictKey, string> = {
   'chat.status.aiError': 'AI 오류',
   'chat.status.sendFailed': '보내기 실패',
   'chat.status.empty': '(빈 응답)',
+  'chat.thinking.label': '생각 중',
+  'chat.thinking.empty': '생각 결과 대기 중…',
 
   // ---- Aria labels --------------------------------------------------------
   'aria.chatInput': '채팅 입력',
@@ -216,6 +211,18 @@ export const ko: Record<DictKey, string> = {
   'settings.status.pingOk': 'OK — {provider}/{model}: {text}',
   'settings.status.pingFailed': '요청 실패',
   'settings.encryption.unavailable': '이 시스템에는 OS 키체인이 없어 API 키를 안전하게 저장할 수 없습니다.',
+  'settings.thinking': '추론 강도',
+  'settings.thinking.hint': '응답 전 모델이 추론하는 강도. 추론을 지원하지 않는 모델은 이 옵션을 무시합니다.',
+  'settings.thinking.off': '끔',
+  'settings.thinking.minimal': '최소',
+  'settings.thinking.low': '낮음',
+  'settings.thinking.medium': '중간',
+  'settings.thinking.high': '높음',
+  'settings.thinking.xhigh': '매우 높음',
+  'settings.bash': 'bash 도구 활성화',
+  'settings.bash.hint':
+    'AI가 셸 명령을 실행할 수 있게 합니다. macOS 샌드박스: 덱 소스에만 쓰기 가능, 네트워크 차단. 다른 OS에서는 비활성화됩니다.',
+  'settings.bash.unavailable': '이 OS에서는 bash 샌드박스를 사용할 수 없습니다 (macOS 전용).',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': '제거',

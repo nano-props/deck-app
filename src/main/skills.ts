@@ -1,4 +1,4 @@
-import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from '@mariozechner/pi-coding-agent'
+import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from '@earendil-works/pi-coding-agent'
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'

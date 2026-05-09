@@ -17,7 +17,20 @@ import { create } from 'zustand'
 
 export type ChatNode =
   | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean; isError?: boolean }
+  | {
+      kind: 'assistant'
+      id: string
+      text: string
+      /**
+       * Live thinking / reasoning text from the current turn. Cleared
+       * on `finalizeAssistant` so the bubble collapses back to the
+       * answer once the model is done — per product call, history
+       * doesn't keep thinking around.
+       */
+      thinking: string
+      streaming: boolean
+      isError?: boolean
+    }
   | { kind: 'tool'; id: string; toolCallId: string; toolName: string; args: unknown; result?: unknown; running: boolean; isError?: boolean }
   | { kind: 'error'; id: string; text: string }
 
@@ -41,9 +54,13 @@ interface ChatStore {
   ensureAssistant: (key: string) => void
   /** Append-or-replace assistant text by id. */
   patchAssistant: (key: string, text: string) => void
+  /** Append-or-replace assistant thinking text by id. Used while the
+   *  model streams reasoning content (separate from `text`). */
+  patchAssistantThinking: (key: string, thinking: string) => void
   /** Mark assistant streaming=false. Drops the node entirely if it ended
    *  up with no text and no associated tool chips (a turn that emitted
-   *  only toolCalls leaves an empty bubble; nicer to remove). */
+   *  only toolCalls leaves an empty bubble; nicer to remove). Also
+   *  clears `thinking` so the block hides on settle. */
   finalizeAssistant: (key: string) => void
 
   appendError: (text: string) => void
@@ -76,14 +93,35 @@ export const useChatStore = create<ChatStore>((set) => ({
     set((s) => {
       if (s.nodes.some((n) => n.kind === 'assistant' && n.id === key)) return s
       return {
-        nodes: [...s.nodes, { kind: 'assistant', id: key, text: '', streaming: true }],
+        nodes: [...s.nodes, { kind: 'assistant', id: key, text: '', thinking: '', streaming: true }],
       }
     }),
 
   patchAssistant: (key, text) =>
-    set((s) => ({
-      nodes: s.nodes.map((n) => (n.kind === 'assistant' && n.id === key ? { ...n, text } : n)),
-    })),
+    set((s) => {
+      let changed = false
+      const next = s.nodes.map((n) => {
+        if (n.kind !== 'assistant' || n.id !== key || n.text === text) return n
+        changed = true
+        return { ...n, text }
+      })
+      // Skip the state mutation when nothing actually changed — pi can
+      // emit identical message_update payloads (post-stop snapshots),
+      // and at 20-40Hz a no-op array swap still costs us a ChatList
+      // re-render with an unchanged tree.
+      return changed ? { nodes: next } : s
+    }),
+
+  patchAssistantThinking: (key, thinking) =>
+    set((s) => {
+      let changed = false
+      const next = s.nodes.map((n) => {
+        if (n.kind !== 'assistant' || n.id !== key || n.thinking === thinking) return n
+        changed = true
+        return { ...n, thinking }
+      })
+      return changed ? { nodes: next } : s
+    }),
 
   finalizeAssistant: (key) =>
     set((s) => ({
@@ -91,7 +129,10 @@ export const useChatStore = create<ChatStore>((set) => ({
         if (n.kind !== 'assistant' || n.id !== key) return [n]
         // Drop empty assistant turns (only-toolCalls case).
         if (!n.text) return []
-        return [{ ...n, streaming: false }]
+        // Clear thinking on settle: per product call we hide it when
+        // the turn ends. Keeping the field on the node (vs. dropping
+        // it) avoids a type union with/without `thinking` in callers.
+        return [{ ...n, thinking: '', streaming: false }]
       }),
     })),
 

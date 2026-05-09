@@ -31,7 +31,6 @@ export const en = {
   'menu.file.newDeck': 'New Deck…',
   'menu.file.newWindow': 'New Window',
   'menu.file.openFile': 'Open .deck…',
-  'menu.file.openFolder': 'Open Folder…',
   'menu.file.editDeck': 'Edit Deck',
   'menu.file.playDeck': 'Play Deck',
   'menu.file.save': 'Save',
@@ -63,17 +62,12 @@ export const en = {
 
   // ---- Dialogs — open / new -----------------------------------------------
   'dialog.openDeck.title': 'Open .deck',
-  'dialog.openFolder.title': 'Open deck folder',
-  'dialog.openFolder.message': 'Pick a folder containing deck.json and index.html',
   'dialog.failedToOpen.title': 'Failed to open deck',
   'dialog.failedToOpen.message': 'Failed to open deck',
   'dialog.cancel': 'Cancel',
   'dialog.newDeck.title': 'Create new deck',
-  'dialog.newDeck.message': 'Pick where to save the new deck',
+  'dialog.newDeck.message': 'Pick where to save the new .deck file',
   'dialog.newDeck.button': 'Create',
-  'dialog.pathExists.title': 'Path already exists',
-  'dialog.pathExists.message': '"{name}" already exists',
-  'dialog.pathExists.detail': 'Pick a different name or delete the existing path first.',
   'dialog.failedToCreate.title': 'Failed to create deck',
   'dialog.failedToCreate.message': 'Failed to create deck',
   'dialog.saveAs.title': 'Save As .deck',
@@ -91,7 +85,7 @@ export const en = {
   'dialog.sourceMissing.saveAs': 'Save As…',
   'dialog.cantOpen.title': "Can't open that",
   'dialog.cantOpen.message': "That doesn't look like a Deck",
-  'dialog.cantOpen.detail': 'Drop a .deck file, or a folder containing deck.json.\n\nPath: {path}',
+  'dialog.cantOpen.detail': 'Drop a .deck file.\n\nPath: {path}',
   'dialog.ok': 'OK',
 
   // ---- Topbar buttons (title / aria-label) --------------------------------
@@ -110,10 +104,9 @@ export const en = {
 
   // ---- Launcher -----------------------------------------------------------
   'launcher.title': 'Open a deck.',
-  'launcher.lede': 'Pick a file or folder. Or just drag one in.',
+  'launcher.lede': 'Pick a .deck file. Or just drag one in.',
   'launcher.newDeck': 'New deck',
   'launcher.openFile': 'Open file',
-  'launcher.openFolder': 'Open folder',
   'launcher.recent': 'Recent',
   'launcher.loading': 'Opening…',
   'launcher.forget': 'Forget',
@@ -169,6 +162,8 @@ export const en = {
   'chat.status.aiError': 'AI error',
   'chat.status.sendFailed': 'Send failed',
   'chat.status.empty': '(empty reply)',
+  'chat.thinking.label': 'Thinking',
+  'chat.thinking.empty': 'Waiting for reasoning…',
 
   // ---- Aria labels --------------------------------------------------------
   'aria.chatInput': 'Chat input',
@@ -224,6 +219,18 @@ export const en = {
   'settings.status.pingOk': 'OK — {provider}/{model}: {text}',
   'settings.status.pingFailed': 'Ping failed',
   'settings.encryption.unavailable': "OS keychain is not available on this system. API keys can't be stored securely.",
+  'settings.thinking': 'Reasoning level',
+  'settings.thinking.hint': 'How hard the model thinks before answering. Models without reasoning support ignore this.',
+  'settings.thinking.off': 'Off',
+  'settings.thinking.minimal': 'Minimal',
+  'settings.thinking.low': 'Low',
+  'settings.thinking.medium': 'Medium',
+  'settings.thinking.high': 'High',
+  'settings.thinking.xhigh': 'Extra high',
+  'settings.bash': 'Enable bash tool',
+  'settings.bash.hint':
+    'Lets the AI run shell commands. Sandboxed on macOS: writes only inside the deck source, no network. Off on other platforms.',
+  'settings.bash.unavailable': 'Bash sandbox is unavailable on this OS (macOS only).',
 
   // ---- Attachment chips ---------------------------------------------------
   'attach.remove.title': 'Remove',

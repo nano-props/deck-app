@@ -1,11 +1,12 @@
 // Chat list — pure mapping of `chatStore.nodes` to message bubbles and
 // tool chips. No DOM mutation; React reconciles when the store updates.
 //
-// Auto-scroll: `useEffect` on nodes.length scrolls to bottom unless the
-// user has manually scrolled away from the tail (within ~200px keeps
-// auto-follow on; further away, we leave them where they are).
+// Auto-scroll: `useEffect` on `nodes` scrolls to bottom on any list
+// change (append OR streaming-text patch) unless the user has manually
+// scrolled away from the tail (within ~200px keeps auto-follow on;
+// further away, we leave them where they are).
 
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useChatStore, type ChatNode } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Scroller } from '#/renderer/components/Scroller.tsx'
@@ -119,16 +120,72 @@ const ChatNodeView = memo(function ChatNodeView({ node }: { node: ChatNode }) {
 // when the text actually changed.
 function AssistantNode({ node }: { node: Extract<ChatNode, { kind: 'assistant' }> }) {
   const html = useMemo(() => window.deck.renderMarkdown?.(node.text) ?? '', [node.text])
+  // Show thinking only until the first answer chunk arrives — once
+  // text is streaming, the answer is what the user wants to read.
+  // For a thinking-only turn (toolCall with no text), `streaming` flips
+  // to false at message_end and the whole node gets dropped by
+  // `finalizeAssistant`, so this hides naturally.
+  const showThinking = node.streaming && !node.text
   return (
-    <div className="flex flex-col">
-      <div
-        className={cn(
-          'text-[13px] leading-relaxed text-ink',
-          node.streaming && 'after:content-["▍"] after:text-ink-3 after:animate-pulse',
-        )}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+    <div className="flex flex-col gap-2">
+      {showThinking && <ThinkingBlock text={node.thinking} />}
+      {node.text && (
+        <div
+          className={cn(
+            'text-[13px] leading-relaxed text-ink',
+            node.streaming && 'after:content-["▍"] after:text-ink-3 after:animate-pulse',
+          )}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * Live thinking / reasoning panel. Rendered raw (no Markdown) so it
+ * doesn't compete visually with the final answer below; capped height
+ * with auto-pin so a long trace can't push the chat pane around. The
+ * dot trio gives the user a visible cue during the gap between turn
+ * start and the first reasoning chunk.
+ */
+function ThinkingBlock({ text }: { text: string }) {
+  const t = useI18n((s) => s.t)
+  const ref = useRef<HTMLDivElement>(null)
+  // useLayoutEffect (not useEffect): we want the scroll to happen in
+  // the same frame as the new content paint — otherwise text streaming
+  // at 20-40Hz produces a visible "scroll lag" where the bottom edge
+  // briefly pulls back before the next tick catches up.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [text])
+  return (
+    <div className="overflow-hidden rounded-lg border border-line bg-bg-deep">
+      <div className="flex items-center gap-2 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-4">
+        <span>{t('chat.thinking.label')}</span>
+        <ThinkingDots />
+      </div>
+      {/* Cap height so a long reasoning trace doesn't push the chat
+          pane around. Internal scroll auto-pins to the bottom (above). */}
+      <div
+        ref={ref}
+        className="max-h-[140px] overflow-y-auto whitespace-pre-wrap border-t border-line px-2.5 py-1.5 font-mono text-[11px] leading-snug text-ink-2"
+      >
+        {text || t('chat.thinking.empty')}
+      </div>
+    </div>
+  )
+}
+
+function ThinkingDots() {
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <span className="size-1 rounded-full bg-ink-4 animate-pulse [animation-delay:0ms]" />
+      <span className="size-1 rounded-full bg-ink-4 animate-pulse [animation-delay:200ms]" />
+      <span className="size-1 rounded-full bg-ink-4 animate-pulse [animation-delay:400ms]" />
+    </span>
   )
 }
 

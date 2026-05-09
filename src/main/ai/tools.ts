@@ -1,4 +1,5 @@
 import {
+  createBashTool,
   createEditTool,
   createLsTool,
   createReadTool,
@@ -8,12 +9,13 @@ import {
   type LsOperations,
   type ReadOperations,
   type WriteOperations,
-} from '@mariozechner/pi-coding-agent'
-import { type AgentTool } from '@mariozechner/pi-agent-core'
-import { type Static, Type } from '@mariozechner/pi-ai'
+} from '@earendil-works/pi-coding-agent'
+import { type AgentTool } from '@earendil-works/pi-agent-core'
+import { type Static, Type } from '@earendil-works/pi-ai'
 import { existsSync, statSync } from 'node:fs'
 import { access, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { createSandboxedBashOperations, isBashSandboxAvailable } from '#/main/ai/sandbox/bash-sandbox.ts'
 import { skillsRoot } from '#/main/skills.ts'
 
 /**
@@ -32,15 +34,24 @@ import { skillsRoot } from '#/main/skills.ts'
  * over IPC as bytes. Writing via `write_file` would require the model
  * to base64-round-trip through its own transcript — wasteful.
  *
+ * Optional `bash` (off by default, opt-in via Settings → Enable bash):
+ *   When enabled on macOS we register a bash tool that runs every
+ *   command through `sandbox-exec` with read-anywhere /
+ *   write-only-in-rootDir / no-network. That's strict enough that an
+ *   adversarial command from the model can't exfiltrate or persist
+ *   state outside the deck source, while still letting the agent
+ *   reach for `sed`, `awk`, ImageMagick, etc. when scripted edits are
+ *   easier than hand-rolling a tool. Linux/Windows currently get no
+ *   bash — sandbox-exec is darwin-only and we don't ship an
+ *   equivalent yet.
+ *
  * Notably absent:
- *   - `bash` — we don't grant the Agent shell access in a desktop app.
- *     Attack surface with no concrete authoring need.
  *   - `grep` / `find` — pi's implementations spawn external binaries
  *     (`rg` / `fd`) and will silently download them to `~/.pi/agent/`
- *     on first use. That's fine in the CLI but crosses our "no shell
- *     access, no unexpected network I/O" line for a desktop app. A
- *     typical Deck is small enough that `ls` + `read` suffice; if
- *     search becomes a bottleneck we'll ship our own JS grep.
+ *     on first use. That's fine in the CLI but crosses our "no
+ *     unexpected network I/O" line for a desktop app. With bash on,
+ *     the agent can still run `grep -r` / `find` against the deck
+ *     inside the sandbox.
  *   - `list_skills` / `read_skill` — pi's convention is that the system
  *     prompt lists skills with absolute paths, and the model reads them
  *     with the standard `read` tool. We allowlist skillsRoot() below.
@@ -57,6 +68,16 @@ export interface DeckToolsContext {
    * (shouldn't happen given sandbox, but the type is defensive).
    */
   onFileChange?: (relPath: string) => void
+  /**
+   * Register the optional `bash` tool. Caller is expected to pass the
+   * *effective* gate (user opted in AND the OS supports the sandbox);
+   * we still re-check `isBashSandboxAvailable()` defensively so a
+   * misuse here can't bypass the isolation. See bash-sandbox.ts for
+   * the profile. Note: bash bypasses our `onFileChange` notifier —
+   * chokidar picks bash-driven writes up via the watcher path instead,
+   * so the preview still reloads (with the watcher's normal debounce).
+   */
+  enableBash?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -317,13 +338,30 @@ export function createDeckTools(ctx: DeckToolsContext): AgentTool<any>[] {
   // pi's factories accept relative paths from the model and resolve them
   // against `cwd`. rootDir is an absolute path (see deck-loader.ts), so
   // passing it directly works.
-  return [
+  const tools: AgentTool<any>[] = [
     createReadTool(rootDir, { operations: readOps(rootDir) }),
     createWriteTool(rootDir, { operations: writeOps(ctx) }),
     createEditTool(rootDir, { operations: editOps(ctx) }),
     createLsTool(rootDir, { operations: lsOps(rootDir) }),
     addAssetTool(ctx),
   ]
+  if (ctx.enableBash && isBashSandboxAvailable()) {
+    // Profile construction can fail if rootDir contains characters that
+    // can't safely live inside a sandbox-exec literal (parens, quotes,
+    // etc.). We don't want that to take down the whole session — just
+    // log and skip the bash tool. The agent loses bash but keeps
+    // read/write/edit/ls/add_asset.
+    try {
+      tools.push(
+        createBashTool(rootDir, {
+          operations: createSandboxedBashOperations({ writableRoot: rootDir }),
+        }),
+      )
+    } catch (err) {
+      console.warn('[ai] bash tool disabled — could not build sandbox profile:', err)
+    }
+  }
+  return tools
 }
 
 // ---------------------------------------------------------------------------

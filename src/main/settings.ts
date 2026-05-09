@@ -1,4 +1,5 @@
-import { DEFAULT_COMPACTION_SETTINGS } from '@mariozechner/pi-coding-agent'
+import { DEFAULT_COMPACTION_SETTINGS } from '@earendil-works/pi-coding-agent'
+import type { ThinkingLevel } from '@earendil-works/pi-agent-core'
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
@@ -57,6 +58,23 @@ export interface AiSettings {
   builtinModel: Record<'anthropic' | 'openai' | 'google', string>
   /** Persisted config for each custom flavor. Independent per wire protocol. */
   custom: Record<'custom-openai' | 'custom-anthropic' | 'custom-responses', CustomProviderConfig>
+  /**
+   * Reasoning / "thinking" level forwarded to the Agent each turn.
+   * Models without reasoning support silently ignore this. Default is
+   * `medium` — the obvious default once we surface the toggle, since
+   * the agent's editing tasks (read → reason → edit) benefit from
+   * deliberate reasoning, and providers that don't support it fall
+   * back automatically.
+   */
+  thinkingLevel: ThinkingLevel
+  /**
+   * Enable the `bash` tool. Off by default — letting an LLM run shell
+   * commands is a serious capability bump. When on, bash runs via
+   * macOS sandbox-exec with read-anywhere / write-only-in-deck-source
+   * / no-network. Non-darwin platforms ignore this flag (no sandbox
+   * available, tool registration short-circuits).
+   */
+  enableBash: boolean
 }
 
 export interface Settings {
@@ -90,6 +108,15 @@ export const DEFAULT_BUILTIN_MODELS: AiSettings['builtinModel'] = {
   google: 'gemini-3-pro-preview',
 }
 
+export const VALID_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]
+
 export const DEFAULT_SETTINGS: Settings = {
   ai: {
     provider: 'anthropic',
@@ -99,6 +126,8 @@ export const DEFAULT_SETTINGS: Settings = {
       'custom-anthropic': { ...EMPTY_CUSTOM },
       'custom-responses': { ...EMPTY_CUSTOM },
     },
+    thinkingLevel: 'medium',
+    enableBash: false,
   },
   ui: { lang: 'auto' },
   compaction: { ...DEFAULT_COMPACTION_SETTINGS },
@@ -152,10 +181,10 @@ async function doLoad(): Promise<Settings> {
     const parsed = JSON.parse(raw) as Partial<Settings> & {
       ai?: {
         provider?: ProviderId
-        /** Legacy pre-0.2 field: a single "active" model. Migrated into `builtinModel[provider]`. */
-        model?: string
         builtinModel?: Partial<AiSettings['builtinModel']>
         custom?: Partial<AiSettings['custom']>
+        thinkingLevel?: unknown
+        enableBash?: unknown
       }
       ui?: Partial<UiSettings>
       compaction?: Partial<CompactionSettings>
@@ -172,28 +201,24 @@ async function doLoad(): Promise<Settings> {
       const val = parsed.ai?.builtinModel?.[key]
       if (typeof val === 'string' && val.length > 0) mergedBuiltin[key] = val
     }
-    // Migrate the pre-split `ai.model` onto the provider it belonged to.
-    // The field was only ever meaningful for the *active* builtin, so we
-    // slot it onto whichever builtin is currently selected. Custom
-    // providers already read from ai.custom[id].model and are unaffected.
     const provider = (parsed.ai?.provider ?? DEFAULT_SETTINGS.ai.provider) as ProviderId
-    if (
-      typeof parsed.ai?.model === 'string' &&
-      parsed.ai.model.length > 0 &&
-      (provider === 'anthropic' || provider === 'openai' || provider === 'google') &&
-      !parsed.ai.builtinModel
-    ) {
-      mergedBuiltin[provider] = parsed.ai.model
-    }
     const uiLang =
       parsed.ui?.lang === 'en' || parsed.ui?.lang === 'zh' || parsed.ui?.lang === 'ko' || parsed.ui?.lang === 'auto'
         ? parsed.ui.lang
         : DEFAULT_SETTINGS.ui.lang
+    const rawThinking = parsed.ai?.thinkingLevel
+    const thinkingLevel: ThinkingLevel = VALID_THINKING_LEVELS.includes(rawThinking as ThinkingLevel)
+      ? (rawThinking as ThinkingLevel)
+      : DEFAULT_SETTINGS.ai.thinkingLevel
+    const enableBash =
+      typeof parsed.ai?.enableBash === 'boolean' ? parsed.ai.enableBash : DEFAULT_SETTINGS.ai.enableBash
     cache = {
       ai: {
         provider,
         builtinModel: mergedBuiltin,
         custom: mergedCustom,
+        thinkingLevel,
+        enableBash,
       },
       ui: { lang: uiLang },
       compaction: {

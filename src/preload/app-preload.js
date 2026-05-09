@@ -94,7 +94,6 @@ contextBridge.exposeInMainWorld('deck', {
 
   // ---- Deck lifecycle -----------------------------------------------------
   openDialog: () => ipcRenderer.invoke('app:open-dialog'),
-  openFolder: () => ipcRenderer.invoke('app:open-folder'),
   openPath: (p) => ipcRenderer.invoke('app:open-path', p),
   // Drop handler: webUtils.getPathForFile returns '' for non-fs drops;
   // main side silently ignores those.
@@ -220,5 +219,9 @@ contextBridge.exposeInMainWorld('deck', {
     /** Returns { ready: boolean, reason?: string } — used to gate the
      *  composer Send button when the active provider isn't usable yet. */
     aiReadiness: () => ipcRenderer.invoke('settings:ai-readiness'),
+    /** True when the current OS supports the bash-sandbox path (macOS
+     *  with sandbox-exec). Settings UI uses this to disable the toggle
+     *  on unsupported platforms. */
+    bashAvailable: () => ipcRenderer.invoke('settings:bash-available'),
   },
 })
