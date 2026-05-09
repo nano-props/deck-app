@@ -24,7 +24,7 @@ import {
   walkFiles,
   type GrepOps,
 } from '#/main/ai/grep-tool.ts'
-import { skillsRoot } from '#/main/skills.ts'
+import { editorSkillRoots } from '#/main/skills.ts'
 
 /**
  * Tool surface for the Edit sub-view's Agent.
@@ -34,8 +34,8 @@ import { skillsRoot } from '#/main/skills.ts'
  * the `pi` CLI ships, so the prompt behavior and tool-calling ergonomics
  * are well-exercised. Every factory takes an `operations` object; we
  * plug in a *sandboxed* implementation that rejects any path outside the
- * Deck Source (plus a read-only allowlist for the bundled skills
- * directory, so the model can read SKILL.md by its absolute path).
+ * Deck Source (plus a read-only allowlist for Editor-appropriate skills,
+ * so the model can read listed SKILL.md files by their absolute paths).
  *
  * One Deck-specific tool: `add_asset`. pi has no base64 binary inject
  * tool, and we need one because renderer attachment chips arrive over
@@ -56,7 +56,8 @@ import { skillsRoot } from '#/main/skills.ts'
  *     sandbox-exec wrapper).
  *   - `list_skills` / `read_skill` — pi's convention is that the system
  *     prompt lists skills with absolute paths, and the model reads them
- *     with the standard `read` tool. We allowlist skillsRoot() below.
+ *     with the standard `read` tool. We allowlist only Editor-visible
+ *     skill roots below.
  */
 
 export interface DeckToolsContext {
@@ -124,24 +125,27 @@ async function realpathSafe(p: string): Promise<string> {
 
 /**
  * Reject any path that escapes the writable sandbox. `writable` controls
- * whether the bundled-skills allowlist applies — it does for read-only
- * ops (read / ls) but NOT for mutating ops (write / edit) because skills
- * are shipped content, not user-authorable.
+ * whether the Editor-visible skill allowlist applies — it does for
+ * read-only ops (read / ls) but NOT for mutating ops (write / edit)
+ * because skills are shipped content, not user-authorable.
  *
  * We resolve `abs` AND each allowed root through `realpath` so symlinks
  * within the Deck Source can't be used to escape.
  */
 async function ensureInSandbox(abs: string, rootDir: string, writable: boolean): Promise<void> {
+  const allowedReadRoots = writable ? [] : editorSkillRoots()
   // Cheap string prefix first — catches `..` traversal before any I/O.
-  if (!isInsideString(abs, rootDir) && !(!writable && isInsideString(abs, skillsRoot()))) {
+  if (!isInsideString(abs, rootDir) && !allowedReadRoots.some((root) => isInsideString(abs, root))) {
     throw new Error(`Path escapes the Deck sandbox: ${abs}`)
   }
   const real = await realpathSafe(abs)
   const realRoot = await realpathSafe(rootDir)
   if (isInsideString(real, realRoot)) return
   if (!writable) {
-    const realSkills = await realpathSafe(skillsRoot())
-    if (isInsideString(real, realSkills)) return
+    for (const root of allowedReadRoots) {
+      const realAllowedRoot = await realpathSafe(root)
+      if (isInsideString(real, realAllowedRoot)) return
+    }
   }
   throw new Error(`Path escapes the Deck sandbox: ${abs}`)
 }

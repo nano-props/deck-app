@@ -195,6 +195,7 @@ export const zh: Record<DictKey, string> = {
   'settings.apiKey': 'API 密钥',
   'settings.apiKey.placeholder.empty': '粘贴你的 API 密钥',
   'settings.apiKey.placeholder.saved': '••••••••  (已保存 — 留空保持不变)',
+  'settings.apiKey.status.saved': '已保存 {provider} 的密钥。留空保持不变，或粘贴新密钥进行替换。',
   'settings.apiKey.status.default': '通过 safeStorage 存储在系统钥匙串中。',
   'settings.toggleReveal.title': '显示 / 隐藏',
   'settings.toggleReveal.show': '显示',

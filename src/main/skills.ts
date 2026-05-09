@@ -29,6 +29,11 @@ export function skillsRoot(): string {
 
 /** Module-cached skill index. Invalidated on app restart only. */
 let cachedSkills: Skill[] | null = null
+const EDITOR_EXCLUDED_SKILLS = new Set(['create-deck'])
+
+function isEditorSkill(skill: Skill): boolean {
+  return !EDITOR_EXCLUDED_SKILLS.has(skill.name)
+}
 
 /** Load every skill under `skillsRoot()`. Result is cached. */
 export function loadDeckSkills(): Skill[] {
@@ -52,7 +57,12 @@ export function loadDeckSkills(): Skill[] {
 
 /** Render the skill index for the system prompt (empty string if none). */
 export function formatDeckSkillsForPrompt(): string {
-  return formatSkillsForPrompt(loadDeckSkills())
+  return formatSkillsForPrompt(loadDeckSkills().filter(isEditorSkill))
+}
+
+/** Directories the Editor AI may read for skill content. */
+export function editorSkillRoots(): string[] {
+  return loadDeckSkills().filter(isEditorSkill).map((skill) => skill.baseDir)
 }
 
 /**

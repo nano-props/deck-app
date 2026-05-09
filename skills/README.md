@@ -9,16 +9,28 @@ Skills here are **independently distributable**. The Deck App ships as a binary 
 Concretely, each skill:
 
 - References nothing outside its own folder — no `docs/`, `scripts/`, or `bun run ...` commands.
-- Relies only on tools a user already has (system `zip`, `unzip`, a text editor).
+- Relies only on tools a user already has for its workflow (for example: a text editor for Editor-mode skills, and system `zip` / `unzip` for external packaging skills).
 - Ships its own `-lite` digests of authoritative docs under `/docs`. Lite files are curated subsets for authors, not mirrors — the `/docs` originals remain the source of truth.
 
 Dropping the folder into any `skills/` directory Just Works.
 
 ## Skills
 
+### `edit-deck/`
+
+Guides Deck App Editor's built-in AI while it authors the currently-open Deck Source in place. Triggers on "create a deck", "make a presentation", "build slides", or editing requests when running inside the Editor. It never packs or writes a `.deck`; the app handles saving.
+
+```
+edit-deck/
+├── SKILL.md
+└── reference/
+    ├── spec-lite.md
+    └── terminology-lite.md
+```
+
 ### `create-deck/`
 
-Creates a Deck — produces a `.deck` presentation file (or, intermediately, an unpacked directory ready to zip). Triggers on "create a deck", "make a presentation", "build slides". Packs with system `zip`; no runtime dependencies.
+Creates a Deck Pack outside Deck App Editor — produces a `.deck` presentation file (or, intermediately, an unpacked directory ready to zip). Triggers for external agents that need to "write a .deck" or "pack a deck". Packs with system `zip`; no runtime dependencies.
 
 ```
 create-deck/
@@ -33,7 +45,7 @@ create-deck/
 
 ### `deck-design/`
 
-Guides the visual design of a Deck — typography, color, motion, spatial composition, and the deck-specific constraints that follow from the medium (live presenting + solo reading, keyboard pagination, CSP sandbox, no hover-hidden content). Pairs with `create-deck/`, which handles the format and packaging.
+Guides the visual design of a Deck — typography, color, motion, spatial composition, and the deck-specific constraints that follow from the medium (live presenting + solo reading, keyboard pagination, CSP sandbox, no hover-hidden content). Pairs with `edit-deck/` inside the Deck App Editor and `create-deck/` for external pack creation.
 
 ```
 deck-design/

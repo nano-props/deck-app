@@ -28,7 +28,7 @@ function sanitizeForPrompt(s: string): string {
  * is, which tools it has, and the skill index. pi's
  * `formatSkillsForPrompt` emits the skill block with ABSOLUTE paths —
  * the model reads SKILL.md using the standard `read` tool, which we
- * allowlist for the bundled skills directory.
+ * allowlist for Editor-visible skill directories.
  */
 export async function buildSystemPrompt(params: SessionParams): Promise<string> {
   const description = await describeDeckSource(params.rootDir)
@@ -53,6 +53,8 @@ export async function buildSystemPrompt(params: SessionParams): Promise<string> 
     '- fetch_url — download a remote http(s) file into the Deck Source (default: assets/).',
     '- validate_deck — sanity-check deck.json + index.html references after structural edits.',
     '',
+    'You are already inside Deck App Editor with a current Deck Source. When the user asks to create or build a deck, transform this current Deck Source in place.',
+    'Never create, pack, zip, export, or write a `.deck` file. Never create sibling working directories. The Deck App handles Save / close and writes back to the opened `.deck` when appropriate.',
     'Prefer `edit` over `write` for incremental changes to existing files — it keeps diffs small.',
     'Use `grep` / `find` to discover content before reading whole files.',
     'Use `add_asset` for staged binary attachments; use `fetch_url` to grab a remote URL.',
@@ -66,7 +68,7 @@ export async function buildSystemPrompt(params: SessionParams): Promise<string> 
   if (skillsBlock) {
     lines.push(
       '',
-      'Before non-trivial edits, consult any skill whose description matches the task by reading the file at its <location> path. Skill content is canonical — when it conflicts with general web advice, the skill wins.',
+      'Before non-trivial edits, consult any skill whose description matches the task by reading the file at its <location> path. Skill content is canonical for Deck authoring, but external packaging/export steps do not apply inside Deck App Editor.',
       '',
       skillsBlock,
     )

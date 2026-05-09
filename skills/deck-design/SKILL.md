@@ -1,13 +1,13 @@
 ---
 name: deck-design
-description: Shape the visual design of a slide deck for the Deck App — typography, color, motion, spatial composition, aesthetic direction. Use when the user asks to design, style, restyle, redesign, or art-direct a deck, presentation, or slides. Applies on top of `create-deck`, which handles format and packaging.
+description: Shape the visual design of a slide deck for the Deck App — typography, color, motion, spatial composition, aesthetic direction. Use when the user asks to design, style, restyle, redesign, or art-direct a deck, presentation, or slides. Applies on top of edit-deck inside Deck App Editor, or the host's format-authoring workflow outside the Editor.
 ---
 
 This skill guides the **visual design** of slide decks that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
 
 A **Deck** is a full-screen 16:9 single-page static site opened in the Deck App — navigated by keyboard, used both for live presenting and for reading on one's own afterwards. The user provides deck requirements: topic, audience, chapters, tone. They may include context about the occasion, stage (on-stage talk, async read, internal share) or technical constraints.
 
-**Pair with `create-deck`.** That skill owns the Deck format — `deck.json`, file layout, the CSP sandbox, pagination wiring, packing. Start from its minimal `templates/index.html` (which already has keyboard navigation) and apply the design principles below on top. Don't reinvent the plumbing.
+**Pair with the format-authoring skill for your environment.** Inside Deck App Editor, use `edit-deck`: it owns the current Deck Source, `deck.json`, file layout, the CSP sandbox, and pagination wiring. Outside the Editor, use the host's Deck Pack creation workflow. Apply the design principles below on top. Don't reinvent the plumbing.
 
 ## Design Thinking
 

@@ -1,9 +1,13 @@
 ---
 name: create-deck
-description: Author a Deck (the `.deck` presentation format) — build the slides as a self-contained static site in a working directory, then pack it into a `.deck` file for the user. Use whenever the user asks to "create a deck", "make a presentation", "build slides", "write a .deck", or "pack a deck".
+description: External authoring skill for creating a new Deck Pack outside Deck App Editor — build a self-contained static site in a working directory, then pack it into a `.deck` file. Do not use inside Deck App Editor; use edit-deck there.
 ---
 
-# Creating a Deck
+# Creating a Deck Pack outside Deck App Editor
+
+This skill is for external filesystem agents that can create directories and run `zip`.
+
+If you are running inside Deck App Editor, do not use this flow. Deck App Editor already has a current Deck Source open; use the `edit-deck` skill instead. In Editor mode, do not create sibling directories and do not pack or write a `.deck` file.
 
 A **Deck** is a presentation format opened by the Deck App. The spec is tiny:
 
