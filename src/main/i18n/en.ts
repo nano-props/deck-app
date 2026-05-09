@@ -160,6 +160,7 @@ export const en = {
   'chat.status.thinking': 'Thinking…',
   'chat.status.generating': 'Generating…',
   'chat.status.runningTool': 'Running {tool}…',
+  'chat.status.slowHint': 'taking a while — Stop to retry',
   'chat.status.attaching': 'Attaching…',
   'chat.status.aiError': 'AI error',
   'chat.status.sendFailed': 'Send failed',

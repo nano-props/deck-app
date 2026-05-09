@@ -264,6 +264,23 @@ export class DeckViewController {
   }
 
   /**
+   * Move keyboard focus into the deck's webContents — but only while
+   * the presentation lock is engaged. Without this, the topbar's
+   * Maximize button keeps focus after entering full-screen, so the
+   * user's first Space (intending "next slide") fires the button's
+   * default action and exits full-screen instead.
+   *
+   * Restricted to `locked` so we don't steal focus during ordinary
+   * Edit-mode full-screen toggles, where the chat-pane has every right
+   * to keep typing focus.
+   */
+  focusContentIfLocked(): void {
+    if (!this.locked) return
+    if (!this.view || this.view.webContents.isDestroyed()) return
+    this.view.webContents.focus()
+  }
+
+  /**
    * The deferred attach (addChildView on first call) is what eliminates
    * the cold-open black flash. Idempotent — every state change that
    * could affect deckView visibility (load completed, renderer-pushed

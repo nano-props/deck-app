@@ -566,8 +566,17 @@ export class AppWindow {
     // to handle them.
     const onFullScreenChange = (value: boolean) => {
       this.isFullScreen = value
-      if (value) this.deckCtrl.refreshLockedBounds()
-      else this.deckCtrl.unlockBounds()
+      if (value) {
+        this.deckCtrl.refreshLockedBounds()
+        // Hand keyboard focus to the deck's webContents so the user's
+        // first keystroke (typically Space for "next slide") lands in
+        // the deck instead of re-firing the topbar Maximize button
+        // that triggered the full-screen. No-op when not in
+        // presentation mode (Edit / Source full-screen keeps chat focus).
+        this.deckCtrl.focusContentIfLocked()
+      } else {
+        this.deckCtrl.unlockBounds()
+      }
       this.broadcastState()
     }
     this.win.on('enter-full-screen', () => onFullScreenChange(true))

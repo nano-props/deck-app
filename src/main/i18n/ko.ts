@@ -152,6 +152,7 @@ export const ko: Record<DictKey, string> = {
   'chat.status.thinking': '생각 중…',
   'chat.status.generating': '생성 중…',
   'chat.status.runningTool': '{tool} 실행 중…',
+  'chat.status.slowHint': '응답이 느립니다 — 중단 후 재시도',
   'chat.status.attaching': '첨부 중…',
   'chat.status.aiError': 'AI 오류',
   'chat.status.sendFailed': '보내기 실패',

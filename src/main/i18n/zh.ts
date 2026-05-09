@@ -151,6 +151,7 @@ export const zh: Record<DictKey, string> = {
   'chat.status.thinking': '思考中…',
   'chat.status.generating': '生成中…',
   'chat.status.runningTool': '运行 {tool}…',
+  'chat.status.slowHint': '响应慢,可点停止重试',
   'chat.status.attaching': '附加中…',
   'chat.status.aiError': 'AI 错误',
   'chat.status.sendFailed': '发送失败',
