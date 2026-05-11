@@ -15,7 +15,7 @@ import path from 'node:path'
  * pi's loader writes an XML `<available_skills>` block with absolute
  * paths into the system prompt. The model reads SKILL.md via the
  * standard `read` tool — we allowlist `skillsRoot()` for reads in
- * src/main/ai/tools.ts.
+ * src/main/ai/tools/sandbox.ts.
  *
  * Locations:
  *   Dev:      <repo>/skills

@@ -1,12 +1,24 @@
-import { app, dialog, shell } from 'electron'
+import { app, BaseWindow, dialog, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { AppWindow } from '#/main/app-window/index.ts'
+import type { DeckContext } from '#/main/deck-types.ts'
 import { packDeck } from '#/main/deck-packer.ts'
 import { t } from '#/main/i18n/index.ts'
 import { createDeckFromTemplate } from '#/main/skills.ts'
+
+/**
+ * Minimal interface the save flow needs. Both `AppWindow` and
+ * `DeckSession` satisfy it, so the save helpers can be invoked from
+ * either layer without one importing the other.
+ */
+export interface SaveTarget {
+  getDeck(): DeckContext | null
+  getBaseWindow(): BaseWindow
+  markClean(): void
+}
 
 export async function promptOpenDeck(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
@@ -96,7 +108,7 @@ export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
  *
  * Errors surface a dialog (unless `silent`). Returns true on success.
  */
-export async function saveDeckInWindow(win: AppWindow, opts?: { silent?: boolean }): Promise<boolean> {
+export async function saveDeckInWindow(win: SaveTarget, opts?: { silent?: boolean }): Promise<boolean> {
   const deck = win.getDeck()
   if (!deck) return false
   // Source writes through to disk; Preview is a read-only quick view
@@ -162,7 +174,7 @@ export async function saveDeckInWindow(win: AppWindow, opts?: { silent?: boolean
  * file the window is editing — that stays as the original sourcePath.
  * (To switch to the new file, the user reopens it.)
  */
-export async function saveDeckAsInWindow(win: AppWindow): Promise<void> {
+export async function saveDeckAsInWindow(win: SaveTarget): Promise<void> {
   const deck = win.getDeck()
   if (!deck) return
 

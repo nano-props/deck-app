@@ -3,7 +3,7 @@ import { convertToLlm, shouldCompact } from '@earendil-works/pi-coding-agent'
 import type { WebContents } from 'electron'
 import { buildModel } from '#/main/ai/provider.ts'
 import { checkAiReadiness } from '#/main/ai/readiness.ts'
-import { createDeckTools } from '#/main/ai/tools.ts'
+import { createDeckTools } from '#/main/ai/tools/index.ts'
 import {
   openDeckChatSession,
   openDeckSessionManager,
@@ -56,7 +56,7 @@ async function withTimeout(p: Promise<unknown>, ms: number): Promise<'settled' |
  *   - Build an `Agent` (pi-agent-core) wired to the deck's rootDir for
  *     tool execution and to the current Settings for provider / model /
  *     key. Tools come from pi-coding-agent's standard factories with a
- *     sandbox wrapper (see ai/tools.ts).
+ *     sandbox wrapper (see ai/tools/).
  *   - Forward every `AgentEvent` to the renderer via
  *     `webContents.send` on channel 'ai:event'. Synthesize a few
  *     `deck:*` events alongside (file changes, history replay, context

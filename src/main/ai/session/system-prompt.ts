@@ -1,4 +1,4 @@
-import { describeDeckSource } from '#/main/ai/tools.ts'
+import { describeDeckSource } from '#/main/ai/tools/index.ts'
 import { formatDeckSkillsForPrompt } from '#/main/skills.ts'
 import { getCurrentLang } from '#/main/i18n/index.ts'
 import type { ChatUiContext, SessionParams } from '#/main/ai/session/types.ts'

@@ -8,7 +8,7 @@ import path from 'node:path'
  * never traverse the LLM. The agent gets a text prefix listing the final
  * relative paths, and references them from its generated HTML/CSS.
  *
- * Compare to `add_asset` in src/main/ai/tools.ts: that tool still exists for
+ * Compare to `add_asset` in src/main/ai/tools/handlers/add-asset.ts: that tool still exists for
  * the agent-driven path (e.g. "write me a favicon" → agent synthesizes bytes
  * and calls add_asset), but for *user-supplied* attachments it would waste
  * tokens base64-ing binaries through the context window.

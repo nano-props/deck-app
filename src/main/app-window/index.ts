@@ -1,24 +1,13 @@
 import { BaseWindow, dialog, WebContentsView, type WebContents } from 'electron'
-import { rm } from 'node:fs/promises'
-import { createDeckAiSession } from '#/main/ai/session/index.ts'
 import type { DeckAiSession } from '#/main/ai/session/types.ts'
+import { createAiSessionManager, type AiSessionManager } from '#/main/app-window/ai-session-manager.ts'
+import { DeckSession } from '#/main/app-window/deck-session.ts'
 import { appChrome, supportsOverlayThemeUpdates, overlayForTheme } from '#/main/chrome-strategy.ts'
-import { loadDeck } from '#/main/deck-loader.ts'
-import { saveDeckInWindow } from '#/main/dialogs.ts'
-import { type DeckContext, type DeckKind, type DeckManifest } from '#/main/deck-types.ts'
-import { watchDeckSource, type DeckWatcher } from '#/main/deck-watcher.ts'
+import { type DeckContext } from '#/main/deck-types.ts'
 import { t } from '#/main/i18n/index.ts'
 import { buildMenu } from '#/main/menu/index.ts'
-import { startDeckServer } from '#/main/server.ts'
 import { TOPBAR_PX } from '#/main/window-layout.ts'
-import {
-  claimOpening,
-  findAppWindowBySourcePath,
-  isOpeningSourcePath,
-  registerAppWindow,
-  releaseOpening,
-  unregisterAppWindow,
-} from '#/main/window-registry.ts'
+import { registerAppWindow, unregisterAppWindow } from '#/main/window-registry.ts'
 import {
   APP_ICON,
   appCanvasBg,
@@ -49,41 +38,28 @@ export type { AppMode, AppState, DeckSubView } from '#/main/app-window/types.ts'
  *   editor   --enterPlayer--> player
  *   player/editor --closeDeck--> launcher
  *
- * Mutual exclusion of the same deck across windows is enforced by
- * `findAppWindowBySourcePath` plus `claimOpening` (the latter covers
- * the in-flight gap between extract and registry-set).
+ * AppWindow is a coordinator: it owns the window/chrome shell and the
+ * preview view, and delegates deck-loading lifecycle to `DeckSession`
+ * and AI session lifecycle to `AiSessionManager`. The two managers
+ * communicate through callbacks AppWindow installs at construction
+ * time — neither holds a back-reference to AppWindow.
+ *
+ * Mutual exclusion of the same deck across windows is enforced inside
+ * `DeckSession.open()` via the window registry.
  */
 export class AppWindow {
   private readonly win: BaseWindow
   private readonly chromeView: WebContentsView
   private readonly deckCtrl: DeckViewController
+  private readonly deckSession: DeckSession
+  private readonly aiManager: AiSessionManager
   private readonly winId: number
   private readonly chromeWcId: number
-  private deck: DeckContext | null = null
-  private aiSession: DeckAiSession | null = null
-  private deckWatcher: DeckWatcher | null = null
   private mode: AppMode = 'launcher'
   private subView: DeckSubView = 'edit'
   private loading = false
   private isFullScreen = false
   private disposed = false
-  /**
-   * Resolves when an in-flight `closeDeck()` finishes. `handleClosed`
-   * awaits this so the user closing the window mid-`closeDeck` (e.g.
-   * during the silent rezip's hundreds-of-ms yield) can't run a second
-   * pass through the same teardown — `this.deck`, `this.aiSession`,
-   * `this.deckWatcher` are all read-then-null patterns that would each
-   * get hit twice and call `close()` / `dispose()` on the same object.
-   */
-  private closingPromise: Promise<void> | null = null
-  /**
-   * True when the live extraction (kind 'pack') has changes not yet
-   * flushed back to the original `.deck` file. Set by AI tool runs and
-   * the file watcher; cleared by Save / Save As (via markClean) and by
-   * a successful close-time rezip. Always false for kind 'source' —
-   * Source edits land directly on disk.
-   */
-  private dirty = false
 
   constructor() {
     this.win = new BaseWindow({
@@ -130,6 +106,44 @@ export class AppWindow {
 
     this.deckCtrl = new DeckViewController(this.win)
 
+    this.aiManager = createAiSessionManager({
+      chromeWebContents: this.chromeView.webContents,
+      getDeck: () => this.deckSession.getDeck(),
+      onMutation: () => this.deckSession.markDirty(),
+      capturePreview: () => this.captureDeckView(),
+    })
+
+    this.deckSession = new DeckSession({
+      win: this.win,
+      ownerWindow: this,
+      onStateChange: () => this.broadcastState(),
+      onBeforeTeardown: async () => {
+        // Tell the renderer to clear chat state BEFORE we dispose the AI
+        // session — once `dispose` unsubscribes the listener, any
+        // agent_end emitted by the abort path won't reach the renderer,
+        // leaving its `streaming` flag stuck true and stale chat nodes
+        // that the next `deck:history_replay` would concatenate with the
+        // new deck's transcript.
+        this.aiManager.emitSessionResetIfActive()
+        try {
+          await this.aiManager.teardown()
+        } catch (err) {
+          console.warn('[AppWindow] aiManager.teardown threw', err)
+        }
+        try {
+          this.deckCtrl.teardown()
+        } catch (err) {
+          console.warn('[AppWindow] deckCtrl.teardown threw', err)
+        }
+        if (this.win.isDestroyed()) return
+        // Reset window-level UI state. Title is restored by DeckSession
+        // when not destroyed; mode/subView reset here.
+        this.mode = 'launcher'
+        this.subView = 'edit'
+      },
+      onWatcherChange: () => this.reloadDeck(false),
+    })
+
     this.winId = this.win.id
     this.chromeWcId = this.chromeView.webContents.id
     registerAppWindow(this, { windowId: this.winId, chromeWcId: this.chromeWcId })
@@ -166,48 +180,44 @@ export class AppWindow {
   }
 
   getDeck(): DeckContext | null {
-    return this.deck
+    return this.deckSession.getDeck()
   }
 
   getAiSession(): DeckAiSession | null {
-    return this.aiSession
+    return this.aiManager.get()
   }
 
   getState(): AppState {
+    const deck = this.deckSession.getDeck()
     return {
       mode: this.mode,
       subView: this.subView,
-      deck: this.deck
+      deck: deck
         ? {
-            rootDir: this.deck.rootDir,
-            manifest: this.deck.manifest,
-            kind: this.deck.kind,
-            sourcePath: this.deck.sourcePath,
+            rootDir: deck.rootDir,
+            manifest: deck.manifest,
+            kind: deck.kind,
+            sourcePath: deck.sourcePath,
           }
         : null,
       loading: this.loading,
       isFullScreen: this.isFullScreen,
-      dirty: this.dirty,
+      dirty: this.deckSession.isDirty(),
     }
   }
 
   /** Mark the deck as having unsaved changes. No-op for Source kind. */
   markDirty(): void {
-    if (!this.deck || this.deck.kind !== 'pack') return
-    if (this.dirty) return
-    this.dirty = true
-    this.broadcastState()
+    this.deckSession.markDirty()
   }
 
   /** Mark the deck as in sync with sourcePath. Called after Save succeeds. */
   markClean(): void {
-    if (!this.dirty) return
-    this.dirty = false
-    this.broadcastState()
+    this.deckSession.markClean()
   }
 
   isDirty(): boolean {
-    return this.dirty
+    return this.deckSession.isDirty()
   }
 
   /**
@@ -220,7 +230,7 @@ export class AppWindow {
    * `.deck` was deleted mid-edit — silent doesn't mean "lose data".
    */
   saveDeck(opts?: { silent?: boolean }): Promise<boolean> {
-    return saveDeckInWindow(this, opts)
+    return this.deckSession.save(opts)
   }
 
   focus(): void {
@@ -244,101 +254,34 @@ export class AppWindow {
    * server so the launcher renderer can show a spinner.
    */
   async openDeck(deckPath: string, preferredSubView: DeckSubView | 'auto' = 'auto'): Promise<boolean> {
-    let loaded: {
-      rootDir: string
-      manifest: DeckManifest
-      kind: DeckKind
-    } | null = null
-
     this.loading = true
     this.broadcastState()
 
-    // Mutual exclusion BEFORE extraction — keyed on sourcePath, not
-    // rootDir, since Pack rootDirs are per-open tmpdirs and would never
-    // match across opens. We check both the live registry AND the
-    // in-flight openings set: without the latter, two concurrent opens
-    // of the same `.deck` would both pass the registry check (neither
-    // window has set its `deck` yet) and proceed to extract twice.
-    let claimed = false
-    try {
-      // Check registry / in-flight slot BEFORE closing the current deck
-      // — if the user picked a deck already loading elsewhere, we'd
-      // otherwise tear down their current deck for a flow that's about
-      // to bail with no replacement.
-      const existing = findAppWindowBySourcePath(deckPath)
-      if (existing && existing !== this) {
-        existing.focus()
-        this.loading = false
-        this.broadcastState()
-        return false
-      }
-      if (isOpeningSourcePath(deckPath)) {
-        // Another window is mid-extraction for the same path. Bail
-        // without touching anything. The other window's flow will
-        // produce the visible result; we don't have a window handle to
-        // focus yet (it hasn't registered its deck), so just no-op.
-        this.loading = false
-        this.broadcastState()
-        return false
-      }
-      // claimOpening is the atomic step — Set.add + presence check in
-      // one. Releasing happens in the `finally` below.
-      claimed = claimOpening(deckPath)
-      if (!claimed) {
-        // Another caller won the race in the gap between
-        // `isOpeningSourcePath` and here. Same bail as above.
-        this.loading = false
-        this.broadcastState()
-        return false
-      }
-
-      // Now safe to close the current deck — we've claimed the slot and
-      // are committed to opening `deckPath`.
-      if (this.deck) await this.closeDeck()
-
-      loaded = await loadDeck(deckPath)
-
-      const server = await startDeckServer(loaded.rootDir)
-
-      this.deck = {
-        rootDir: loaded.rootDir,
-        manifest: loaded.manifest,
-        kind: loaded.kind,
-        sourcePath: deckPath,
-        server,
-      }
-      this.dirty = false
-      this.win.setTitle(loaded.manifest.name)
-
-      // Sub-view default: Pack/Preview → play (distribution form / quick
-      // preview, the user expects to view it), Source → edit (authoring
-      // artifact). Menu overrides via explicit preferredSubView. (Preview
-      // hides the toggle entirely, so the default sticks.)
-      const sub: DeckSubView =
-        preferredSubView === 'auto'
-          ? loaded.kind === 'source'
-            ? 'edit'
-            : 'play'
-          : preferredSubView
-
-      await this.enterDeckMode(sub)
+    const deck = await this.deckSession.open(deckPath)
+    if (!deck) {
       this.loading = false
       this.broadcastState()
-      return true
+      return false
+    }
+
+    // Sub-view default: Pack/Preview → play (distribution form / quick
+    // preview, the user expects to view it), Source → edit (authoring
+    // artifact). Menu overrides via explicit preferredSubView. (Preview
+    // hides the toggle entirely, so the default sticks.)
+    const sub: DeckSubView = preferredSubView === 'auto' ? (deck.kind === 'source' ? 'edit' : 'play') : preferredSubView
+
+    try {
+      await this.enterDeckMode(deck, sub)
     } catch (err) {
-      // Two failure shapes:
-      //   - threw before `this.deck` was set (loadDeck / startDeckServer):
-      //     no server, no deckView. Throw away the partial extraction
-      //     (only Packs produce one; Source's rootDir is user-owned).
-      //   - threw after `this.deck` was set (enterDeckMode → ensureAiSession
-      //     → getSettings, etc.): server is up, deckView is loading. Run a
-      //     full closeDeck so we don't leak resources. closeDeck is
-      //     idempotent and never throws.
-      if (this.deck) {
-        await this.closeDeck()
-      } else if (loaded && (loaded.kind === 'pack' || loaded.kind === 'preview')) {
-        await rm(loaded.rootDir, { recursive: true, force: true }).catch(() => {})
-      }
+      // `DeckSession.open()` already succeeded, so the deck (server +
+      // tmpdir + watcher) is registered and live. Anything thrown by
+      // `enterDeckMode` (e.g. `aiManager.ensure()` failing because the
+      // settings module rejects the loaded provider config) leaves us
+      // mid-transition: server up, deck registered, but no AI session
+      // and `mode` still 'launcher'. Run a full close so resources don't
+      // leak, surface the failure, and return false. closeDeck is
+      // idempotent and never throws.
+      await this.closeDeck()
       this.loading = false
       this.broadcastState()
       const message = err instanceof Error ? err.message : String(err)
@@ -349,109 +292,19 @@ export class AppWindow {
         detail: `${message}\n\nPath: ${deckPath}`,
       })
       return false
-    } finally {
-      // Release the in-flight slot regardless of outcome. If we never
-      // claimed (early bail), this is a no-op.
-      if (claimed) releaseOpening(deckPath)
     }
+    this.loading = false
+    this.broadcastState()
+    return true
   }
 
   /**
    * Tear down the current deck — flush pending edits to disk for Packs,
    * stop its server, delete the temp extraction (Pack only), drop the
    * deckView, and return to launcher mode. Idempotent.
-   *
-   * Save-on-close is silent and best-effort: if rezipping fails we still
-   * tear the deck down (the user can `Save As…` to recover the live
-   * extraction's contents from logs / temp). Surfacing a blocking dialog
-   * here would trap the user with no clear path forward.
    */
   async closeDeck(): Promise<void> {
-    if (!this.deck) return
-    // Reentrancy: a second caller while one is in flight should observe
-    // the same outcome instead of starting a parallel teardown.
-    if (this.closingPromise) return this.closingPromise
-    const p = this.closeDeckImpl()
-    this.closingPromise = p.finally(() => {
-      this.closingPromise = null
-    })
-    return this.closingPromise
-  }
-
-  private async closeDeckImpl(): Promise<void> {
-    if (!this.deck) return
-    const deck = this.deck
-
-    // Rezip BEFORE clearing this.deck so saveDeckInWindow can still see
-    // the context. Skip if not dirty — saves wear on the .deck file
-    // (and on git status) when the user just opened to look.
-    // `silent: true` so a transient save failure doesn't pop a dialog
-    // mid-teardown; saveDeckInWindow still writes a `.recovered.deck`
-    // sibling if the original file vanished, so this is not data-lossy.
-    if (deck.kind === 'pack' && this.dirty) {
-      await this.saveDeck({ silent: true }).catch(() => {})
-    }
-
-    this.deck = null
-    this.dirty = false
-
-    // Each cleanup step is independent — failure in one MUST NOT skip
-    // the others, especially the `rm` on the Pack tmpdir at the end.
-    // teardownDeckWatcher / teardownAiSession already swallow inside,
-    // but wrap them anyway in case of synchronous throws (e.g. a future
-    // refactor regresses the internal .catch).
-    try {
-      await this.teardownDeckWatcher()
-    } catch (err) {
-      console.warn('[AppWindow] teardownDeckWatcher threw', err)
-    }
-    // Tell the renderer to clear chat state BEFORE we dispose the AI
-    // session — once `dispose` unsubscribes the listener, any agent_end
-    // emitted by the abort path won't reach the renderer, leaving its
-    // `streaming` flag stuck true and stale chat nodes that the next
-    // `deck:history_replay` would concatenate with the new deck's
-    // transcript. session_reset clears nodes + streaming + attachments.
-    if (this.aiSession && !this.chromeView.webContents.isDestroyed()) {
-      try {
-        this.chromeView.webContents.send('ai:event', { type: 'deck:session_reset' })
-      } catch {
-        // teardown race
-      }
-    }
-    try {
-      await this.teardownAiSession()
-    } catch (err) {
-      console.warn('[AppWindow] teardownAiSession threw', err)
-    }
-    try {
-      this.deckCtrl.teardown()
-    } catch (err) {
-      console.warn('[AppWindow] deckCtrl.teardown threw', err)
-    }
-    try {
-      await deck.server.close()
-    } catch (err) {
-      console.warn('[AppWindow] server.close threw', err)
-    }
-    // tmpdir cleanup is the load-bearing one — must run for every Pack
-    // and Preview close path, otherwise extractions accumulate forever.
-    // Source's rootDir is the user's own directory; never delete that.
-    if (deck.kind === 'pack' || deck.kind === 'preview') {
-      await rm(deck.rootDir, { recursive: true, force: true }).catch((err) => {
-        console.warn('[AppWindow] tmpdir rm failed', err)
-      })
-    }
-
-    // The awaits above yield to the event loop — the window may have
-    // been closed in the meantime. Further window mutations would throw
-    // and leave cleanup half-done.
-    if (this.win.isDestroyed()) return
-
-    this.win.setTitle('Deck')
-    this.mode = 'launcher'
-    this.subView = 'edit' // reset so re-opening defaults cleanly
-    // bounds reset is folded into deckCtrl.teardown() above.
-    this.broadcastState()
+    return this.deckSession.close()
   }
 
   /** Switch sub-view. The AI session is tied to the deck's lifetime,
@@ -470,7 +323,7 @@ export class AppWindow {
    *  deckView's own backing color), so the gap reads as a clean layout
    *  shift, not a flash. */
   setSubView(next: DeckSubView): void {
-    if (this.mode !== 'deck' || !this.deck) return
+    if (this.mode !== 'deck' || !this.deckSession.getDeck()) return
     if (this.subView === next) return
     this.deckCtrl.hideForLayoutFlip()
     this.subView = next
@@ -488,7 +341,7 @@ export class AppWindow {
    *  item that drives this is gated, but a stale IPC or future caller
    *  shouldn't be able to land a preview deck in an unusable edit view. */
   enterEditor(): void {
-    if (this.deck?.kind === 'preview') return
+    if (this.deckSession.getDeck()?.kind === 'preview') return
     this.setSubView('edit')
   }
 
@@ -528,8 +381,9 @@ export class AppWindow {
 
   /** Reload the current deck preview. */
   reloadDeck(ignoreCache = false): void {
-    if (!this.deck) return
-    this.deckCtrl.reload(this.deck.server.url, ignoreCache)
+    const deck = this.deckSession.getDeck()
+    if (!deck) return
+    this.deckCtrl.reload(deck.server.url, ignoreCache)
   }
 
   setPreviewBounds(rect: Rect): void {
@@ -551,6 +405,18 @@ export class AppWindow {
     } catch {
       // Not created with titleBarStyle: 'hidden' — safe to ignore.
     }
+  }
+
+  /**
+   * Replace the current AI session with one pointing at `sessionPath`.
+   * Used by the History popover. Aborts any in-flight turn first, tears
+   * down the existing session (the JSONL file stays — we only own the
+   * runtime), and creates a fresh `DeckAiSession` seeded from the
+   * picked file. The new session emits `deck:history_replay` which the
+   * renderer uses to repaint the chat list.
+   */
+  async switchAiSession(sessionPath: string): Promise<void> {
+    return this.aiManager.switch(sessionPath)
   }
 
   // ---- Internals ----------------------------------------------------------
@@ -622,18 +488,16 @@ export class AppWindow {
    *  Renderer-driven layout: the deckView is created here but its
    *  bounds are not set until the renderer's ResizeObserver fires and
    *  pushes us a rect via setPreviewBounds. */
-  private async enterDeckMode(subView: DeckSubView): Promise<void> {
-    if (!this.deck) return
+  private async enterDeckMode(deck: DeckContext, subView: DeckSubView): Promise<void> {
     this.mode = 'deck'
     this.subView = subView
-    this.deckCtrl.ensure(this.deck.server.url)
+    this.deckCtrl.ensure(deck.server.url)
     // Pack/Source decks are editable (Pack edits flush back to
     // sourcePath on close). Always start the AI session, even in Play
     // sub-view, so flipping into Edit is instant and carries the full
-    // transcript. Preview is read-only quick view — no AI, no watcher.
-    if (this.deck.kind !== 'preview') {
-      await this.ensureAiSession()
-      this.ensureDeckWatcher()
+    // transcript. Preview is read-only quick view — no AI.
+    if (deck.kind !== 'preview') {
+      await this.aiManager.ensure()
     }
     // When entering Play mode directly (e.g., opening a Pack), move focus
     // to deck content so keyboard navigation works immediately.
@@ -641,149 +505,6 @@ export class AppWindow {
       this.deckCtrl.focusContent()
     }
     this.broadcastState()
-  }
-
-  private async ensureAiSession(): Promise<void> {
-    if (this.aiSession || !this.deck) return
-    // Wait for the chrome renderer to finish loading before we construct
-    // the session. Session construction can emit `deck:history_replay`
-    // synchronously (when there's a prior transcript on disk), and if
-    // the renderer hasn't registered its `ai:event` listener yet that
-    // message is lost. On cold start, chromeView.loadFile races deck
-    // extraction — a warm filesystem cache can win the race.
-    await this.whenChromeReady()
-    if (!this.deck || this.chromeView.webContents.isDestroyed()) return
-    const session = await createDeckAiSession({
-      sender: this.chromeView.webContents,
-      rootDir: this.deck.rootDir,
-      chatKey: this.deck.sourcePath,
-      deckName: this.deck.manifest.name,
-      onMutation: () => this.markDirty(),
-      capturePreview: () => this.captureDeckView(),
-    })
-    // handleClosed may have already run during the second await,
-    // nulling this.aiSession. Dispose immediately and bail.
-    if (!this.deck || this.chromeView.webContents.isDestroyed()) {
-      await session.dispose().catch(() => {})
-      return
-    }
-    this.aiSession = session
-  }
-
-  /**
-   * Replace the current AI session with one pointing at `sessionPath`.
-   * Used by the History popover. Aborts any in-flight turn first, tears
-   * down the existing session (the JSONL file stays — we only own the
-   * runtime), and creates a fresh `DeckAiSession` seeded from the
-   * picked file. The new session emits `deck:history_replay` which the
-   * renderer uses to repaint the chat list.
-   */
-  async switchAiSession(sessionPath: string): Promise<void> {
-    if (!this.deck) return
-    if (this.aiSession) {
-      try {
-        await this.aiSession.abort()
-      } catch {
-        // session already disposed mid-await — fine
-      }
-      await this.teardownAiSession()
-    }
-    await this.whenChromeReady()
-    if (!this.deck || this.chromeView.webContents.isDestroyed()) return
-    // Tell the renderer to drop the prior chat DOM before we replay the
-    // new transcript — otherwise the two would concatenate visually.
-    try {
-      this.chromeView.webContents.send('ai:event', { type: 'deck:session_reset' })
-    } catch {
-      // Destroyed between the check and the send — teardown race.
-    }
-    // If sessionPath has been removed/corrupted out from under us
-    // (external delete, partial transfer), don't leave the window
-    // session-less — fall back to the default session so the user can
-    // keep chatting. Caller's `chats:switch` IPC swallows the throw,
-    // but a session-less window forces the renderer into a no-session
-    // dead-end until the user reopens the deck.
-    let session: DeckAiSession
-    try {
-      session = await createDeckAiSession({
-        sender: this.chromeView.webContents,
-        rootDir: this.deck.rootDir,
-        chatKey: this.deck.sourcePath,
-        deckName: this.deck.manifest.name,
-        sessionPath,
-        onMutation: () => this.markDirty(),
-        capturePreview: () => this.captureDeckView(),
-      })
-    } catch (err) {
-      console.warn('[AppWindow] switchAiSession: failed to open requested session, falling back to default', err)
-      session = await createDeckAiSession({
-        sender: this.chromeView.webContents,
-        rootDir: this.deck.rootDir,
-        chatKey: this.deck.sourcePath,
-        deckName: this.deck.manifest.name,
-        onMutation: () => this.markDirty(),
-        capturePreview: () => this.captureDeckView(),
-      })
-    }
-    if (!this.deck || this.chromeView.webContents.isDestroyed()) {
-      await session.dispose().catch(() => {})
-      return
-    }
-    this.aiSession = session
-  }
-
-  /**
-   * Resolve when chromeView has finished its initial load. Uses
-   * `webContents.isLoading()` as the fast path, `did-finish-load` /
-   * `did-fail-load` as the slow path. Safe after disposal.
-   */
-  private whenChromeReady(): Promise<void> {
-    const wc = this.chromeView.webContents
-    if (wc.isDestroyed()) return Promise.resolve()
-    if (!wc.isLoading()) return Promise.resolve()
-    return new Promise((resolve) => {
-      const onLoad = () => {
-        wc.off('did-finish-load', onLoad)
-        wc.off('did-fail-load', onLoad)
-        resolve()
-      }
-      wc.once('did-finish-load', onLoad)
-      wc.once('did-fail-load', onLoad)
-    })
-  }
-
-  private async teardownAiSession(): Promise<void> {
-    if (!this.aiSession) return
-    const s = this.aiSession
-    this.aiSession = null
-    await s.dispose().catch(() => {})
-  }
-
-  /**
-   * Watch the deck's rootDir for out-of-band edits (user's own editor,
-   * file manager drops, git operations). A change triggers a preview
-   * reload AND marks the deck dirty so close-time save flushes back to
-   * the original `.deck`.
-   *
-   * AI tool writes already reload the preview via the chat `agent_end`
-   * → `reloadPreview` path; the watcher doubles up for those, but the
-   * built-in debounce keeps it to one reload per burst.
-   */
-  private ensureDeckWatcher(): void {
-    if (this.deckWatcher || !this.deck) return
-    this.deckWatcher = watchDeckSource(this.deck.rootDir, () => {
-      if (this.win.isDestroyed()) return
-      if (!this.deck) return
-      this.markDirty()
-      this.reloadDeck(false)
-    })
-  }
-
-  private async teardownDeckWatcher(): Promise<void> {
-    if (!this.deckWatcher) return
-    const w = this.deckWatcher
-    this.deckWatcher = null
-    await w.close().catch(() => {})
   }
 
   /**
@@ -803,18 +524,16 @@ export class AppWindow {
 
     // If `closeDeck` is in flight (the user closed the window during a
     // silent rezip, watcher.close, or aiSession.dispose await), let it
-    // finish first. It owns nulling `this.deck` / `this.aiSession` /
-    // `this.deckWatcher`; once it's done the `if (this.deck)` block
-    // below correctly no-ops instead of running a parallel second
-    // teardown that would double-close the http server, double-dispose
-    // the AI session, and double-close the deck watcher.
-    if (this.closingPromise) {
-      try {
-        await this.closingPromise
-      } catch {
-        // closeDeck swallows its own step errors; rethrow here would
-        // surface as Electron's "uncaught exception" dialog.
-      }
+    // finish first. DeckSession owns nulling its own deck/watcher state;
+    // once it's done `disposeOnWindowClosed` correctly no-ops instead of
+    // running a parallel second teardown that would double-close the
+    // http server, double-dispose the AI session, and double-close the
+    // deck watcher.
+    try {
+      await this.deckSession.awaitClosing()
+    } catch {
+      // closeDeck swallows its own step errors; rethrow here would
+      // surface as Electron's "uncaught exception" dialog.
     }
 
     // Drop registry entries first, before any resource cleanup that
@@ -824,63 +543,28 @@ export class AppWindow {
     // destroyed".
     unregisterAppWindow({ windowId: this.winId, chromeWcId: this.chromeWcId })
 
-    // Clean up the deckView. The chromeView's WebContents is already
-    // destroyed with the BaseWindow, but the deckView may have been
-    // created without being attached (closed mid-load) — in that case
-    // it isn't a child of this.win.contentView and the BaseWindow
-    // teardown won't reach it. Explicitly close its webContents to
-    // avoid leaking the renderer process.
+    // Tear down the deckView unconditionally — even on launcher-only
+    // close. `disposeOnWindowClosed` short-circuits when no deck is
+    // loaded, so it can't be the only path to deckCtrl.teardown. The
+    // deckView may have been created without ever being attached
+    // (closed mid-load) — in that case BaseWindow teardown won't reach
+    // it, and we'd leak its renderer process. teardown() is idempotent,
+    // so when a deck IS loaded the duplicate call inside
+    // `onBeforeTeardown` no-ops.
     try {
       this.deckCtrl.teardown()
     } catch (err) {
       console.warn('[AppWindow] deckCtrl.teardown threw', err)
     }
-    if (this.deck) {
-      const deck = this.deck
 
-      // Window-close path: same save-then-cleanup contract as closeDeck.
-      // Save first so any AI edits make it back to the .deck file before
-      // we tear the runtime down. Silent — the window is already gone,
-      // there's no UI surface for a dialog. saveDeckInWindow still
-      // writes a `.recovered.deck` sibling if the original was deleted,
-      // so this remains data-safe.
-      if (deck.kind === 'pack' && this.dirty) {
-        await this.saveDeck({ silent: true }).catch(() => {})
-      }
-
-      this.deck = null
-      this.dirty = false
-      // Independent try/await per step. The tmpdir rm at the bottom is
-      // load-bearing (otherwise extractions leak forever); a throw in
-      // any earlier step must not skip it.
-      if (this.deckWatcher) {
-        const w = this.deckWatcher
-        this.deckWatcher = null
-        try {
-          await w.close()
-        } catch (err) {
-          console.warn('[AppWindow] watcher close threw', err)
-        }
-      }
-      if (this.aiSession) {
-        const s = this.aiSession
-        this.aiSession = null
-        try {
-          await s.dispose()
-        } catch (err) {
-          console.warn('[AppWindow] aiSession dispose threw', err)
-        }
-      }
-      try {
-        await deck.server.close()
-      } catch (err) {
-        console.warn('[AppWindow] server.close threw', err)
-      }
-      if (deck.kind === 'pack' || deck.kind === 'preview') {
-        await rm(deck.rootDir, { recursive: true, force: true }).catch((err) => {
-          console.warn('[AppWindow] tmpdir rm failed', err)
-        })
-      }
+    // Final pass through deck teardown for the case where the window
+    // was closed without a prior closeDeck (the deck was still loaded).
+    // disposeOnWindowClosed → onBeforeTeardown disposes AI + (redundantly)
+    // deckCtrl; the redundant teardown is harmless (idempotent).
+    try {
+      await this.deckSession.disposeOnWindowClosed()
+    } catch (err) {
+      console.warn('[AppWindow] disposeOnWindowClosed threw', err)
     }
   }
 
