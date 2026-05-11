@@ -9,6 +9,15 @@ function hasDeckOpen(): boolean {
 }
 
 /**
+ * Edit-mode entry. Disabled for Preview-kind decks (read-only quick view
+ * of a standalone .html — there's no chat pane / AI session to enter).
+ */
+function canEditCurrentDeck(): boolean {
+  const deck = focusedAppWindow()?.getDeck()
+  return !!deck && deck.kind !== 'preview'
+}
+
+/**
  * Save flushes the live extraction back into the original `.deck` file.
  * Only meaningful for Pack-kind decks; Source-kind decks already write
  * through to the user's directory, so the menu item disables there.
@@ -57,7 +66,7 @@ export function buildMenuTree(): MenuNode[] {
       id: 'file.editDeck',
       label: t('menu.file.editDeck'),
       accelerator: 'CmdOrCtrl+E',
-      enabled: hasDeckOpen(),
+      enabled: canEditCurrentDeck(),
     },
     {
       kind: 'leaf',

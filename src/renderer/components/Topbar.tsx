@@ -37,6 +37,10 @@ export function Topbar() {
   const isDeck = mode === 'deck'
   const dirty = useAppStore((s) => s.dirty)
 
+  // Preview kind is a read-only quick view of a standalone .html — no
+  // edit affordance, no Play/Edit toggle.
+  const isPreview = deck?.kind === 'preview'
+  const showModeToggle = isDeck && !isPreview
   // Save shows for Pack-kind decks in edit sub-view. Source kind writes
   // through to the user's directory directly — there's nothing to flush.
   const showSave = isDeck && subView === 'edit' && deck?.kind === 'pack'
@@ -51,8 +55,7 @@ export function Topbar() {
     <header
       className={cn(
         'topbar grid grid-cols-[1fr_auto_1fr] items-center gap-2 bg-bg z-[2]',
-        'shadow-[0_1px_0_rgb(10_10_10/0.03)]',
-        'dark:shadow-[0_1px_0_rgb(255_255_255/0.04)]',
+        'border-b border-line',
         // Padding rules (mac vs Win/Linux) live in styles.css under
         // `.topbar` / `html[data-chrome='overlay'] .topbar` because
         // Tailwind v4 can't express "html[data-chrome=overlay] selector"
@@ -73,7 +76,7 @@ export function Topbar() {
             <MenuIcon />
           </IconButton>
         </Tooltip>
-        {isDeck && <ModeToggle subView={subView} />}
+        {showModeToggle && <ModeToggle subView={subView} />}
         {showSave && (
           <Tooltip content={t('topbar.save.title')} side="bottom">
             <IconButton

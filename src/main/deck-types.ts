@@ -11,17 +11,20 @@ export interface DeckManifest {
 
 /**
  * What `rootDir` is physically backed by.
- * - 'pack':   temp extraction of a `.deck` zip. Edits accumulate here and
- *             are zipped back to the original `.deck` on Save / close.
- *             Deleted on close after the rezip.
- * - 'source': the user's own on-disk Deck Source directory. Edits land
- *             directly in the directory; nothing to zip.
+ * - 'pack':    temp extraction of a `.deck` zip. Edits accumulate here and
+ *              are zipped back to the original `.deck` on Save / close.
+ *              Deleted on close after the rezip.
+ * - 'source':  the user's own on-disk Deck Source directory. Edits land
+ *              directly in the directory; nothing to zip.
+ * - 'preview': a single `.html` file copied into a temp dir alongside a
+ *              synthesized deck.json. Read-only quick preview — no save,
+ *              no edit toggle, no AI session. Tmpdir is deleted on close.
  *
  * "Deck Source" is no longer surfaced in the UI; the user-facing model
  * is just "open a .deck". Source remains as an internal concept so
  * developers can `Open Folder…` against a working tree.
  */
-export type DeckKind = 'pack' | 'source'
+export type DeckKind = 'pack' | 'source' | 'preview'
 
 export interface LoadedDeck {
   rootDir: string

@@ -1,6 +1,6 @@
 import AdmZip from 'adm-zip'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -25,14 +25,15 @@ function tempNamespaceDir(): string {
 }
 
 /**
- * Load a deck from disk. Accepts either a `.deck` (zip) file — extracted
- * into a temp directory (kind: 'pack') — or an already-unpacked
- * directory (kind: 'source').
+ * Load a deck from disk. Three accepted shapes:
+ *   - `.deck` zip file        → extracted to a tmpdir, kind 'pack'
+ *   - directory with deck.json → loaded in place, kind 'source'
+ *   - `.html` / `.htm` file   → copied to a tmpdir alongside a synthesized
+ *                                deck.json, kind 'preview' (read-only)
  *
- * Pack extractions are NOT deleted automatically: the AppWindow zips
- * edits back into the original `.deck` on save / close before removing
- * the tmpdir. Stale extractions from previous crashed runs are swept
- * by `sweepStaleTempDirs` at startup.
+ * Pack and preview extractions are NOT deleted automatically: AppWindow
+ * cleans the tmpdir on close (after zipping back, for packs). Stale
+ * tmpdirs from crashed runs are swept by `sweepStaleTempDirs` at startup.
  */
 export async function loadDeck(deckPath: string): Promise<LoadedDeck> {
   if (!existsSync(deckPath)) {
@@ -41,6 +42,10 @@ export async function loadDeck(deckPath: string): Promise<LoadedDeck> {
   const info = await stat(deckPath)
   if (info.isDirectory()) {
     return loadDeckFromDir(deckPath)
+  }
+  const ext = path.extname(deckPath).toLowerCase()
+  if (ext === '.html' || ext === '.htm') {
+    return loadDeckFromHtml(deckPath)
   }
   return loadDeckFromFile(deckPath)
 }
@@ -64,6 +69,31 @@ async function loadDeckFromDir(dirPath: string): Promise<LoadedDeck> {
   const rootDir = path.resolve(dirPath)
   const manifest = await validateDeckRoot(rootDir)
   return { rootDir, manifest, kind: 'source' }
+}
+
+/**
+ * Quick-preview a standalone `.html` file by staging it as a minimal deck:
+ * copy the html into a tmpdir as `index.html`, write a synthesized
+ * `deck.json` whose `name` is the file's basename (sans extension).
+ *
+ * The html is expected to be self-contained — sibling files in the user's
+ * directory are NOT copied. Relative `<img src>` / `<link href>` against
+ * neighboring files will 404; this is intentional and documented.
+ */
+async function loadDeckFromHtml(htmlPath: string): Promise<LoadedDeck> {
+  const rootDir = path.join(tempNamespaceDir(), randomUUID())
+  await mkdir(rootDir, { recursive: true })
+
+  try {
+    await copyFile(htmlPath, path.join(rootDir, 'index.html'))
+    const name = path.parse(htmlPath).name || 'Untitled'
+    const manifest: DeckManifest = { name }
+    await writeFile(path.join(rootDir, 'deck.json'), JSON.stringify(manifest, null, 2), 'utf8')
+    return { rootDir, manifest, kind: 'preview' }
+  } catch (err) {
+    await rm(rootDir, { recursive: true, force: true }).catch(() => {})
+    throw err
+  }
 }
 
 async function validateDeckRoot(rootDir: string): Promise<DeckManifest> {

@@ -73,12 +73,16 @@ export interface Rect {
  *   - keep the deck server origin-locked (see deck-view.ts)
  *   - keep `loadDeck` from following symlinks out of its own root
  */
-export function isDeckPath(p: string): 'file' | 'dir' | null {
+export function isDeckPath(p: string): 'file' | 'dir' | 'html' | null {
   try {
     const resolved = path.resolve(p)
     if (!existsSync(resolved)) return null
     const s = statSync(resolved)
-    if (s.isFile() && resolved.toLowerCase().endsWith('.deck')) return 'file'
+    if (s.isFile()) {
+      const lower = resolved.toLowerCase()
+      if (lower.endsWith('.deck')) return 'file'
+      if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html'
+    }
     if (s.isDirectory() && existsSync(path.join(resolved, 'deck.json'))) return 'dir'
   } catch {
     // not a real path

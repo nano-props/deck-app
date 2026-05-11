@@ -13,6 +13,7 @@ export async function promptOpenDeck(): Promise<string | null> {
     title: t('dialog.openDeck.title'),
     filters: [
       { name: 'Deck', extensions: ['deck', 'zip'] },
+      { name: 'HTML', extensions: ['html', 'htm'] },
       { name: 'All Files', extensions: ['*'] },
     ],
     properties: ['openFile'],
@@ -98,7 +99,9 @@ export async function createNewDeckInWindow(win: AppWindow): Promise<void> {
 export async function saveDeckInWindow(win: AppWindow, opts?: { silent?: boolean }): Promise<boolean> {
   const deck = win.getDeck()
   if (!deck) return false
-  if (deck.kind === 'source') return true
+  // Source writes through to disk; Preview is a read-only quick view
+  // (no zip-back, no save dialog). Both no-op success.
+  if (deck.kind !== 'pack') return true
 
   // Pre-flight: original `.deck` still where we expect it?
   if (!existsSync(deck.sourcePath)) {

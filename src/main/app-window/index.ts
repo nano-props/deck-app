@@ -310,11 +310,16 @@ export class AppWindow {
       this.dirty = false
       this.win.setTitle(loaded.manifest.name)
 
-      // Sub-view default: Pack → play (it's distribution form, the user
-      // expects to view it), Source → edit (authoring artifact). Menu
-      // overrides via explicit preferredSubView.
+      // Sub-view default: Pack/Preview → play (distribution form / quick
+      // preview, the user expects to view it), Source → edit (authoring
+      // artifact). Menu overrides via explicit preferredSubView. (Preview
+      // hides the toggle entirely, so the default sticks.)
       const sub: DeckSubView =
-        preferredSubView === 'auto' ? (loaded.kind === 'pack' ? 'play' : 'edit') : preferredSubView
+        preferredSubView === 'auto'
+          ? loaded.kind === 'source'
+            ? 'edit'
+            : 'play'
+          : preferredSubView
 
       await this.enterDeckMode(sub)
       this.loading = false
@@ -331,7 +336,7 @@ export class AppWindow {
       //     idempotent and never throws.
       if (this.deck) {
         await this.closeDeck()
-      } else if (loaded?.kind === 'pack') {
+      } else if (loaded && (loaded.kind === 'pack' || loaded.kind === 'preview')) {
         await rm(loaded.rootDir, { recursive: true, force: true }).catch(() => {})
       }
       this.loading = false
@@ -429,8 +434,9 @@ export class AppWindow {
       console.warn('[AppWindow] server.close threw', err)
     }
     // tmpdir cleanup is the load-bearing one — must run for every Pack
-    // close path, otherwise extractions accumulate forever.
-    if (deck.kind === 'pack') {
+    // and Preview close path, otherwise extractions accumulate forever.
+    // Source's rootDir is the user's own directory; never delete that.
+    if (deck.kind === 'pack' || deck.kind === 'preview') {
       await rm(deck.rootDir, { recursive: true, force: true }).catch((err) => {
         console.warn('[AppWindow] tmpdir rm failed', err)
       })
@@ -477,8 +483,12 @@ export class AppWindow {
     this.broadcastState()
   }
 
-  /** Convenience — equivalent to `setSubView('edit')`. */
+  /** Convenience — equivalent to `setSubView('edit')`. No-op for preview
+   *  kind: there's no AI session / chat pane to enter, and the menu
+   *  item that drives this is gated, but a stale IPC or future caller
+   *  shouldn't be able to land a preview deck in an unusable edit view. */
   enterEditor(): void {
+    if (this.deck?.kind === 'preview') return
     this.setSubView('edit')
   }
 
@@ -627,11 +637,14 @@ export class AppWindow {
     this.mode = 'deck'
     this.subView = subView
     this.deckCtrl.ensure(this.deck.server.url)
-    // Every deck is editable (Pack edits flush back to sourcePath on
-    // close). Always start the AI session, even in Play sub-view, so
-    // flipping into Edit is instant and carries the full transcript.
-    await this.ensureAiSession()
-    this.ensureDeckWatcher()
+    // Pack/Source decks are editable (Pack edits flush back to
+    // sourcePath on close). Always start the AI session, even in Play
+    // sub-view, so flipping into Edit is instant and carries the full
+    // transcript. Preview is read-only quick view — no AI, no watcher.
+    if (this.deck.kind !== 'preview') {
+      await this.ensureAiSession()
+      this.ensureDeckWatcher()
+    }
     // When entering Play mode directly (e.g., opening a Pack), move focus
     // to deck content so keyboard navigation works immediately.
     if (subView === 'play') {
@@ -873,7 +886,7 @@ export class AppWindow {
       } catch (err) {
         console.warn('[AppWindow] server.close threw', err)
       }
-      if (deck.kind === 'pack') {
+      if (deck.kind === 'pack' || deck.kind === 'preview') {
         await rm(deck.rootDir, { recursive: true, force: true }).catch((err) => {
           console.warn('[AppWindow] tmpdir rm failed', err)
         })

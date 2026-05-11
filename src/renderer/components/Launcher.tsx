@@ -1,10 +1,13 @@
 // Launcher — two primary actions (New / Open file), a recents list, the
 // decorative card stack, drag-to-open ring, and a loading overlay shown
-// while main unpacks/extracts. Folder-form Decks have no UI entry point;
-// they reach the app only via drag-drop or CLI argv.
+// while main unpacks/extracts.
+//
+// Open-file accepts `.deck` packs and standalone `.html` files (the
+// latter loads as a read-only quick preview). Folder-form Decks have
+// no UI entry point; they reach the app only via drag-drop or CLI argv.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Plus, Folder, X } from 'lucide-react'
+import { Plus, Folder, FileCode, X } from 'lucide-react'
 import { useAppStore } from '#/renderer/stores/app.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Button, IconButton } from '#/renderer/components/ui/Button.tsx'
@@ -164,7 +167,9 @@ function RecentItem({
   onForget: () => void
   t: ReturnType<typeof useI18n.getState>['t']
 }) {
-  const isPack = entry.path.toLowerCase().endsWith('.deck')
+  const lowered = entry.path.toLowerCase()
+  const isPack = lowered.endsWith('.deck')
+  const isHtml = lowered.endsWith('.html') || lowered.endsWith('.htm')
   const forgetLabel = t('launcher.forget')
   const open = () => void window.deck.openPath(entry.path)
   return (
@@ -188,7 +193,9 @@ function RecentItem({
         }
       }}
     >
-      <span className="text-ink-4">{isPack ? <PackIcon /> : <Folder className="size-3.5" />}</span>
+      <span className="text-ink-4">
+        {isPack ? <PackIcon /> : isHtml ? <FileCode className="size-3.5" /> : <Folder className="size-3.5" />}
+      </span>
       <span className="truncate text-[13px] text-ink">{entry.name || t('launcher.unnamed')}</span>
       <span className="max-w-[240px] truncate font-mono text-[11px] text-ink-4">{shortenPath(entry.path)}</span>
       <IconButton
