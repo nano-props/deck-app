@@ -1,11 +1,12 @@
 import { ipcMain } from 'electron'
 import { chromeOnly } from '#/main/ipc/guard.ts'
+import { allAppWindows, appWindowByWebContents } from '#/main/window-registry.ts'
 import {
-  allAppWindows,
-  appWindowByWebContents,
-  broadcastToChromeWebContents,
-} from '#/main/window-registry.ts'
-import { openSettingsWindow, type SettingsTab } from '#/main/settings-window/index.ts'
+  applySettingsWindowChromeTheme,
+  openSettingsWindow,
+  type SettingsTab,
+} from '#/main/settings-window/index.ts'
+import { subscribeTheme } from '#/main/theme.ts'
 
 const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'ai', 'about']
 
@@ -17,8 +18,6 @@ const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'ai', 'about']
  * Channels:
  *   app:set-preview-bounds      — renderer-driven deckView geometry (the
  *                                 only path that mutates deckView bounds)
- *   app:set-chrome-theme        — propagate light/dark to the titleBarOverlay
- *                                 and broadcast so other windows resync.
  *   app:capture-deck-view       — snapshot the deckView (consumed by AI
  *                                 tool runs that include a preview image)
  *   app:toggle-fullscreen       — flip the focused window's native
@@ -27,8 +26,24 @@ const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'ai', 'about']
  *                                 fullscreen (Player's Maximize button)
  *   app:open-settings-window    — open / focus the standalone Settings
  *                                 BrowserWindow. Optional `tab` payload.
+ *
+ * Also subscribes to `theme.ts` once (no IPC channel of its own) to
+ * recolor every window's `titleBarOverlay` when the user picks a new
+ * theme or the OS appearance shifts under 'auto'. Recoloring lives in
+ * main because `setTitleBarOverlay` is a `BaseWindow` API that
+ * renderers can't reach.
  */
 export function wireLayoutIpc(): void {
+  subscribeTheme(({ resolved }) => {
+    for (const w of allAppWindows()) {
+      if (w.isDestroyed()) continue
+      w.applyChromeTheme(resolved)
+    }
+    // No-op on macOS (settings window has no overlay there); paints
+    // the caption-button strip on Win/Linux.
+    applySettingsWindowChromeTheme(resolved)
+  })
+
   ipcMain.handle(
     'app:set-preview-bounds',
     chromeOnly((event, rect: unknown) => {
@@ -44,31 +59,6 @@ export function wireLayoutIpc(): void {
       }
       const w = appWindowByWebContents(event.sender)
       w?.setPreviewBounds({ x: r.x, y: r.y, width: r.width, height: r.height })
-    }),
-  )
-  ipcMain.handle(
-    'app:set-chrome-theme',
-    chromeOnly((event, theme: unknown) => {
-      if (theme !== 'dark' && theme !== 'light') return
-      // The sender's own AppWindow (if any) gets its titleBarOverlay
-      // recolored. The change may have come from the Settings window —
-      // in that case there's no associated AppWindow, so we walk every
-      // AppWindow and apply the theme to each of their overlays.
-      const sender = appWindowByWebContents(event.sender)
-      if (sender) {
-        sender.applyChromeTheme(theme)
-      } else {
-        for (const w of allAppWindows()) {
-          if (w.isDestroyed()) continue
-          w.applyChromeTheme(theme)
-        }
-      }
-      // Tell every other registered chrome WebContents to re-read its
-      // theme. localStorage is shared across same-origin BrowserWindows,
-      // but each renderer's React store is independent; a notification
-      // wakes them up to apply the new value. We skip the sender — it
-      // already owns the new state.
-      broadcastToChromeWebContents('app:theme-changed', [theme], { excludeId: event.sender.id })
     }),
   )
   ipcMain.handle(

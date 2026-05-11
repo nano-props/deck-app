@@ -17,7 +17,16 @@
 
 import { BrowserWindow } from 'electron'
 import { t } from '#/main/i18n/index.ts'
-import { CHROME_PRELOAD, SETTINGS_HTML, appCanvasBg, sharedWebPreferences, APP_ICON } from '#/main/window-shell.ts'
+import { appChrome, overlayForTheme, supportsOverlayThemeUpdates } from '#/main/chrome-strategy.ts'
+import { TOPBAR_PX } from '#/main/window-layout.ts'
+import {
+  APP_ICON,
+  CHROME_PRELOAD,
+  SETTINGS_HTML,
+  appCanvasBg,
+  initialThemeQuery,
+  sharedWebPreferences,
+} from '#/main/window-shell.ts'
 import {
   broadcastToChromeWebContents,
   registerAuxChromeWebContents,
@@ -37,6 +46,22 @@ let singleton: BrowserWindow | null = null
 /** True if the Settings window is currently open (and not destroyed). */
 export function isSettingsWindowOpen(): boolean {
   return !!singleton && !singleton.isDestroyed()
+}
+
+/**
+ * Recolor the Settings window's caption-button overlay (Win/Linux only).
+ * macOS uses native traffic lights — they always match the system
+ * appearance and need no per-call recoloring. No-op when the window is
+ * closed or destroyed.
+ */
+export function applySettingsWindowChromeTheme(theme: 'dark' | 'light'): void {
+  if (!supportsOverlayThemeUpdates) return
+  if (!singleton || singleton.isDestroyed()) return
+  try {
+    singleton.setTitleBarOverlay(overlayForTheme(theme === 'dark'))
+  } catch {
+    // Window not created with titleBarStyle: 'hidden' — safe to ignore.
+  }
 }
 
 /**
@@ -76,10 +101,23 @@ export function openSettingsWindow(tab: SettingsTab = 'appearance'): void {
     title: t('settings.title'),
     icon: APP_ICON,
     backgroundColor: appCanvasBg(),
-    // Standard OS-decorated window — we don't need our custom topbar
-    // overlay here. A native titlebar is the right idiom for a
-    // Preferences window across platforms.
-    titleBarStyle: 'default',
+    // Self-drawn titlebar so theme switching reaches every pixel —
+    // a default OS-decorated NSWindow titlebar on macOS is painted by
+    // AppKit using NSAppearance, so the only way to recolor it is via
+    // `nativeTheme.themeSource`, which would also affect unrelated
+    // native surfaces. Mirroring the deck AppWindow's chrome strategy
+    // sidesteps that: hiddenInset on macOS (native traffic lights, the
+    // rest of the bar is web-rendered), `hidden` + titleBarOverlay on
+    // Win/Linux (Electron paints caption buttons in the colors we
+    // hand it). The renderer reserves a 32px drag region at the top
+    // of `settings.html` — it doesn't host any controls, just gives
+    // traffic lights / caption buttons a visual home and lets users
+    // grab the window.
+    titleBarStyle: appChrome.titleBarStyle,
+    titleBarOverlay: appChrome.initialOverlay(),
+    // Match AppWindow's traffic-light centering math (TOPBAR_PX is the
+    // self-drawn topbar height; lights are 12px diameter).
+    trafficLightPosition: { x: 16, y: (TOPBAR_PX - 12) / 2 },
     // Don't show until first paint so users never see a white flash.
     show: false,
     resizable: true,
@@ -147,8 +185,10 @@ export function openSettingsWindow(tab: SettingsTab = 'appearance'): void {
     broadcastToChromeWebContents('app:ai-readiness-refresh')
   })
 
-  // Hash carries the initial tab; SettingsApp consumes it once on mount.
-  void win.loadFile(SETTINGS_HTML, { hash: tab })
+  // Hash carries the initial tab (consumed once on mount in SettingsApp);
+  // query carries the resolved theme for the inline boot script in
+  // settings.html.
+  void win.loadFile(SETTINGS_HTML, { hash: tab, query: initialThemeQuery() })
 }
 
 /**

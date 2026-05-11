@@ -14,12 +14,21 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Palette, Sparkles, Info } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { SettingsTab } from '#/main/settings-window/index.ts'
+import { TOPBAR_PX } from '#/main/window-layout.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { cn } from '#/renderer/lib/cn.ts'
 import { TooltipProvider } from '#/renderer/components/ui/Tooltip.tsx'
 import { AppearanceTab } from '#/renderer/components/SettingsOverlay/AppearanceTab.tsx'
 import { AiTab } from '#/renderer/components/SettingsOverlay/AiTab.tsx'
 import { AboutTab } from '#/renderer/components/SettingsOverlay/AboutTab.tsx'
+import iconUrl from '#/renderer/assets/icon.png'
+
+// True on Win/Linux — settings.html's boot script sets `data-chrome` to
+// 'overlay' off-mac. Used to render Win/Linux-only brand affordances
+// (the sidebar header that fills the caption row, kept off macOS where
+// the traffic lights own that space). Read once at module load: the
+// platform never changes mid-session.
+const IS_OVERLAY_CHROME = document.documentElement.dataset.chrome === 'overlay'
 
 const TAB_VALUES: readonly SettingsTab[] = ['appearance', 'ai', 'about']
 const SS_KEY = 'deck:settings:tab'
@@ -41,7 +50,10 @@ function isTab(v: string | null | undefined): v is SettingsTab {
 const INITIAL_TAB: SettingsTab = (() => {
   const hashTab = window.location.hash.replace(/^#/, '')
   if (isTab(hashTab)) {
-    window.history.replaceState(null, '', window.location.pathname)
+    // Strip the hash but preserve `?theme=...` so a Cmd+R reload still
+    // boots into the correct theme via the inline boot script. Without
+    // `+ search` here, the replaceState would erase the query too.
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
     return hashTab
   }
   const stored = sessionStorage.getItem(SS_KEY)
@@ -90,7 +102,7 @@ export function SettingsApp() {
     // throws "Tooltip must be used within Tooltip.Provider" the moment
     // a tab containing a tooltip mounts.
     <TooltipProvider>
-      <div className="flex h-full min-h-0 bg-surface text-ink">
+      <div className="relative flex h-full min-h-0 bg-surface text-ink">
         <SidebarNav
           tab={tab}
           onChange={setTab}
@@ -100,7 +112,19 @@ export function SettingsApp() {
             { value: 'about', label: t('settings.about'), icon: Info },
           ]}
         />
-        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {/* Push the main scroll region below the drag strip with a
+            margin-top, not internal padding. The strip is a transparent
+            `-webkit-app-region: drag` overlay (no fill); offsetting the
+            scroll region means main's content never enters the y=0..32
+            zone in the first place, so we don't need an opaque strip
+            to hide content scrolled past the top. The 32px gap reads
+            naturally — it shares `bg-surface` with main itself, so
+            visually main extends from the very top with breathing
+            room above the first heading. */}
+        <main
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+          style={{ marginTop: TOPBAR_PX }}
+        >
           <div className="mx-auto w-full max-w-[520px] px-6 py-4">
             <TabPanel active={tab === 'appearance'}>
               <AppearanceTab />
@@ -113,8 +137,36 @@ export function SettingsApp() {
             </TabPanel>
           </div>
         </main>
+        <DragRegion />
       </div>
     </TooltipProvider>
+  )
+}
+
+/** Empty, transparent drag strip giving the user a place to grab the
+ *  window. macOS traffic lights and Win/Linux caption buttons are drawn
+ *  by Electron in this region (positioned via `trafficLightPosition` /
+ *  `titleBarOverlay` configured at window creation in
+ *  `settings-window/index.ts`).
+ *
+ *  Stays transparent on purpose: the sidebar's `bg-bg-deep` panel
+ *  reaches the top edge naturally and shows through here, so the brand
+ *  row beneath the strip stays visible. The right half sits over
+ *  `bg-surface` (the outer container) and the main scroll region is
+ *  offset by `margin-top: TOPBAR_PX` so its content never enters this
+ *  zone — no opaque fill needed to hide overscroll bleed.
+ *
+ *  `pointer-events: none` keeps the strip from blocking clicks on the
+ *  SidebarBrand / nav buttons beneath it; `-webkit-app-region: drag`
+ *  is a Chromium-level hint Electron reads independently of pointer
+ *  events, so opting out is harmless. */
+function DragRegion() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-0 [-webkit-app-region:drag]"
+      style={{ height: TOPBAR_PX }}
+    />
   )
 }
 
@@ -140,11 +192,25 @@ function SidebarNav({
 }) {
   const t = useI18n((s) => s.t)
   return (
-    // Sidebar shares the main pane's background (no `bg-bg-deep` tint) —
-    // matches modern macOS Settings, where the divider is the only thing
-    // separating nav from content. Active item carries an accent fill so
-    // it reads as the focal point without relying on a contrasting panel.
-    <nav aria-label={t('settings.title')} className="flex w-[180px] shrink-0 flex-col gap-0.5 border-r border-line p-3">
+    // Sidebar takes a slightly darker fill (`bg-bg-deep`) instead of a
+    // 1px divider — same idiom as macOS System Settings, where the
+    // sidebar / content separation reads through tone rather than a
+    // line. The earlier border-r created a visible seam at the top
+    // edge of the drag strip; a tonal panel sidesteps the seam entirely.
+    //
+    // Top spacing is platform-dependent: macOS leaves the top 32px empty
+    // for the traffic lights (`pt-11` → 44px so the first nav item has
+    // breathing room below), Win/Linux fills it with a brand header
+    // (caption buttons sit on the *right* in `titleBarOverlay`, so the
+    // left side of the bar is free for content).
+    <nav
+      aria-label={t('settings.title')}
+      className={cn(
+        'flex w-[180px] shrink-0 flex-col gap-0.5 bg-bg-deep px-3 pb-3',
+        IS_OVERLAY_CHROME ? 'pt-2' : 'pt-11',
+      )}
+    >
+      {IS_OVERLAY_CHROME && <SidebarBrand />}
       {items.map(({ value, label, icon: Icon }) => {
         const active = tab === value
         return (
@@ -157,7 +223,13 @@ function SidebarNav({
               'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium',
               'cursor-pointer transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-              active ? 'bg-accent text-white' : 'text-ink-2 hover:bg-line hover:text-ink',
+              // Active nav uses the same solid fill as the launcher's
+              // primary button (`bg-btn-solid`) so the app reads as
+              // having one accent, not two — black on light, brand
+              // blue on dark, both via the same token.
+              active
+                ? 'bg-btn-solid text-btn-solid-text'
+                : 'text-ink-2 hover:bg-line hover:text-ink',
             )}
           >
             <Icon className="size-4 shrink-0" aria-hidden />
@@ -166,5 +238,32 @@ function SidebarNav({
         )
       })}
     </nav>
+  )
+}
+
+/** Sidebar brand row (Win/Linux only). Sits in the column's top 32px,
+ *  flush with the self-drawn drag strip — caption buttons live on the
+ *  right edge of the window so the sidebar's left side is free. macOS
+ *  uses `pt-11` instead so the traffic lights have the column to
+ *  themselves; rendering this there would overlap them.
+ *
+ *  This row sits inside the sidebar's normal flow but a transparent
+ *  absolute drag overlay (DragRegion) sits on top of it. The overlay
+ *  carries `-webkit-app-region: drag` (Chromium hint Electron reads
+ *  independently of pointer events), so dragging anywhere over the
+ *  brand row moves the window — we don't have to mark the brand row
+ *  itself draggable. The overlay's `pointer-events: none` keeps it
+ *  from blocking clicks, and the row's content (icon + text) shows
+ *  through because the overlay has no fill. */
+function SidebarBrand() {
+  return (
+    <div
+      className="mb-1 flex items-center gap-2 px-2"
+      style={{ height: TOPBAR_PX }}
+      aria-hidden
+    >
+      <img src={iconUrl} alt="" draggable={false} className="size-4 select-none" />
+      <span className="text-[13px] font-semibold text-ink">Deck</span>
+    </div>
   )
 }

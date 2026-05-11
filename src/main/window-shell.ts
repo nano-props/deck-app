@@ -4,9 +4,10 @@
  * so the latter can focus on the window class itself.
  */
 
-import { app, nativeTheme } from 'electron'
+import { app } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { getTheme } from '#/main/theme.ts'
 
 export const APP_ICON = app.isPackaged
   ? path.join(process.resourcesPath, 'assets', 'icon.png')
@@ -40,14 +41,42 @@ export const sharedWebPreferences = {
 } as const
 
 /**
- * Matches `styles.css` `--color-bg` for each theme. BaseWindow + chromeView
- * take this as their raw backing color so a freshly-shown window doesn't
- * flash white before the renderer's CSS applies. `nativeTheme.shouldUseDarkColors`
- * is our best guess at this moment — the renderer can still flip
- * `data-theme` afterward if the user picked a non-auto preference.
+ * Query parameters for the chrome HTML loadFile call. Carries:
+ *
+ *   - `theme`: the resolved 'light' | 'dark' value, stamped onto
+ *     `<html data-theme>` by the inline boot script before any CSS
+ *     evaluates — prevents a white flash on dark-pref users.
+ *
+ *   - `themePref`: the user's pref ('auto' | 'light' | 'dark'),
+ *     stamped onto `<html data-theme-pref>`. Lets the renderer's
+ *     `theme.ts` store seed its initial `pref` with the canonical
+ *     value, so Settings's Segmented control selects the right
+ *     option on first render instead of briefly showing 'auto'
+ *     while the boot fetch round-trips.
+ *
+ * This is the only state we have to ferry into the very first paint —
+ * everything else flows through IPC after the preload's contextBridge
+ * is up.
+ */
+export function initialThemeQuery(): { theme: 'light' | 'dark'; themePref: 'auto' | 'light' | 'dark' } {
+  const { resolved, pref } = getTheme()
+  return { theme: resolved, themePref: pref }
+}
+
+/**
+ * Matches `styles.css` `--color-bg` for each theme. BaseWindow +
+ * chromeView take this as their raw backing color so a freshly-shown
+ * window doesn't flash white before the renderer's CSS applies.
+ *
+ * Exact color match for deck AppWindow chrome (Topbar uses `bg-bg`).
+ * Settings window's main pane uses `bg-surface` (in dark mode that's
+ * `#121417`, ~5% lighter than this `#0c0d0f`); the gap is invisible
+ * in practice — the renderer's first paint covers the canvas within
+ * a frame — and unifying on a single helper here keeps the call sites
+ * in sync with the theme module's single source of truth.
  */
 export function appCanvasBg(): string {
-  return nativeTheme.shouldUseDarkColors ? '#0c0d0f' : '#ffffff'
+  return getTheme().resolved === 'dark' ? '#0c0d0f' : '#ffffff'
 }
 
 /** Rect in window content-area coordinates (CSS pixels). */

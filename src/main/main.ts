@@ -15,6 +15,8 @@ import { wireLayoutIpc } from '#/main/ipc/layout.ts'
 import { wireMenuIpc } from '#/main/ipc/menu.ts'
 import { wireRecentsIpc } from '#/main/ipc/recents.ts'
 import { wireSettingsIpc } from '#/main/ipc/settings.ts'
+import { wireThemeIpc } from '#/main/ipc/theme.ts'
+import { initTheme } from '#/main/theme.ts'
 import { recordOpen } from '#/main/recents.ts'
 import { getSettings } from '#/main/settings.ts'
 import { closeSettingsWindow, isSettingsWindowOpen } from '#/main/settings-window/index.ts'
@@ -158,6 +160,13 @@ async function main(): Promise<void> {
   // and would otherwise render in the default ('en') for the first frame.
   const settings = await getSettings()
   setCurrentLang(resolveLang(settings.ui.lang))
+  // Theme has to initialize BEFORE the first AppWindow is created so
+  // `getTheme()` returns the persisted resolved value — both
+  // `appCanvasBg()` (BaseWindow backing color) and `initialThemeQuery()`
+  // (the `?theme=` URL param read by each HTML's inline boot script)
+  // depend on it. Without this a 'dark'-pref user would flash a white
+  // BaseWindow before the renderer's CSS applies.
+  await initTheme()
   buildMenu()
   wireDeckLifecycleIpc()
   wireI18nIpc()
@@ -166,6 +175,7 @@ async function main(): Promise<void> {
   wireRecentsIpc()
   wireAiIpc()
   wireSettingsIpc()
+  wireThemeIpc()
 
   const queued = [...pendingOpens, ...argvDeckPaths(process.argv)]
   if (queued.length > 0) {

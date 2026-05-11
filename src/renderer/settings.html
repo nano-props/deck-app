@@ -12,23 +12,17 @@
                connect-src 'self'"
     />
     <title>Settings</title>
-    <!-- Synchronous theme + chrome-platform bootstrap, runs before any
-         module script so the first paint already has the right
-         `data-theme` (no white flash).
-
-         KEEP IN SYNC with the equivalent block in `index.html`. -->
+    <!-- KEEP IN SYNC with the equivalent block in `index.html`. -->
     <script>
       (function () {
-        try {
-          var pref = localStorage.getItem('deck:theme')
-          var resolved =
-            pref === 'light' || pref === 'dark'
-              ? pref
-              : matchMedia('(prefers-color-scheme: dark)').matches
-                ? 'dark'
-                : 'light'
-          document.documentElement.setAttribute('data-theme', resolved)
-        } catch (_) {}
+        var params = new URLSearchParams(location.search)
+        var theme = params.get('theme')
+        document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
+        var pref = params.get('themePref')
+        document.documentElement.setAttribute(
+          'data-theme-pref',
+          pref === 'dark' || pref === 'light' || pref === 'auto' ? pref : 'auto',
+        )
         if (!/Mac/i.test(navigator.platform)) {
           document.documentElement.setAttribute('data-chrome', 'overlay')
         }

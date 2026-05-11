@@ -123,9 +123,23 @@ try {
     await $`git tag -a ${tag} -m ${`Release ${tag}`}`
     await $`git push origin ${tag}`
 
+    // Builds are unsigned. Without these notes Gatekeeper/SmartScreen
+    // will block the download and users will assume the app is broken.
+    const notes = [
+      `Unsigned builds.`,
+      ``,
+      `**macOS** — after installing, run:`,
+      '```sh',
+      `xattr -dr com.apple.quarantine /Applications/${APP_NAME}.app`,
+      '```',
+      `Or right-click the app → **Open** → **Open**.`,
+      ``,
+      `**Windows** — SmartScreen → **More info** → **Run anyway**.`,
+    ].join('\n')
+
     console.log(`Creating GitHub release ${tag} ...`)
     try {
-      await $`gh release create ${tag} ${dmgs} ${exe} --title ${tag} --notes ${`Release ${tag}`}`
+      await $`gh release create ${tag} ${dmgs} ${exe} --title ${tag} --notes ${notes}`
     } catch (err) {
       // The release didn't get created — leaving the tag in place orphans it.
       // Roll back the remote tag and the local tag so the next attempt isn't

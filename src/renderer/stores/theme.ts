@@ -1,85 +1,93 @@
-// Theme preference store. Mirrors the inline boot script in index.html
-// — that script runs first to avoid a white flash before React mounts;
-// this store owns subsequent changes.
+// Theme store — pure subscriber to main's theme module.
 //
-// Persistence:
-//   - Pref ('auto'|'light'|'dark') in localStorage as `deck:theme`
-//   - Resolved theme reflected on `<html data-theme>`
-//   - Push to main via `setChromeTheme` so the Win/Linux titleBarOverlay
-//     recolors (deck windows only — Settings window uses a default OS
-//     titlebar with no overlay)
+// Main owns the persisted pref (settings.json), the resolved value, and
+// `nativeTheme.themeSource`. The renderer:
+//
+//   1. Seeds `pref` + `resolved` synchronously from `<html
+//      data-theme-pref>` / `<html data-theme>`, which the inline boot
+//      script in index.html / settings.html stamped from the
+//      `?theme=&themePref=` query supplied by main on `loadFile`.
+//      No IPC roundtrip, no localStorage, no white flash, and the
+//      Segmented control in Settings shows the right selection on
+//      the very first render.
+//   2. Pulls the full `{ pref, resolved }` over IPC after mount, in
+//      case the URL seed is somehow stale (it shouldn't be, but the
+//      fetch also covers any window that loaded while a sibling
+//      window was mid-`setPref` and whose broadcast was dropped due
+//      to webContents-still-loading semantics).
+//   3. Listens for `app:theme-changed` broadcasts and re-applies.
+//   4. Sends user picks through `setPref` → IPC → main; main emits
+//      back through the same broadcast that step 3 listens for, so
+//      the React update is single-pass.
+//
+// What this file deliberately does NOT do:
+//
+//   - No `localStorage` read/write. Persistence lives in main.
+//   - No `matchMedia('(prefers-color-scheme)')` listener. Main owns
+//     the OS-appearance subscription and broadcasts the resolved value
+//     when pref === 'auto' and the system flips. A renderer-side
+//     listener would form a feedback loop with `nativeTheme.themeSource`.
+//   - No optimistic local update inside `setPref`. We wait for main's
+//     broadcast — this is the same single-source pattern i18n uses
+//     (see `i18n.ts`) and keeps every window in lockstep.
 
 import { create } from 'zustand'
+import type { ResolvedTheme, ThemePref, ThemeState } from '#/main/theme.ts'
 
-export type ThemePref = 'auto' | 'light' | 'dark'
-export type ResolvedTheme = 'light' | 'dark'
+// Re-export so other renderer files can grab these without reaching
+// into `#/main/...` themselves — keeps the type-import surface narrow.
+export type { ResolvedTheme, ThemePref } from '#/main/theme.ts'
 
-const LS_KEY = 'deck:theme'
-
-function resolveTheme(pref: ThemePref): ResolvedTheme {
-  if (pref === 'light' || pref === 'dark') return pref
-  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+interface ThemeStore extends ThemeState {
+  setPref: (pref: ThemePref) => Promise<void>
+  /** Internal — applied on `app:theme-changed` and the boot fetch. */
+  _apply: (state: ThemeState) => void
 }
 
-function readPref(): ThemePref {
-  const v = localStorage.getItem(LS_KEY)
-  return v === 'light' || v === 'dark' || v === 'auto' ? v : 'auto'
+// Seed `pref` and `resolved` from the DOM attributes the inline boot
+// script in index.html / settings.html already stamped (sourced from
+// the `?theme=&themePref=` query main injects on loadFile — see
+// window-shell.ts). Both seeds match main's canonical state, so
+// components like AppearanceTab's Segmented control select the right
+// option on the very first render without waiting for the boot fetch
+// to round-trip.
+function readInitialState(): ThemeState {
+  const resolved: ResolvedTheme =
+    document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
+  const prefAttr = document.documentElement.getAttribute('data-theme-pref')
+  const pref: ThemePref = prefAttr === 'dark' || prefAttr === 'light' || prefAttr === 'auto' ? prefAttr : 'auto'
+  return { pref, resolved }
 }
-
-interface ThemeStore {
-  pref: ThemePref
-  resolved: ResolvedTheme
-  setPref: (pref: ThemePref) => void
-}
-
-const initialPref = readPref()
-const initialResolved = resolveTheme(initialPref)
 
 export const useTheme = create<ThemeStore>((set) => ({
-  pref: initialPref,
-  resolved: initialResolved,
-  setPref: (pref) => {
-    localStorage.setItem(LS_KEY, pref)
-    const resolved = resolveTheme(pref)
+  ...readInitialState(),
+  setPref: async (pref) => {
+    // Don't update local state here — main will broadcast the canonical
+    // result and `_apply` will land it. Same pattern as i18n.setPref.
+    await window.deck.theme.setPref(pref).catch(() => {})
+  },
+  _apply: ({ pref, resolved }) => {
     document.documentElement.setAttribute('data-theme', resolved)
-    void window.deck.setChromeTheme?.(resolved).catch(() => {})
     set({ pref, resolved })
   },
 }))
 
-/** Push the current resolved theme to main once on boot, so the native
- *  titleBarOverlay (Win/Linux) matches before any user interaction.
- *
- *  Called explicitly from the deck AppWindow's renderer entry only
- *  (`main.tsx`). The Settings window has no titleBarOverlay to recolor
- *  — calling this from there would just trigger a no-op IPC and an
- *  unnecessary cross-window theme broadcast. */
-export function pushInitialChromeTheme(): void {
-  void window.deck.setChromeTheme?.(initialResolved).catch(() => {})
-}
-
-// Auto follows system theme changes.
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
-  if (useTheme.getState().pref === 'auto') useTheme.getState().setPref('auto')
+window.deck.theme.onChange((payload) => {
+  if (payload) useTheme.getState()._apply(payload)
 })
 
-// Cross-window theme sync. Another window (typically the Settings
-// window) wrote a new theme choice; main broadcasts it here. localStorage
-// is shared across same-origin BrowserWindows so the pref is already
-// the new value — we just need to update this window's React state and
-// DOM. We deliberately do NOT route through `setPref`: that would push
-// `setChromeTheme` back to main, which would re-broadcast to the rest
-// of the windows, fanning out an O(N²) IPC echo. The native overlay
-// for THIS window is updated separately by main (it walks every
-// AppWindow when the originating sender wasn't an AppWindow).
-window.deck.onThemeChanged?.((theme) => {
-  const stored = localStorage.getItem(LS_KEY)
-  const pref: ThemePref = stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto'
-  // `theme` is the resolved value the sender computed; trust it for
-  // data-theme, but recompute from `pref` if `pref === 'auto'` so we
-  // honor THIS window's system theme (which may differ if the user
-  // dragged the window across displays with different appearances).
-  const resolved = pref === 'auto' ? resolveTheme(pref) : theme
-  document.documentElement.setAttribute('data-theme', resolved)
-  useTheme.setState({ pref, resolved })
+// Boot fetch. Belt-and-braces with the URL-seeded initial state above:
+// the seed is already correct in normal flow, but the fetch also covers
+// the (rare) case where a sibling window's setPref broadcast was
+// dropped because this webContents was still loading at the time. The
+// fetch result is the same payload the broadcast would have carried,
+// so applying it idempotently lands consistency.
+//
+// Same fire-and-forget shape as i18n's boot fetch (see i18n.ts) — a
+// rejection here is exceptional (main's IPC down before renderer boot
+// finishes) and the global `unhandledrejection` listener in main.tsx
+// logs it. The broadcast path recovers consistency on the next theme
+// change either way.
+void window.deck.theme.get().then((payload) => {
+  if (payload) useTheme.getState()._apply(payload)
 })

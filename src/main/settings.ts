@@ -37,14 +37,27 @@ export interface CustomProviderConfig {
 }
 
 /**
- * UI preferences. Currently just language; theme stays in localStorage on
- * the renderer (it has to be resolved before any IPC round-trip to avoid a
- * white→dark flash, see the inline boot script in src/renderer/index.html).
+ * UI preferences.
+ *
+ * Both `lang` and `theme` are persisted to settings.json and resolved by
+ * main; renderers pull the active state via IPC and subscribe to
+ * change broadcasts. Resolution uses the OS — `app.getLocale()` for
+ * lang, `nativeTheme.shouldUseDarkColors` for theme — when the value
+ * is 'auto'.
+ *
+ * Initial paint avoids a flash by passing the resolved theme through
+ * `loadFile`'s `?theme=` query (see `window-shell.ts::initialThemeQuery`);
+ * each HTML's inline boot script reads it and stamps `<html data-theme>`
+ * synchronously before any CSS evaluates.
  */
 export interface UiSettings {
   /** 'auto' resolves to the OS language at startup; an explicit value
    *  overrides. See src/main/i18n/index.ts::resolveLang. */
   lang: 'en' | 'zh' | 'ko' | 'auto'
+  /** 'auto' follows the OS appearance (light/dark) live; explicit picks
+   *  pin the resolved theme regardless of OS changes. See
+   *  `src/main/theme.ts`. */
+  theme: 'auto' | 'light' | 'dark'
 }
 
 export interface AiSettings {
@@ -121,7 +134,7 @@ export const DEFAULT_SETTINGS: Settings = {
     },
     thinkingLevel: 'medium',
   },
-  ui: { lang: 'auto' },
+  ui: { lang: 'auto', theme: 'auto' },
   compaction: { ...DEFAULT_COMPACTION_SETTINGS },
 }
 
@@ -197,6 +210,10 @@ async function doLoad(): Promise<Settings> {
       parsed.ui?.lang === 'en' || parsed.ui?.lang === 'zh' || parsed.ui?.lang === 'ko' || parsed.ui?.lang === 'auto'
         ? parsed.ui.lang
         : DEFAULT_SETTINGS.ui.lang
+    const uiTheme =
+      parsed.ui?.theme === 'auto' || parsed.ui?.theme === 'light' || parsed.ui?.theme === 'dark'
+        ? parsed.ui.theme
+        : DEFAULT_SETTINGS.ui.theme
     const rawThinking = parsed.ai?.thinkingLevel
     const thinkingLevel: ThinkingLevel = VALID_THINKING_LEVELS.includes(rawThinking as ThinkingLevel)
       ? (rawThinking as ThinkingLevel)
@@ -208,7 +225,7 @@ async function doLoad(): Promise<Settings> {
         custom: mergedCustom,
         thinkingLevel,
       },
-      ui: { lang: uiLang },
+      ui: { lang: uiLang, theme: uiTheme },
       compaction: {
         ...DEFAULT_SETTINGS.compaction,
         ...(parsed.compaction ?? {}),
@@ -236,16 +253,27 @@ export async function getSettings(): Promise<Settings> {
 const { enqueue: enqueueWrite } = createSerialQueue()
 
 /**
- * Shallow-merge `patch` into the current settings and persist. Callers that
- * need to change nested fields (e.g. just `ai.model`) should pass a fully
- * formed `ai` object — this intentionally doesn't deep-merge to avoid
- * partial-write ambiguity.
+ * Shallow-merge `patch` into the current settings and persist. Top-level
+ * keys (`ai`, `ui`, `compaction`) are spread-merged with the existing
+ * value, so a caller that only knows about `ui.theme` doesn't have to
+ * re-supply `ui.lang`. `ai.custom` and `ai.builtinModel` are independently
+ * merged for the same reason — without that a patch updating one
+ * provider's model would wipe the others.
  */
-export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
+export type SettingsPatch = {
+  ai?: Partial<AiSettings> & {
+    builtinModel?: Partial<AiSettings['builtinModel']>
+    custom?: Partial<AiSettings['custom']>
+  }
+  ui?: Partial<UiSettings>
+  compaction?: Partial<CompactionSettings>
+}
+
+export function updateSettings(patch: SettingsPatch): Promise<Settings> {
   return enqueueWrite(() => doUpdate(patch))
 }
 
-async function doUpdate(patch: Partial<Settings>): Promise<Settings> {
+async function doUpdate(patch: SettingsPatch): Promise<Settings> {
   const current = await load()
   // Explicit-per-field merge instead of spread: `ai.custom` is a map of
   // three independent entries and we don't want a patch that only knows
@@ -262,7 +290,10 @@ async function doUpdate(patch: Partial<Settings>): Promise<Settings> {
       }
     : current.ai
   const nextUi: UiSettings = patch.ui ? { ...current.ui, ...patch.ui } : current.ui
-  const next: Settings = { ...current, ...patch, ai: nextAi, ui: nextUi }
+  const nextCompaction: CompactionSettings = patch.compaction
+    ? { ...current.compaction, ...patch.compaction }
+    : current.compaction
+  const next: Settings = { ai: nextAi, ui: nextUi, compaction: nextCompaction }
   const file = settingsFile()
   const tmp = file + '.tmp'
   await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8')

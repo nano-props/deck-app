@@ -1,4 +1,6 @@
 import { BaseWindow, dialog, WebContentsView, type WebContents } from 'electron'
+import { copyFile } from 'node:fs/promises'
+import path from 'node:path'
 import type { DeckAiSession } from '#/main/ai/session/types.ts'
 import { createAiSessionManager, type AiSessionManager } from '#/main/app-window/ai-session-manager.ts'
 import { DeckSession } from '#/main/app-window/deck-session.ts'
@@ -13,6 +15,7 @@ import {
   appCanvasBg,
   CHROME_HTML,
   CHROME_PRELOAD,
+  initialThemeQuery,
   type Rect,
   sharedWebPreferences,
 } from '#/main/window-shell.ts'
@@ -152,7 +155,10 @@ export class AppWindow {
 
     // Load the chrome UI. `loadFile` is async but we don't need to await
     // — renderer requests the current state via IPC on DOMContentLoaded.
-    void this.chromeView.webContents.loadFile(CHROME_HTML)
+    // The `theme` query is consumed by the inline boot script in
+    // index.html to stamp `data-theme` before any CSS evaluates, avoiding
+    // a white flash on dark-pref users.
+    void this.chromeView.webContents.loadFile(CHROME_HTML, { query: initialThemeQuery() })
 
     this.applyChromeLayout()
   }
@@ -383,6 +389,16 @@ export class AppWindow {
   reloadDeck(ignoreCache = false): void {
     const deck = this.deckSession.getDeck()
     if (!deck) return
+    // For a quick-preview .html: re-copy the user's source file into the
+    // staged tmpdir so refresh picks up edits made to the original.
+    // Best-effort — if the source has been moved/deleted, fall through
+    // to reloading whatever's already staged.
+    if (deck.kind === 'preview') {
+      copyFile(deck.sourcePath, path.join(deck.rootDir, 'index.html'))
+        .catch(() => {})
+        .finally(() => this.deckCtrl.reload(deck.server.url, ignoreCache))
+      return
+    }
     this.deckCtrl.reload(deck.server.url, ignoreCache)
   }
 

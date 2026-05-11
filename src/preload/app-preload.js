@@ -114,8 +114,19 @@ contextBridge.exposeInMainWorld('deck', {
   listRecents: () => ipcRenderer.invoke('app:list-recents'),
   forgetRecent: (p) => ipcRenderer.invoke('app:forget-recent', p),
 
-  // ---- Chrome theme -------------------------------------------------------
-  setChromeTheme: (theme) => ipcRenderer.invoke('app:set-chrome-theme', theme),
+  // ---- Theme --------------------------------------------------------------
+  // Mirrors the i18n shape: `get` for the boot pull, `setPref` for user
+  // changes (returns the new state), `onChange` for cross-window pushes
+  // (also fires when pref === 'auto' and the OS appearance shifts).
+  theme: {
+    get: () => ipcRenderer.invoke('theme:get'),
+    setPref: (pref) => ipcRenderer.invoke('theme:set-pref', pref),
+    onChange: (cb) => {
+      const listener = (_event, payload) => cb(payload)
+      ipcRenderer.on('app:theme-changed', listener)
+      return () => ipcRenderer.off('app:theme-changed', listener)
+    },
+  },
 
   // ---- AI chat ------------------------------------------------------------
   aiSend: (text, uiContext) => ipcRenderer.invoke('ai:send', text, uiContext),
@@ -187,14 +198,6 @@ contextBridge.exposeInMainWorld('deck', {
     const listener = () => cb()
     ipcRenderer.on('app:ai-readiness-refresh', listener)
     return () => ipcRenderer.off('app:ai-readiness-refresh', listener)
-  },
-  // Theme changed in another window. localStorage is shared across
-  // BrowserWindows of the same origin, but React stores are not — this
-  // listener tells the renderer to re-read and re-apply.
-  onThemeChanged: (cb) => {
-    const listener = (_event, theme) => cb(theme)
-    ipcRenderer.on('app:theme-changed', listener)
-    return () => ipcRenderer.off('app:theme-changed', listener)
   },
   // Settings-window only: main asks the renderer to flush pending edits
   // before destroying the window. Wire format lives in

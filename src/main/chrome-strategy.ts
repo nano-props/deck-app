@@ -1,5 +1,6 @@
-import { nativeTheme, type TitleBarOverlayOptions } from 'electron'
+import type { TitleBarOverlayOptions } from 'electron'
 import { TOPBAR_PX } from '#/main/window-layout.ts'
+import { getTheme } from '#/main/theme.ts'
 
 /**
  * Window chrome strategy per platform.
@@ -42,7 +43,7 @@ export function overlayForTheme(dark: boolean): TitleBarOverlayOptions {
 }
 
 export function initialOverlay(): TitleBarOverlayOptions {
-  return overlayForTheme(nativeTheme.shouldUseDarkColors)
+  return overlayForTheme(getTheme().resolved === 'dark')
 }
 
 export interface AppChrome {

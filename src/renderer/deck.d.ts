@@ -11,6 +11,7 @@ import type { DeckChatSummary } from '#/main/chats.ts'
 import type { MenuActionId, MenuNode } from '#/main/menu/index.ts'
 import type { AppState } from '#/main/app-window/index.ts'
 import type { ChatUiContext } from '#/main/ai/session/types.ts'
+import type { ThemePref, ThemeState } from '#/main/theme.ts'
 
 // ---- App / window state -----------------------------------------------------
 
@@ -54,7 +55,14 @@ interface DeckBridge {
   forgetRecent: (p: string) => Promise<void>
 
   // ---- Theme --------
-  setChromeTheme: (theme: 'light' | 'dark') => Promise<void>
+  // Mirrors the i18n shape: pull the active state on boot, push user
+  // picks via `setPref`, subscribe to cross-window updates via
+  // `onChange`. Persistence and OS-appearance subscription live in main.
+  theme: {
+    get: () => Promise<ThemeState>
+    setPref: (pref: ThemePref) => Promise<ThemeState>
+    onChange: (cb: (payload: ThemeState) => void) => () => void
+  }
 
   // ---- AI chat --------
   // `reason` distinguishes recoverable refusals (busy / not-ready) from
@@ -112,9 +120,6 @@ interface DeckBridge {
   onSettingsWindowSetTab: (cb: (tab: 'appearance' | 'ai' | 'about') => void) => () => void
   /** Re-probe AI readiness after the Settings window closes. */
   onAiReadinessRefresh: (cb: () => void) => () => void
-  /** Theme changed in another window. Listener should re-read
-   *  localStorage and apply. */
-  onThemeChanged: (cb: (theme: 'light' | 'dark') => void) => () => void
   /** Settings-window only: main asks the renderer to commit any pending
    *  edits before close. The handler should await every registered
    *  flusher (see lib/flush-registry.ts) and resolve to its aggregate

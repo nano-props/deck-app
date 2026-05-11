@@ -49,6 +49,11 @@
         scroll-behavior: smooth;
         overflow-x: hidden;
       }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
       body {
         background: var(--bg);
         color: var(--ink);
@@ -380,6 +385,15 @@
         border-radius: 50%;
         display: inline-block;
         background: var(--line-2);
+      }
+      .hero-visual .dots i:nth-child(1) {
+        background: #ff5f57;
+      }
+      .hero-visual .dots i:nth-child(2) {
+        background: #febc2e;
+      }
+      .hero-visual .dots i:nth-child(3) {
+        background: #28c840;
       }
       .hero-visual .addr {
         margin-left: 10px;
@@ -1148,6 +1162,9 @@
         transform: none;
       }
       @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
         .reveal {
           opacity: 1;
           transform: none;
@@ -1362,7 +1379,7 @@
             </div>
             <div class="field-list">
               <div class="field-row">
-                <span class="name"><span class="req"></span><span data-i18n="cName">Photos &amp; images</span></span
+                <span class="name"><span class="req"></span><span data-i18n="cName1">Photos &amp; images</span></span
                 ><span class="desc" data-i18n="cDesc1"
                   >Cover shots, product photos, screenshots — drop them right in.</span
                 >
@@ -1713,6 +1730,18 @@
               <td data-label-i18n="cmpH2" data-i18n="cmpLow">Limited</td>
               <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
             </tr>
+            <tr>
+              <th scope="row" data-i18n="cmpR5">Works offline</th>
+              <td data-label-i18n="cmpH1"><span class="n" data-i18n="cmpNo">No</span></td>
+              <td data-label-i18n="cmpH2"><span class="y" data-i18n="cmpYes">Yes</span></td>
+              <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
+            </tr>
+            <tr>
+              <th scope="row" data-i18n="cmpR6">Open format</th>
+              <td data-label-i18n="cmpH1"><span class="n" data-i18n="cmpNo">No</span></td>
+              <td data-label-i18n="cmpH2"><span class="n" data-i18n="cmpNo">No</span></td>
+              <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -1782,7 +1811,7 @@
           insideTitle: 'Put anything on a slide.',
           insideSub:
             "Photos, charts, videos, your logo, a clickable demo — whatever helps you tell the story. Deck doesn't box you into \"title + bullets.\"",
-          cName: 'Photos &amp; images',
+          cName1: 'Photos &amp; images',
           cDesc1: 'Cover shots, product photos, screenshots — drop them right in.',
           cName2: 'Video &amp; audio',
           cDesc2: 'Play a clip, embed a demo reel, autoplay a soundtrack.',
@@ -1880,11 +1909,13 @@
           cmpR2: 'Your file, your disk',
           cmpR3: 'Double-click to open',
           cmpR4: 'Animations, video, anything',
+          cmpR5: 'Works offline',
+          cmpR6: 'Open format',
           cmpYes: 'Yes',
           cmpNo: 'No',
           cmpLow: 'Limited',
 
-          endTitle: 'Ready when you are.',
+          endTitle: 'Ready <span class="accent">when you are</span>.',
           endCta1: 'Get Deck',
           endCta2: 'Get the skill',
 
@@ -1912,7 +1943,7 @@
           insideTitle: '一页幻灯片，能装下你的故事。',
           insideSub:
             '照片、图表、视频、品牌 logo、可点击的演示 —— 只要对讲述有帮助的，都能放。Deck 不会把你框死在「标题 + 要点」里。',
-          cName: '照片和图片',
+          cName1: '照片和图片',
           cDesc1: '封面、产品照、截图 —— 直接拖进来就行。',
           cName2: '视频和音频',
           cDesc2: '播一段宣传片、嵌一份 demo 录屏、配一段背景音乐。',
@@ -2003,11 +2034,13 @@
           cmpR2: '文件在自己电脑里',
           cmpR3: '双击打开',
           cmpR4: '动画、视频、任意交互',
+          cmpR5: '离线可用',
+          cmpR6: '开放格式',
           cmpYes: '可以',
           cmpNo: '不行',
           cmpLow: '有限',
 
-          endTitle: '准备好了，就来。',
+          endTitle: '准备好了，<span class="accent">就来</span>。',
           endCta1: '获取 Deck',
           endCta2: '获取 Skill',
 

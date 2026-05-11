@@ -15,7 +15,7 @@ export function AppearanceTab() {
       <Field label={t('settings.theme')} hint={t('settings.theme.hint')}>
         <Segmented
           value={themePref}
-          onChange={(v) => setTheme(v as ThemePref)}
+          onChange={(v) => void setTheme(v as ThemePref)}
           ariaLabel={t('aria.themeRadiogroup')}
           options={[
             { value: 'auto', label: t('settings.theme.auto') },
