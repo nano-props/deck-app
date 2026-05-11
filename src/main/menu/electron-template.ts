@@ -1,7 +1,7 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import { t } from '#/main/i18n/index.ts'
 import { allAppWindows } from '#/main/window-registry.ts'
-import { ACTIONS, openSettingsOverlayAction } from '#/main/menu/actions.ts'
+import { ACTIONS } from '#/main/menu/actions.ts'
 import type { MenuNode } from '#/main/menu/types.ts'
 
 const IS_MAC = process.platform === 'darwin'
@@ -109,12 +109,20 @@ function macAppMenu(): MenuItemConstructorOptions {
   return {
     label: name,
     submenu: [
-      { role: 'about', label: t('menu.app.about', { name }) },
+      // Custom About handler instead of `role: 'about'` — we route to our
+      // own SettingsWindow About tab so all three platforms see the same
+      // (themed, translated, version-rich) About surface. Both items go
+      // through the ACTIONS table so the dispatch path is identical to
+      // Win/Linux's self-drawn menu and to file menu activations.
+      {
+        label: t('menu.app.about', { name }),
+        click: () => void ACTIONS['app.about'](),
+      },
       { type: 'separator' },
       {
         label: t('menu.file.settings'),
         accelerator: 'Cmd+,',
-        click: () => void openSettingsOverlayAction(),
+        click: () => void ACTIONS['app.settings'](),
       },
       { type: 'separator' },
       { role: 'services', label: t('menu.app.services') },

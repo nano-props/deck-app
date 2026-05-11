@@ -13,11 +13,17 @@ export const APP_ICON = app.isPackaged
   : path.join(import.meta.dirname, '..', '..', 'assets', 'icon.png')
 
 export const CHROME_PRELOAD = path.join(import.meta.dirname, '..', 'preload', 'app-preload.js')
-// React renderer is built into `dist/renderer/index.html` by Vite.
+// React renderer entries built by Vite into `dist/renderer/`.
 // `import.meta.dirname` is `src/main` in dev (running TS directly via tsx)
 // and packaged ASAR `app/src/main` after electron-builder. In both cases
 // the renderer bundle sits two levels up at `dist/renderer/`.
+//
+// Two HTML entries live side-by-side:
+//   - index.html    → deck AppWindow (launcher / editor / player)
+//   - settings.html → standalone Settings window
+// Each has its own bootstrap script with only the stores it needs.
 export const CHROME_HTML = path.join(import.meta.dirname, '..', '..', 'dist', 'renderer', 'index.html')
+export const SETTINGS_HTML = path.join(import.meta.dirname, '..', '..', 'dist', 'renderer', 'settings.html')
 
 /**
  * Secure defaults shared by every WebContentsView we create.

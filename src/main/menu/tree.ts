@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { t } from '#/main/i18n/index.ts'
 import { focusedAppWindow } from '#/main/window-registry.ts'
 import type { MenuLeaf, MenuNode, MenuSeparator } from '#/main/menu/types.ts'
@@ -107,6 +108,14 @@ export function buildMenuTree(): MenuNode[] {
             id: 'app.settings',
             label: t('menu.file.settings'),
             accelerator: 'Ctrl+,',
+            enabled: true,
+          } as MenuLeaf,
+          {
+            kind: 'leaf',
+            id: 'app.about',
+            // Reuse the macOS-style "About {name}" string — the app name
+            // substitution makes it read naturally on Win/Linux too.
+            label: t('menu.app.about', { name: app.name }),
             enabled: true,
           } as MenuLeaf,
         ]) as MenuNode[]),

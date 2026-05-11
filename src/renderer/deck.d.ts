@@ -32,15 +32,9 @@ interface DeckBridge {
   saveDeck: () => Promise<void>
   saveDeckAs: () => Promise<void>
   setPreviewBounds: (rect: { x: number; y: number; width: number; height: number }) => Promise<void>
-  /** Toggle the deck WebContentsView's visibility. The deckView paints
-   *  above the chromeView in layer order, so DOM modals in the chrome get
-   *  clipped where they overlap. Hide it for the lifetime of a modal
-   *  overlay (Settings, future dialogs); show it again on close. */
-  setDeckViewVisible: (visible: boolean) => Promise<void>
   /** Snapshot the current deckView frame plus the bounds it's painted
-   *  at. Returns null when there's no deck mounted yet. The renderer
-   *  draws an <img> at this rect under modal overlays so a translucent
-   *  mask shows the deck through it instead of the empty chrome bg. */
+   *  at. Returns null when there's no deck mounted yet. Used by AI tool
+   *  runs that include a preview image in the chat. */
   captureDeckView: () => Promise<{
     dataUrl: string
     rect: { x: number; y: number; width: number; height: number }
@@ -109,8 +103,31 @@ interface DeckBridge {
   renderMarkdown: (md: string) => string
   openExternal: (url: string) => void
 
-  // ---- Settings open signal --------
-  onOpenSettings: (cb: () => void) => () => void
+  // ---- Settings window --------
+  /** Open the standalone Settings window (or focus + switch tab if it's
+   *  already open). */
+  openSettingsWindow: (tab?: 'appearance' | 'ai' | 'about') => Promise<void>
+  /** Settings-window only — main pushes a tab id when the user re-invokes
+   *  openSettingsWindow with a different tab while the window is open. */
+  onSettingsWindowSetTab: (cb: (tab: 'appearance' | 'ai' | 'about') => void) => () => void
+  /** Re-probe AI readiness after the Settings window closes. */
+  onAiReadinessRefresh: (cb: () => void) => () => void
+  /** Theme changed in another window. Listener should re-read
+   *  localStorage and apply. */
+  onThemeChanged: (cb: (theme: 'light' | 'dark') => void) => () => void
+  /** Settings-window only: main asks the renderer to commit any pending
+   *  edits before close. The handler should await every registered
+   *  flusher (see lib/flush-registry.ts) and resolve to its aggregate
+   *  FlushResult; preload forwards the result to main so a failed
+   *  keychain write can prompt the user. Returns an unsubscribe
+   *  function. */
+  onFlushRequest: (
+    handler: () => Promise<{ ok: boolean; errors: string[] }>,
+  ) => () => void
+  /** Settings-window only: signal main that the React tree has mounted
+   *  and tab-level flushers have registered. Closes the race between
+   *  `did-finish-load` and React's first commit. */
+  notifySettingsWindowReady: () => void
 
   // ---- App menu --------
   menu: {

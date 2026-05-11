@@ -1,21 +1,29 @@
 import * as RG from '@radix-ui/react-radio-group'
 import { cn } from '#/renderer/lib/cn.ts'
 
+/**
+ * Settings section: small uppercase title + body of stacked Fields.
+ * Used by AiTab / AboutTab to group related controls under a header
+ * without a heavy divider line. Title is a `<h3>` for screen-reader
+ * landmark navigation; the visual weight comes from `text-ink-3` +
+ * tracking, not size, so it reads as a quiet label not a heading.
+ */
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">{title}</h3>
+      <div className="flex flex-col gap-2.5">{children}</div>
+    </section>
+  )
+}
+
 // Form-field group: caption + control + optional hint, stacked.
 // The caption is a `<span>`, NOT a `<label>` — we don't have an `htmlFor`
 // target (each control varies: TextInput, Select, Segmented, custom),
 // and a `<label>` without an associated control is mislabeled HTML that
 // can confuse screen readers. Each control supplies its own accessible
 // name via aria-label / placeholder / aria-labelledby on its primitive.
-export function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}) {
+export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-[12px] font-semibold text-ink-2">{label}</span>

@@ -62,3 +62,9 @@ export function canSendSelector(s: AiStore): boolean {
 
 // Boot probe.
 void useAiStore.getState().refreshReadiness()
+
+// Re-probe whenever the standalone Settings window closes — the user
+// may have added or removed an API key.
+window.deck.onAiReadinessRefresh?.(() => {
+  void useAiStore.getState().refreshReadiness()
+})

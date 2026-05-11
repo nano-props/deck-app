@@ -13,7 +13,6 @@ import { Topbar } from '#/renderer/components/Topbar.tsx'
 import { Launcher } from '#/renderer/components/Launcher.tsx'
 import { Editor } from '#/renderer/components/Editor.tsx'
 import { Player } from '#/renderer/components/Player.tsx'
-import { SettingsOverlay } from '#/renderer/components/SettingsOverlay/index.tsx'
 import { AppMenu } from '#/renderer/components/AppMenu.tsx'
 import { TooltipProvider } from '#/renderer/components/ui/Tooltip.tsx'
 
@@ -43,7 +42,6 @@ export function App() {
           {mode === 'deck' && subView === 'edit' && <Editor />}
           {mode === 'deck' && subView === 'play' && <Player />}
         </div>
-        <SettingsOverlay />
         <AppMenu />
       </div>
     </TooltipProvider>

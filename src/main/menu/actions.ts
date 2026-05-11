@@ -1,14 +1,16 @@
-import { app, shell, webContents, type WebContents } from 'electron'
+import { app, BaseWindow, shell, webContents, type WebContents } from 'electron'
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { AppWindow } from '#/main/app-window/index.ts'
 import { createNewDeckInWindow, promptOpenDeck, saveDeckAsInWindow } from '#/main/dialogs.ts'
 import { recordOpen } from '#/main/recents.ts'
 import { focusedAppWindow } from '#/main/window-registry.ts'
+import { openSettingsWindow } from '#/main/settings-window/index.ts'
 import type { MenuActionId } from '#/main/menu/types.ts'
 
 export const ACTIONS: Record<MenuActionId, () => void | Promise<void>> = {
-  'app.settings': openSettingsOverlayAction,
+  'app.settings': () => openSettingsWindow('appearance'),
+  'app.about': () => openSettingsWindow('about'),
   'file.newDeck': newDeckMenuAction,
   'file.newWindow': () => {
     new AppWindow()
@@ -21,7 +23,14 @@ export const ACTIONS: Record<MenuActionId, () => void | Promise<void>> = {
   'file.reveal': revealCurrentDeckInFiles,
   'file.chats': openChatsFolderAction,
   'file.closeWindow': () => {
-    focusedAppWindow()?.close()
+    // Cmd+W / Ctrl+W must close whichever window has focus — AppWindow
+    // (deck) OR the Settings window. `focusedAppWindow()` only knows
+    // about the AppWindow registry, so it returns undefined when the
+    // Settings window is focused, leaving the user stuck. Walk every
+    // live BaseWindow (which BrowserWindow inherits from) and close
+    // the focused one.
+    const focused = BaseWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isFocused())
+    focused?.close()
   },
   'file.closeDeck': closeCurrentDeck,
   'file.quit': () => app.quit(),
@@ -82,18 +91,6 @@ function adjustFocusedZoomLevel(delta: number): void {
   const wc = focusedTargetWc()
   if (!wc) return
   wc.setZoomLevel(wc.getZoomLevel() + delta)
-}
-
-export function openSettingsOverlayAction(): void {
-  const w = focusedAppWindow()
-  if (!w) return
-  const wc = w.getChromeWebContents()
-  if (wc.isDestroyed()) return
-  try {
-    wc.send('app:open-settings-overlay')
-  } catch {
-    // Teardown race between isDestroyed and send.
-  }
 }
 
 async function openSomehow(picked: string): Promise<void> {

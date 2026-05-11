@@ -1,6 +1,13 @@
 import { ipcMain } from 'electron'
 import { chromeOnly } from '#/main/ipc/guard.ts'
-import { appWindowByWebContents } from '#/main/window-registry.ts'
+import {
+  allAppWindows,
+  appWindowByWebContents,
+  broadcastToChromeWebContents,
+} from '#/main/window-registry.ts'
+import { openSettingsWindow, type SettingsTab } from '#/main/settings-window/index.ts'
+
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'ai', 'about']
 
 /**
  * Chrome / layout side-channels. Pure visual state with no deck/AI
@@ -8,13 +15,18 @@ import { appWindowByWebContents } from '#/main/window-registry.ts'
  * to call outside deck mode.
  *
  * Channels:
- *   app:set-preview-bounds     — renderer-driven deckView geometry (the
- *                                only path that mutates deckView bounds)
- *   app:set-chrome-theme       — propagate light/dark to the titleBarOverlay
- *   app:set-deck-view-visible  — hide the native WebContentsView under modal overlays
- *   app:capture-deck-view      — snapshot the deckView so a modal can show it through a real translucent mask
- *   app:toggle-fullscreen      — flip the focused window's native fullscreen state
- *   app:toggle-presentation    — drive deckView in/out of HTML5 fullscreen (Player's Maximize button)
+ *   app:set-preview-bounds      — renderer-driven deckView geometry (the
+ *                                 only path that mutates deckView bounds)
+ *   app:set-chrome-theme        — propagate light/dark to the titleBarOverlay
+ *                                 and broadcast so other windows resync.
+ *   app:capture-deck-view       — snapshot the deckView (consumed by AI
+ *                                 tool runs that include a preview image)
+ *   app:toggle-fullscreen       — flip the focused window's native
+ *                                 fullscreen state
+ *   app:toggle-presentation     — drive deckView in/out of HTML5
+ *                                 fullscreen (Player's Maximize button)
+ *   app:open-settings-window    — open / focus the standalone Settings
+ *                                 BrowserWindow. Optional `tab` payload.
  */
 export function wireLayoutIpc(): void {
   ipcMain.handle(
@@ -38,26 +50,27 @@ export function wireLayoutIpc(): void {
     'app:set-chrome-theme',
     chromeOnly((event, theme: unknown) => {
       if (theme !== 'dark' && theme !== 'light') return
-      const w = appWindowByWebContents(event.sender)
-      w?.applyChromeTheme(theme)
+      // The sender's own AppWindow (if any) gets its titleBarOverlay
+      // recolored. The change may have come from the Settings window —
+      // in that case there's no associated AppWindow, so we walk every
+      // AppWindow and apply the theme to each of their overlays.
+      const sender = appWindowByWebContents(event.sender)
+      if (sender) {
+        sender.applyChromeTheme(theme)
+      } else {
+        for (const w of allAppWindows()) {
+          if (w.isDestroyed()) continue
+          w.applyChromeTheme(theme)
+        }
+      }
+      // Tell every other registered chrome WebContents to re-read its
+      // theme. localStorage is shared across same-origin BrowserWindows,
+      // but each renderer's React store is independent; a notification
+      // wakes them up to apply the new value. We skip the sender — it
+      // already owns the new state.
+      broadcastToChromeWebContents('app:theme-changed', [theme], { excludeId: event.sender.id })
     }),
   )
-  // Renderer toggles this when a modal overlay (Settings, future
-  // dialogs) opens / closes. The deckView draws above chromeView in
-  // layer order, so full-window overlays in the chrome get clipped by
-  // it. Hiding the deckView around the overlay's lifetime is the cheap
-  // fix; modal state is short-lived so the preview black flash is fine.
-  ipcMain.handle(
-    'app:set-deck-view-visible',
-    chromeOnly((event, visible: unknown) => {
-      const w = appWindowByWebContents(event.sender)
-      w?.setDeckViewVisible(!!visible)
-    }),
-  )
-  // Returns a PNG data URL of the current deckView frame plus the bounds
-  // it was painted at. Renderer paints an <img> at that rect under the
-  // modal overlay so the translucent mask actually has the deck behind
-  // it — instead of the chromeView's empty background.
   ipcMain.handle(
     'app:capture-deck-view',
     chromeOnly(async (event) => {
@@ -76,6 +89,13 @@ export function wireLayoutIpc(): void {
     'app:toggle-presentation',
     chromeOnly((event) => {
       appWindowByWebContents(event.sender)?.togglePresentation()
+    }),
+  )
+  ipcMain.handle(
+    'app:open-settings-window',
+    chromeOnly((_event, tab: unknown) => {
+      const t = SETTINGS_TABS.includes(tab as SettingsTab) ? (tab as SettingsTab) : 'appearance'
+      openSettingsWindow(t)
     }),
   )
 }

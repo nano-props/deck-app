@@ -6,6 +6,7 @@
  */
 export type MenuActionId =
   | 'app.settings'
+  | 'app.about'
   | 'file.newDeck'
   | 'file.newWindow'
   | 'file.openFile'

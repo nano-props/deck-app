@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Trash2, X } from 'lucide-react'
 import { useI18n } from '#/renderer/stores/i18n.ts'
-import { IconButton } from '#/renderer/components/ui/Button.tsx'
-import { Tooltip } from '#/renderer/components/ui/Tooltip.tsx'
 import { Select } from '#/renderer/components/ui/Select.tsx'
 import { TextInput } from '#/renderer/components/ui/TextInput.tsx'
-import { cn } from '#/renderer/lib/cn.ts'
+import { registerFlusher } from '#/renderer/lib/flush-registry.ts'
+import { useLatestRef } from '#/renderer/hooks/useLatestRef.ts'
 import type { ThinkingLevel } from '@earendil-works/pi-agent-core'
 import type { ProviderId } from '#/main/secrets.ts'
 import type { Settings } from '#/main/settings.ts'
-import { Field, Segmented } from '#/renderer/components/SettingsOverlay/bits.tsx'
+import { Field, Section, Segmented } from '#/renderer/components/SettingsOverlay/bits.tsx'
 import {
   BASEURL_HINT_KEY,
   BUILTIN_IDS,
@@ -18,26 +16,17 @@ import {
   CUSTOM_LABEL_KEY,
   RECOMMENDED_MODEL,
 } from '#/renderer/components/SettingsOverlay/providers.ts'
+import { AiStatusChip, AiStatusMessage, type AiStatus } from '#/renderer/components/SettingsOverlay/AiStatusRow.tsx'
+import { AiKeyTrailing } from '#/renderer/components/SettingsOverlay/AiKeyTrailing.tsx'
 
 export function AiTab() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <AiGroup />
       <EncryptionWarning />
     </div>
   )
 }
-
-// Footer status: a single discriminated union covers all states the
-// auto-save + auto-ping pipeline can advertise. `saved` auto-fades to
-// `idle` after 2s; everything else is sticky until the next event.
-type Status =
-  | { kind: 'idle' }
-  | { kind: 'saving' }
-  | { kind: 'saved' }
-  | { kind: 'pinging' }
-  | { kind: 'ok'; msg: string }
-  | { kind: 'err'; msg: string }
 
 const SAVE_DEBOUNCE_MS = 1500
 const PING_DEBOUNCE_MS = 1000
@@ -61,7 +50,7 @@ function AiGroup() {
   const [apiKey, setApiKey] = useState('')
   const [revealed, setRevealed] = useState(false)
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('medium')
-  const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [status, setStatus] = useState<AiStatus>({ kind: 'idle' })
 
   // ---- Initial load --------------------------------------------------------
   useEffect(() => {
@@ -69,10 +58,7 @@ function AiGroup() {
       // Run both reads in parallel — they're independent. Sequential
       // await flickers `keyHint` blank before the keychain check
       // resolves and reveals "Saved for X".
-      const [s, cfg] = await Promise.all([
-        window.deck.settings.load(),
-        window.deck.settings.listConfiguredProviders(),
-      ])
+      const [s, cfg] = await Promise.all([window.deck.settings.load(), window.deck.settings.listConfiguredProviders()])
       setSettings(s)
       setProvider(s.ai.provider)
       setBuiltinModel({ ...s.ai.builtinModel })
@@ -118,47 +104,40 @@ function AiGroup() {
       if (builtinModel[k] !== settings.ai.builtinModel[k]) return true
     }
     for (const k of ['custom-openai', 'custom-anthropic', 'custom-responses'] as const) {
-      if (
-        custom[k]?.baseUrl !== settings.ai.custom[k]?.baseUrl ||
-        custom[k]?.model !== settings.ai.custom[k]?.model
-      ) {
+      if (custom[k]?.baseUrl !== settings.ai.custom[k]?.baseUrl || custom[k]?.model !== settings.ai.custom[k]?.model) {
         return true
       }
     }
     return false
   }, [settings, provider, builtinModel, custom, thinkingLevel])
 
-  // Persisted-snapshot ref so the unmount flush reads the latest one
-  // without re-binding the effect on every save round-trip.
-  const persistedRef = useRef(settings)
-  persistedRef.current = settings
-  const settingsForSaveRef = useRef(settingsForSave)
-  settingsForSaveRef.current = settingsForSave
+  // Mount-only flusher reads form state at teardown — refs let us
+  // dodge the closure-staleness trap without re-binding the effect on
+  // every render.
+  const persistedRef = useLatestRef(settings)
+  const settingsForSaveRef = useLatestRef(settingsForSave)
 
   // Save flow extracted so both the debounced effect and the
   // unmount-flush can call it. Returns the saved Settings on success
   // so the caller can update its snapshot. useCallback keeps the
   // reference stable across renders so effects depending on it stay
   // honest with deps lists.
-  const flushSave = useCallback(
-    async (values: typeof settingsForSave): Promise<Settings | null> => {
-      try {
-        const saved = await window.deck.settings.save({
-          ai: {
-            provider: values.provider,
-            builtinModel: { ...values.builtinModel } as Settings['ai']['builtinModel'],
-            custom: { ...values.custom } as Settings['ai']['custom'],
-            thinkingLevel: values.thinkingLevel,
-          },
-        })
-        return saved
-      } catch (e) {
-        setStatus({ kind: 'err', msg: e instanceof Error ? e.message : String(e) })
-        return null
-      }
-    },
-    [],
-  )
+  const flushSave = useCallback(async (values: typeof settingsForSave): Promise<Settings | null> => {
+    try {
+      const saved = await window.deck.settings.save({
+        ai: {
+          provider: values.provider,
+          builtinModel: { ...values.builtinModel } as Settings['ai']['builtinModel'],
+          custom: { ...values.custom } as Settings['ai']['custom'],
+          thinkingLevel: values.thinkingLevel,
+        },
+      })
+      return saved
+    } catch (e) {
+      setStatus({ kind: 'err', msg: e instanceof Error ? e.message : String(e) })
+      return null
+    }
+  }, [])
 
   // Debounced auto-save: any settings change schedules a write 1.5s
   // out; subsequent edits cancel the pending timer and reschedule.
@@ -188,16 +167,21 @@ function AiGroup() {
   // Track unflushed apiKey so the unmount path can commit it. blur
   // commits normally, but if the user closes Settings (Esc / X / click
   // outside) before blur fires, the keystrokes would otherwise be lost.
-  const apiKeyRef = useRef(apiKey)
-  apiKeyRef.current = apiKey
-  const providerRef = useRef(provider)
-  providerRef.current = provider
+  const apiKeyRef = useLatestRef(apiKey)
+  const providerRef = useLatestRef(provider)
 
-  // Unmount flush: if the user closes Settings during the debounce
-  // window, fire the save synchronously so the edit doesn't get lost.
-  // Fire-and-forget — the modal is gone, no UI to surface failures.
+  // Pending-edit flush: commit any debounced settings.json save and
+  // un-blurred apiKey before the window goes away. Routed through
+  // `lib/flush-registry.ts` rather than a useEffect cleanup — see that
+  // file for why cleanups can't carry async IPC reliably.
+  //
+  // Calls the IPC directly instead of going through `flushSave` — the
+  // latter swallows errors into setStatus (right behaviour for the
+  // debounced auto-save, where we want a non-blocking inline error
+  // banner) but wrong here: the registry needs to see rejections so
+  // main can warn the user before tearing down the window.
   useEffect(() => {
-    return () => {
+    return registerFlusher(async () => {
       const persisted = persistedRef.current
       const cur = settingsForSaveRef.current
       if (persisted) {
@@ -212,15 +196,22 @@ function AiGroup() {
               cur.custom[k]?.baseUrl === persisted.ai.custom[k]?.baseUrl &&
               cur.custom[k]?.model === persisted.ai.custom[k]?.model,
           )
-        if (!same) void flushSave(cur)
+        if (!same) {
+          await window.deck.settings.save({
+            ai: {
+              provider: cur.provider,
+              builtinModel: { ...cur.builtinModel } as Settings['ai']['builtinModel'],
+              custom: { ...cur.custom } as Settings['ai']['custom'],
+              thinkingLevel: cur.thinkingLevel,
+            },
+          })
+        }
       }
-      // Salvage an in-progress apiKey edit too — same rationale as
-      // settings flush but uses the keychain IPC.
       const trimmedKey = apiKeyRef.current.trim()
       if (trimmedKey) {
-        void window.deck.settings.setApiKey(providerRef.current, trimmedKey).catch(() => {})
+        await window.deck.settings.setApiKey(providerRef.current, trimmedKey)
       }
-    }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -261,9 +252,7 @@ function AiGroup() {
   const pingPayload = useMemo(
     () => ({
       provider,
-      modelValue: provider.startsWith('custom-')
-        ? custom[provider]?.model ?? ''
-        : builtinModel[provider] ?? '',
+      modelValue: provider.startsWith('custom-') ? (custom[provider]?.model ?? '') : (builtinModel[provider] ?? ''),
       customForProvider: provider.startsWith('custom-') ? custom[provider] : undefined,
     }),
     [provider, builtinModel, custom],
@@ -288,9 +277,7 @@ function AiGroup() {
         const r = await window.deck.settings.ping({
           provider: pingPayload.provider,
           model: pingPayload.modelValue || undefined,
-          custom: pingPayload.customForProvider
-            ? { [pingPayload.provider]: pingPayload.customForProvider }
-            : undefined,
+          custom: pingPayload.customForProvider ? { [pingPayload.provider]: pingPayload.customForProvider } : undefined,
         })
         if (cancelled) return
         if (r.ok) {
@@ -339,230 +326,129 @@ function AiGroup() {
   function providerLabel(p: ProviderId) {
     return BUILTIN_LABELS[p] ?? t(CUSTOM_LABEL_KEY[p] as any)
   }
-  const modelValue = isCustom ? custom[provider]?.model ?? '' : builtinModel[provider] ?? ''
+  const modelValue = isCustom ? (custom[provider]?.model ?? '') : (builtinModel[provider] ?? '')
   const recommended = RECOMMENDED_MODEL[provider] ?? ''
   const modelHint = isCustom
     ? ''
     : recommended
       ? t('settings.model.hint.builtinRecommended', { model: recommended })
       : t('settings.model.hint.builtin')
-  const baseUrlValue = isCustom ? custom[provider]?.baseUrl ?? '' : ''
+  const baseUrlValue = isCustom ? (custom[provider]?.baseUrl ?? '') : ''
   const baseUrlHintKey = isCustom ? BASEURL_HINT_KEY[provider] : undefined
   const baseUrlHint = baseUrlHintKey ? t(baseUrlHintKey as any) : ''
 
-  const keyHint = configured[provider]
-    ? t('settings.apiKey.status.saved', { provider: providerLabel(provider) })
-    : ''
+  const keyHint = configured[provider] ? t('settings.apiKey.status.saved', { provider: providerLabel(provider) }) : ''
 
   return (
-    <section className="flex flex-col gap-3">
-      <Field label={t('settings.provider')}>
-        <Select
-          value={provider}
-          onChange={(v) => setProvider(v as ProviderId)}
-          ariaLabel={t('settings.provider')}
-          groups={[
-            {
-              label: t('settings.provider.builtin'),
-              items: BUILTIN_IDS.map((p) => ({ value: p, label: providerLabel(p) })),
-            },
-            {
-              label: t('settings.provider.custom'),
-              items: CUSTOM_IDS.map((p) => ({ value: p, label: providerLabel(p) })),
-            },
-          ]}
-        />
-      </Field>
-
-      {isCustom && (
-        <Field label={t('settings.baseUrl')} hint={baseUrlHint}>
-          <TextInput
-            value={baseUrlValue}
-            onChange={(e) =>
-              setCustom((c) => ({
-                ...c,
-                [provider]: { ...c[provider], baseUrl: e.target.value },
-              }))
-            }
-            placeholder="https://…/v1"
+    <div className="flex flex-col gap-5">
+      <Section title={t('settings.ai.section.connection')}>
+        <Field label={t('settings.provider')}>
+          <Select
+            value={provider}
+            onChange={(v) => setProvider(v as ProviderId)}
+            ariaLabel={t('settings.provider')}
+            groups={[
+              {
+                label: t('settings.provider.builtin'),
+                items: BUILTIN_IDS.map((p) => ({ value: p, label: providerLabel(p) })),
+              },
+              {
+                label: t('settings.provider.custom'),
+                items: CUSTOM_IDS.map((p) => ({ value: p, label: providerLabel(p) })),
+              },
+            ]}
           />
         </Field>
-      )}
 
-      <Field label={t('settings.model')} hint={modelHint}>
-        <TextInput
-          value={modelValue}
-          onChange={(e) => {
-            const v = e.target.value
-            if (isCustom) setCustom((c) => ({ ...c, [provider]: { ...c[provider], model: v } }))
-            else setBuiltinModel((m) => ({ ...m, [provider]: v }))
-          }}
-          placeholder={isCustom ? t('settings.model.placeholder.custom') : recommended}
-        />
-      </Field>
-
-      <Field label={t('settings.thinking')} hint={t('settings.thinking.hint')}>
-        <Segmented
-          ariaLabel={t('settings.thinking')}
-          value={thinkingLevel}
-          onChange={(v) => setThinkingLevel(v as ThinkingLevel)}
-          options={[
-            { value: 'off', label: t('settings.thinking.off') },
-            { value: 'minimal', label: t('settings.thinking.minimal') },
-            { value: 'low', label: t('settings.thinking.low') },
-            { value: 'medium', label: t('settings.thinking.medium') },
-            { value: 'high', label: t('settings.thinking.high') },
-            { value: 'xhigh', label: t('settings.thinking.xhigh') },
-          ]}
-        />
-      </Field>
-
-      <Field label={t('settings.apiKey')} hint={keyHint}>
-        <TextInput
-          mono
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          onBlur={() => void commitApiKey()}
-          type={revealed ? 'text' : 'password'}
-          placeholder={
-            configured[provider]
-              ? t('settings.apiKey.placeholder.saved')
-              : t('settings.apiKey.placeholder.empty')
-          }
-          trailing={
-            <ApiKeyTrailing
-              hasInput={apiKey.length > 0}
-              hasSavedKey={!!configured[provider]}
-              revealed={revealed}
-              onClearInput={() => {
-                setApiKey('')
-                setRevealed(false)
-              }}
-              onDeleteSaved={() => {
-                const ok = window.confirm(
-                  t('settings.apiKey.deleteConfirm', { provider: providerLabel(provider) }),
-                )
-                if (ok) void deleteSavedKey()
-              }}
-              onToggleReveal={() => setRevealed((v) => !v)}
+        {isCustom && (
+          <Field label={t('settings.baseUrl')} hint={baseUrlHint}>
+            <TextInput
+              value={baseUrlValue}
+              onChange={(e) =>
+                setCustom((c) => ({
+                  ...c,
+                  [provider]: { ...c[provider], baseUrl: e.target.value },
+                }))
+              }
+              placeholder="https://…/v1"
             />
-          }
-        />
-      </Field>
-
-      <StatusRow status={status} />
-    </section>
-  )
-}
-
-// Trailing icon cluster lives inside the apiKey TextInput's right edge.
-// X / Trash2 / Eye are mutually constrained by input + keychain state.
-function ApiKeyTrailing({
-  hasInput,
-  hasSavedKey,
-  revealed,
-  onClearInput,
-  onDeleteSaved,
-  onToggleReveal,
-}: {
-  hasInput: boolean
-  hasSavedKey: boolean
-  revealed: boolean
-  onClearInput: () => void
-  onDeleteSaved: () => void
-  onToggleReveal: () => void
-}) {
-  const t = useI18n((s) => s.t)
-  return (
-    <>
-      {/*
-        Two-mode "destroy" affordance:
-          - input has unsaved text → X clears the input (cheap undo)
-          - input empty AND keychain has a saved key → Trash with
-            native confirm clears the keychain entry
-          - else: hidden so the eye toggle anchors at the right edge
-            instead of jumping when the input clears.
-      */}
-      {hasInput ? (
-        <Tooltip content={t('settings.apiKey.clearInput')}>
-          <IconButton
-            size="sm"
-            onClick={onClearInput}
-            // Prevent input blur on icon click — clicking X should
-            // wipe the field, not commit the partial value to keychain.
-            onMouseDown={(e) => e.preventDefault()}
-            aria-label={t('settings.apiKey.clearInput')}
-          >
-            <X />
-          </IconButton>
-        </Tooltip>
-      ) : hasSavedKey ? (
-        <Tooltip content={t('settings.apiKey.deleteSaved')}>
-          <IconButton
-            size="sm"
-            onClick={onDeleteSaved}
-            onMouseDown={(e) => e.preventDefault()}
-            aria-label={t('settings.apiKey.deleteSaved')}
-            className="text-danger hover:text-danger"
-          >
-            <Trash2 />
-          </IconButton>
-        </Tooltip>
-      ) : null}
-      <Tooltip content={revealed ? t('settings.toggleReveal.hide') : t('settings.toggleReveal.show')}>
-        <IconButton
-          size="sm"
-          onClick={onToggleReveal}
-          // Keep blur from firing on the eye toggle either; the user
-          // hasn't finished entering the key yet.
-          onMouseDown={(e) => e.preventDefault()}
-          aria-label={t('aria.toggleKey')}
-          data-revealed={revealed}
-        >
-          {revealed ? <EyeOff /> : <Eye />}
-        </IconButton>
-      </Tooltip>
-    </>
-  )
-}
-
-function StatusRow({ status }: { status: Status }) {
-  const t = useI18n((s) => s.t)
-  let text = ''
-  let kind: '' | 'ok' | 'err' | 'pending' = ''
-  switch (status.kind) {
-    case 'saving':
-      text = t('settings.status.saving')
-      kind = 'pending'
-      break
-    case 'saved':
-      text = t('settings.status.saved')
-      kind = 'ok'
-      break
-    case 'pinging':
-      text = t('settings.status.pinging')
-      kind = 'pending'
-      break
-    case 'ok':
-      text = status.msg
-      kind = 'ok'
-      break
-    case 'err':
-      text = status.msg
-      kind = 'err'
-      break
-  }
-  return (
-    <div className="mt-1 flex min-h-5 items-center">
-      <span
-        className={cn(
-          'min-w-0 flex-1 truncate text-[12px] text-ink-3',
-          kind === 'ok' && 'text-success',
-          kind === 'err' && 'text-danger',
+          </Field>
         )}
-      >
-        {text}
-      </span>
+
+        <Field label={t('settings.model')} hint={modelHint}>
+          <TextInput
+            value={modelValue}
+            onChange={(e) => {
+              const v = e.target.value
+              if (isCustom) setCustom((c) => ({ ...c, [provider]: { ...c[provider], model: v } }))
+              else setBuiltinModel((m) => ({ ...m, [provider]: v }))
+            }}
+            placeholder={isCustom ? t('settings.model.placeholder.custom') : recommended}
+          />
+        </Field>
+      </Section>
+
+      <Section title={t('settings.ai.section.credentials')}>
+        {/*
+          Credentials live in a tinted card so the API key + its status
+          chip + the long-form ping result read as one unit. The chip
+          rides in the top-right corner, summarising the steady state
+          (Connected / Not connected) and the transient pipeline events
+          (Saving / Pinging / Saved / Error) in the same affordance.
+        */}
+        <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-bg-deep p-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] font-semibold text-ink-2">{t('settings.apiKey')}</span>
+            <AiStatusChip status={status} hasKey={!!configured[provider]} />
+          </div>
+          <TextInput
+            mono
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            onBlur={() => void commitApiKey()}
+            type={revealed ? 'text' : 'password'}
+            placeholder={
+              configured[provider] ? t('settings.apiKey.placeholder.saved') : t('settings.apiKey.placeholder.empty')
+            }
+            trailing={
+              <AiKeyTrailing
+                hasInput={apiKey.length > 0}
+                hasSavedKey={!!configured[provider]}
+                revealed={revealed}
+                onClearInput={() => {
+                  setApiKey('')
+                  setRevealed(false)
+                }}
+                onDeleteSaved={() => {
+                  const ok = window.confirm(t('settings.apiKey.deleteConfirm', { provider: providerLabel(provider) }))
+                  if (ok) void deleteSavedKey()
+                }}
+                onToggleReveal={() => setRevealed((v) => !v)}
+              />
+            }
+          />
+          {keyHint && <p className="m-0 text-[12px] leading-snug text-ink-3">{keyHint}</p>}
+          <AiStatusMessage status={status} />
+        </div>
+      </Section>
+
+      <Section title={t('settings.ai.section.behavior')}>
+        <Field label={t('settings.thinking')} hint={t('settings.thinking.hint')}>
+          <Segmented
+            ariaLabel={t('settings.thinking')}
+            value={thinkingLevel}
+            onChange={(v) => setThinkingLevel(v as ThinkingLevel)}
+            options={[
+              { value: 'off', label: t('settings.thinking.off') },
+              { value: 'minimal', label: t('settings.thinking.minimal') },
+              { value: 'low', label: t('settings.thinking.low') },
+              { value: 'medium', label: t('settings.thinking.medium') },
+              { value: 'high', label: t('settings.thinking.high') },
+              { value: 'xhigh', label: t('settings.thinking.xhigh') },
+            ]}
+          />
+        </Field>
+      </Section>
     </div>
   )
 }

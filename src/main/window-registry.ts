@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron'
+import { webContents, type WebContents } from 'electron'
 import type { AppWindow } from '#/main/app-window/index.ts'
 import { canonicalPath } from '#/main/util/path-identity.ts'
 
@@ -22,6 +22,15 @@ import { canonicalPath } from '#/main/util/path-identity.ts'
 
 const byWindowId = new Map<number, AppWindow>()
 const byChromeWcId = new Map<number, AppWindow>()
+
+/**
+ * WebContents ids belonging to auxiliary chrome windows (today: the
+ * Settings window). They share the same preload + IPC surface as
+ * AppWindow's chromeView and need to pass `chromeOnly`, but they are
+ * not associated with a deck — so they're tracked here separately
+ * rather than in `byChromeWcId`.
+ */
+const auxChromeWcIds = new Set<number>()
 
 /**
  * Source paths whose `openDeck` is mid-flight in some window. Holds the
@@ -76,8 +85,9 @@ export function appWindowByWebContents(wc: WebContents): AppWindow | undefined {
 }
 
 /**
- * True if `wc` is one of our registered chrome WebContents. Used as the
- * `validateSender` check on every `ipcMain.handle` — only the app chrome
+ * True if `wc` is one of our registered chrome WebContents — either an
+ * AppWindow's chromeView or an auxiliary window (Settings). Used as the
+ * `validateSender` check on every `ipcMain.handle` — only our own chrome
  * (loaded from the renderer bundle with our preload) is allowed to invoke
  * handlers. Deck content runs in a separate WebContentsView without a
  * preload, so it can't reach `ipcRenderer`, but this guard makes that
@@ -85,7 +95,55 @@ export function appWindowByWebContents(wc: WebContents): AppWindow | undefined {
  * checklist #17).
  */
 export function isChromeWebContents(wc: WebContents): boolean {
-  return byChromeWcId.has(wc.id)
+  return byChromeWcId.has(wc.id) || auxChromeWcIds.has(wc.id)
+}
+
+/** Register / unregister an auxiliary chrome WebContents (Settings window). */
+export function registerAuxChromeWebContents(wcId: number): void {
+  auxChromeWcIds.add(wcId)
+}
+export function unregisterAuxChromeWebContents(wcId: number): void {
+  auxChromeWcIds.delete(wcId)
+}
+
+/**
+ * Iterate every chrome WebContents id registered with us, AppWindow and
+ * auxiliary alike. Used by `broadcastToChromeWebContents` and rare
+ * direct callers that need the id list (e.g. to filter by sender id).
+ */
+export function allChromeWebContentsIds(): number[] {
+  return [...byChromeWcId.keys(), ...auxChromeWcIds]
+}
+
+/**
+ * Send `channel` (with optional `args`) to every registered chrome
+ * WebContents — both AppWindow chromes and auxiliary windows. Skips
+ * destroyed WCs, swallows per-WC send failures, and lets callers
+ * exclude a specific id (typically the IPC sender, to avoid echo).
+ *
+ * Best-effort: the message is dropped silently for any WebContents that
+ * is still loading (Chromium discards `send` before the renderer has
+ * registered its listener). Callers MUST therefore use this only for
+ * "advisory" channels where every consumer also has a boot-time pull
+ * path — i18n.get, theme localStorage read, ai-readiness probe — so a
+ * dropped broadcast is recovered when the new window finishes loading.
+ * Don't use it for state that has no fallback fetch.
+ */
+export function broadcastToChromeWebContents(
+  channel: string,
+  args: unknown[] = [],
+  options?: { excludeId?: number },
+): void {
+  for (const id of allChromeWebContentsIds()) {
+    if (options?.excludeId === id) continue
+    const wc = webContents.fromId(id)
+    if (!wc || wc.isDestroyed()) continue
+    try {
+      wc.send(channel, ...args)
+    } catch {
+      // teardown race — destroyed between the check and the send
+    }
+  }
 }
 
 /**

@@ -106,7 +106,6 @@ contextBridge.exposeInMainWorld('deck', {
   saveDeck: () => ipcRenderer.invoke('app:save-deck'),
   saveDeckAs: () => ipcRenderer.invoke('app:save-deck-as'),
   setPreviewBounds: (rect) => ipcRenderer.invoke('app:set-preview-bounds', rect),
-  setDeckViewVisible: (visible) => ipcRenderer.invoke('app:set-deck-view-visible', visible),
   captureDeckView: () => ipcRenderer.invoke('app:capture-deck-view'),
   toggleFullScreen: () => ipcRenderer.invoke('app:toggle-fullscreen'),
   togglePresentation: () => ipcRenderer.invoke('app:toggle-presentation'),
@@ -171,11 +170,76 @@ contextBridge.exposeInMainWorld('deck', {
     void shell.openExternal(url)
   },
 
-  // Menu-triggered signal to open the settings overlay. One-shot push.
-  onOpenSettings: (cb) => {
+  // Open the standalone Settings BrowserWindow (or focus it if already
+  // open). `tab` selects the initial tab.
+  openSettingsWindow: (tab) => ipcRenderer.invoke('app:open-settings-window', tab),
+  // Settings-window only: subscribe to "switch tab" pushes from main —
+  // fired when the user re-invokes openSettingsWindow with a different
+  // tab while the window is already open.
+  onSettingsWindowSetTab: (cb) => {
+    const listener = (_event, tab) => cb(tab)
+    ipcRenderer.on('app:settings-window-set-tab', listener)
+    return () => ipcRenderer.off('app:settings-window-set-tab', listener)
+  },
+  // Re-probe AI readiness — fired by main when the Settings window
+  // closes (the user may have added / removed an API key).
+  onAiReadinessRefresh: (cb) => {
     const listener = () => cb()
-    ipcRenderer.on('app:open-settings-overlay', listener)
-    return () => ipcRenderer.off('app:open-settings-overlay', listener)
+    ipcRenderer.on('app:ai-readiness-refresh', listener)
+    return () => ipcRenderer.off('app:ai-readiness-refresh', listener)
+  },
+  // Theme changed in another window. localStorage is shared across
+  // BrowserWindows of the same origin, but React stores are not — this
+  // listener tells the renderer to re-read and re-apply.
+  onThemeChanged: (cb) => {
+    const listener = (_event, theme) => cb(theme)
+    ipcRenderer.on('app:theme-changed', listener)
+    return () => ipcRenderer.off('app:theme-changed', listener)
+  },
+  // Settings-window only: main asks the renderer to flush pending edits
+  // before destroying the window. Wire format lives in
+  // src/main/settings-window/flush-protocol.ts.
+  //
+  // Handler must resolve to a FlushResult ({ ok, errors }) — see
+  // renderer/lib/flush-registry.ts. We forward the result back to main
+  // so a failed keychain write can prompt the user before the window
+  // is destroyed (otherwise unsaved keys disappear silently).
+  onFlushRequest: (handler) => {
+    const listener = async (event, requestId) => {
+      let result = { ok: true, errors: [] }
+      try {
+        const r = await handler()
+        if (r && typeof r === 'object') result = r
+      } catch (e) {
+        // Synchronous throw from the handler itself (flushAll() never
+        // throws, but be defensive). Treat as a generic failure so
+        // main's prompt path engages.
+        result = { ok: false, errors: [e instanceof Error ? e.message : String(e)] }
+      }
+      try {
+        event.sender.send(`app:settings-window-flush-done:${requestId}`, result)
+      } catch {
+        // Window is being torn down; main's await falls through to its
+        // own timeout.
+      }
+    }
+    ipcRenderer.on('app:settings-window-flush', listener)
+    return () => ipcRenderer.off('app:settings-window-flush', listener)
+  },
+  // Settings-window only: tell main the React tree has mounted and any
+  // tab-level flushers (e.g. AiTab) have registered themselves with
+  // the flush registry. Without this, a quit fired between
+  // `did-finish-load` and React's first commit would race the flush:
+  // main would send the flush IPC, the renderer would ack with an
+  // empty registry, and the user's pending edits would be silently
+  // discarded.
+  notifySettingsWindowReady: () => {
+    try {
+      ipcRenderer.send('app:settings-window-ready')
+    } catch {
+      // Tearing down between mount and send — flush path will fall
+      // through to its own timeout.
+    }
   },
 
   // ---- App menu (self-drawn, Win/Linux) -----------------------------------

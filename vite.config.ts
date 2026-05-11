@@ -82,7 +82,13 @@ export default defineConfig(({ mode }) => ({
     // production mode automatically.
     sourcemap: mode === 'production' ? false : 'inline',
     rollupOptions: {
-      input: path.resolve(import.meta.dirname, 'src/renderer/index.html'),
+      // Two HTML entries — one per BrowserWindow renderer. Vite emits
+      // them as siblings under `dist/renderer/`, sharing the chunked
+      // common modules (React, Radix, etc.) automatically.
+      input: {
+        index: path.resolve(import.meta.dirname, 'src/renderer/index.html'),
+        settings: path.resolve(import.meta.dirname, 'src/renderer/settings.html'),
+      },
     },
   },
 }))

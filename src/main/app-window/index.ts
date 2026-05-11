@@ -536,16 +536,6 @@ export class AppWindow {
     this.deckCtrl.setBounds(rect)
   }
 
-  /**
-   * Hide the deckView so DOM overlays rendered in the chromeView (e.g.
-   * the Settings modal) can cover the full window instead of being
-   * clipped by the deckView above them.
-   */
-  setDeckViewVisible(visible: boolean): void {
-    if (this.mode !== 'deck') return
-    this.deckCtrl.setVisible(visible)
-  }
-
   captureDeckView(): Promise<{ dataUrl: string; rect: Rect } | null> {
     if (this.mode !== 'deck') return Promise.resolve(null)
     return this.deckCtrl.capture()

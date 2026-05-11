@@ -11,14 +11,12 @@
                img-src 'self' data:;
                connect-src 'self'"
     />
-    <title>Deck</title>
-    <!-- Set data-theme + data-chrome before any CSS loads. Two-flash
-         prevention (white→dark, mac-padding→win-padding). The script
-         must run synchronously before any module script — Vite mustn't
-         transform it, and we can't move it to an external file because
-         the network round-trip would race the first paint.
+    <title>Settings</title>
+    <!-- Synchronous theme + chrome-platform bootstrap, runs before any
+         module script so the first paint already has the right
+         `data-theme` (no white flash).
 
-         KEEP IN SYNC with the equivalent block in `settings.html`. -->
+         KEEP IN SYNC with the equivalent block in `index.html`. -->
     <script>
       (function () {
         try {
@@ -39,6 +37,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="./main.tsx"></script>
+    <script type="module" src="./settings-main.tsx"></script>
   </body>
 </html>

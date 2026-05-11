@@ -1,5 +1,9 @@
-// React entry. Imports stores for their side-effect subscriptions, then
-// mounts <App />.
+// Renderer entry for the deck AppWindow (launcher / editor / player).
+//
+// The standalone Settings BrowserWindow has its own entry —
+// `settings.html` + `settings-main.tsx`. Each entry imports only the
+// stores it needs, so there's no route-branch logic at the renderer
+// level: the BrowserWindow's choice of HTML file IS the route.
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -10,13 +14,18 @@ import './styles.css'
 // dispatch hits the already-initialized store instances.
 import '#/renderer/stores/app.ts'
 import '#/renderer/stores/i18n.ts'
-import '#/renderer/stores/theme.ts'
 import '#/renderer/stores/ai.ts'
 import '#/renderer/stores/chat.ts'
 import '#/renderer/stores/attachments.ts'
 import '#/renderer/stores/ai-events.ts'
 
 import { App } from '#/renderer/App.tsx'
+import { pushInitialChromeTheme } from '#/renderer/stores/theme.ts'
+
+// Sync the initial theme to main so the native titleBarOverlay
+// (Win/Linux) matches before any user interaction. Skipped in the
+// Settings window's renderer — that entry doesn't import this file.
+pushInitialChromeTheme()
 
 window.addEventListener('error', (e) => {
   console.error('[window.error]', e.message, e.error)

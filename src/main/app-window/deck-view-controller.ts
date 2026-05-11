@@ -37,13 +37,6 @@ export class DeckViewController {
    */
   private locked = false
   private preLockBounds: Rect | null = null
-  // Set by `setVisible(false)` while a chrome-side overlay (Settings
-  // modal, etc.) covers the window. Without this, any subsequent
-  // `setBounds` push from the renderer would call `tryReveal` and snap
-  // the deckView back to visible — which manifests as "Settings modal
-  // is invisible in Player mode" because the deckView fills the entire
-  // content area there and re-shows on top of the modal.
-  private hiddenForOverlay = false
   // One-shot flag for deferring focus until the view finishes loading.
   // Set by `focusContentIfNeeded()` when called before `loaded` is true;
   // consumed once by `onLoadSettled`. Multiple calls before load settle
@@ -110,7 +103,6 @@ export class DeckViewController {
     this.bounds = null
     this.locked = false
     this.preLockBounds = null
-    this.hiddenForOverlay = false
     this.focusOnceWhenReady = false
     try {
       this.host.contentView.removeChildView(view)
@@ -215,32 +207,9 @@ export class DeckViewController {
   }
 
   /**
-   * Hide/show the deckView so DOM overlays in the chromeView (e.g. the
-   * Settings modal) can cover the full window. Cross-view layering is
-   * by child-view order, not z-index — toggling visibility is the cheap fix.
-   *
-   * Hiding sets `hiddenForOverlay` so subsequent `setBounds` /
-   * `tryReveal` calls don't undo us; showing clears the flag and
-   * routes through `tryReveal` so geometry / load state are honored.
-   */
-  setVisible(visible: boolean): void {
-    if (!this.view || this.view.webContents.isDestroyed()) return
-    if (visible) {
-      this.hiddenForOverlay = false
-      this.tryReveal()
-    } else {
-      this.hiddenForOverlay = true
-      this.view.setVisible(false)
-    }
-  }
-
-  /**
    * Snapshot the deck preview and return it with the bounds we last
-   * pushed to the view. The renderer overlays a stand-in <img> at the
-   * same rect so the Settings modal can draw a real semi-transparent
-   * mask over the deck — without it, hiding the deckView leaves only
-   * the chromeView's background showing through, which reads as a flat
-   * gray panel.
+   * pushed to the view. AI tool runs that include a preview image in
+   * the chat use this — there's no other consumer.
    */
   async capture(): Promise<{ dataUrl: string; rect: Rect } | null> {
     if (!this.view || this.view.webContents.isDestroyed()) return null
@@ -316,10 +285,6 @@ export class DeckViewController {
       this.attached = true
     }
     this.view.setBounds(this.bounds)
-    // Respect overlay-hide: setBounds is reached from renderer-pushed
-    // resize events that fire even while Settings is up. Skipping the
-    // setVisible(true) keeps the deck hidden under the modal.
-    if (this.hiddenForOverlay) return
     this.view.setVisible(true)
     // Apply deferred focus now that the view is actually visible.
     if (this.focusOnceWhenReady) {

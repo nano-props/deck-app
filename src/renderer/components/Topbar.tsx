@@ -23,7 +23,6 @@
 import { Menu as MenuIcon, Play, Pencil, Save, RotateCcw, Settings as SettingsIcon, Maximize2 } from 'lucide-react'
 import { useAppStore } from '#/renderer/stores/app.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
-import { useSettingsModal } from '#/renderer/stores/settings-modal.ts'
 import { IconButton } from '#/renderer/components/ui/Button.tsx'
 import { Tooltip } from '#/renderer/components/ui/Tooltip.tsx'
 import { cn } from '#/renderer/lib/cn.ts'
@@ -134,7 +133,7 @@ export function Topbar() {
           <IconButton
             id="settingsBtn"
             aria-label={t('topbar.settings.aria')}
-            onClick={() => void useSettingsModal.getState().requestOpen()}
+            onClick={() => void window.deck.openSettingsWindow()}
           >
             <SettingsIcon />
           </IconButton>

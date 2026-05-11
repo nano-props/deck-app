@@ -11,7 +11,7 @@ import {
 } from '#/main/i18n/index.ts'
 import { buildMenu } from '#/main/menu/index.ts'
 import { getSettings, updateSettings } from '#/main/settings.ts'
-import { allAppWindows } from '#/main/window-registry.ts'
+import { broadcastToChromeWebContents } from '#/main/window-registry.ts'
 
 /**
  * i18n channels.
@@ -45,20 +45,12 @@ export function wireI18nIpc(): void {
       const resolved: Lang = resolveLang(typed)
       setCurrentLang(resolved)
       buildMenu()
-      // Broadcast to every chromeView so renderers can re-apply translations.
-      // Payload mirrors `i18n:get` so the renderer can hot-swap its dict
-      // without a follow-up round-trip.
+      // Broadcast to every registered chrome WebContents — AppWindow
+      // chromes AND the Settings window — so renderers can re-apply
+      // translations. Payload mirrors `i18n:get` so the renderer can
+      // hot-swap its dict without a follow-up round-trip.
       const payload = { lang: resolved, pref: typed, dict: getDictionary() }
-      for (const w of allAppWindows()) {
-        if (w.isDestroyed()) continue
-        const wc = w.getChromeWebContents()
-        if (wc.isDestroyed()) continue
-        try {
-          wc.send('app:i18n-changed', payload)
-        } catch {
-          // Destroyed between the check and the send — teardown race.
-        }
-      }
+      broadcastToChromeWebContents('app:i18n-changed', [payload])
       return payload
     }),
   )

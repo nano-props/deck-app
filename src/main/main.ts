@@ -17,6 +17,7 @@ import { wireRecentsIpc } from '#/main/ipc/recents.ts'
 import { wireSettingsIpc } from '#/main/ipc/settings.ts'
 import { recordOpen } from '#/main/recents.ts'
 import { getSettings } from '#/main/settings.ts'
+import { closeSettingsWindow, isSettingsWindowOpen } from '#/main/settings-window/index.ts'
 
 /** Files queued up before the app was ready (macOS open-file, argv). */
 const pendingOpens: string[] = []
@@ -95,11 +96,15 @@ function wireAppEvents(): void {
   // ceiling when something does go wrong.
   const QUIT_TIMEOUT_MS = 3000
   app.on('before-quit', async (event) => {
-    if (isQuitting || allAppWindows().length === 0) return
+    // Quit can fire after every window is already closed (the user hit
+    // the last red button). Skip the close-all dance if there's nothing
+    // to close — both AppWindows and the Settings window must be gone.
+    if (isQuitting) return
+    if (allAppWindows().length === 0 && !isSettingsWindowOpen()) return
     event.preventDefault()
     isQuitting = true
-    const closeAll = Promise.all(
-      allAppWindows().map(
+    const closeAll = Promise.all([
+      ...allAppWindows().map(
         (w) =>
           new Promise<void>((resolve) => {
             const bw = w.getBaseWindow()
@@ -108,7 +113,12 @@ function wireAppEvents(): void {
             w.close()
           }),
       ),
-    )
+      // The Settings window isn't tracked in `allAppWindows()` (it's a
+      // top-level auxiliary BrowserWindow). Without this, app.exit
+      // would skip its React unmount path and drop any debounced save
+      // / un-blurred apiKey edit on the floor.
+      closeSettingsWindow(),
+    ])
     const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT_MS))
     try {
       const winner = await Promise.race([closeAll.then(() => 'closed' as const), timeout])
