@@ -63,6 +63,11 @@ const config: Configuration = {
       name: 'Deck Presentation',
       role: 'Viewer',
     },
+    {
+      ext: ['html', 'htm'],
+      name: 'HTML Document',
+      role: 'Viewer',
+    },
   ],
 }
 
