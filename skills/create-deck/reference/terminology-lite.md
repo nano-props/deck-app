@@ -8,7 +8,7 @@
 | ----------------- | ----------------------------------------------------------------------------------------- |
 | **Deck**          | A single presentation. Concretely: a `.deck` file (Pack) or a directory (Source).         |
 | **Deck Pack**     | The packaged `.deck` file — a standard ZIP archive. The user-facing form, both for distribution and for in-app editing. |
-| **Deck Source**   | The unpacked directory form. Useful as a working area while authoring; not surfaced as a separate concept in the Deck App UI. |
+| **Deck Source**   | The unpacked directory form. Packaging scaffolding for skill/CLI workflows that build a Deck on disk before zipping. Not surfaced in the Deck App UI — the app opens `.deck` Packs, not folders. |
 | **Deck Manifest** | The `deck.json` file at the root.                                                         |
 | **pack a Deck**   | Verb. Zip a Deck Source into a Deck Pack.                                                 |
 | **unpack a Deck** | Verb. Extract a Deck Pack into a Deck Source.                                             |
@@ -27,8 +27,8 @@ A Deck Source and a Deck Pack have **identical** directory structure — the onl
 
 **Key relationships** (relevant when discussing how a user works with a Deck):
 
-- A Deck Pack defaults to opening in the Player; the user can flip to the Editor for any Deck. The Editor's edits to a Pack are flushed back to the original `.deck` on Save / close.
-- A Deck Source defaults to opening in the Editor.
+- A `.deck` Pack opens in the Player by default; the user can flip to the Editor on demand. Edits to a Pack are flushed back to the original `.deck` on Save / close.
+- The Deck App's UI does not open folders — there is no "Open Folder" entry point. Hand the user the `.deck` Pack you produced; the Source directory is your scratch space and can be discarded after packing.
 - Player and Editor are mutually exclusive — the same Deck is never open in both at once.
 
 ## Anti-patterns — don't use

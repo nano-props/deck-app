@@ -1,6 +1,6 @@
 ---
 name: edit-deck
-description: Author or transform the currently-open Deck inside Deck App Editor by editing its Deck Source in place. Use when the user asks to create, build, redesign, or modify a deck while running inside the Deck App Editor. Do not pack or write a `.deck` file; the app handles saving.
+description: Author or transform the currently-open Deck inside Deck App Editor by editing its files in place. Use when the user asks to create, build, redesign, or modify a deck while running inside the Deck App Editor. Do not pack or write a `.deck` file; the app handles saving.
 ---
 
 # Editing a Deck in Deck App Editor

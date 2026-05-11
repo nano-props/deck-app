@@ -24,14 +24,14 @@ Core vocabulary: **Deck** (the presentation), **Deck Pack** (the `.deck` file �
 
 ## Where to put the Deck
 
-Unless the user specifies a location, build the Deck Source as a subdirectory of the current working directory, named after the Deck (slugified), and pack it alongside:
+Unless the user specifies a location, scaffold the Deck Source as a subdirectory of the current working directory, named after the Deck (slugified), and pack it alongside:
 
 ```
-<cwd>/<slug>/         ← working directory while authoring
-<cwd>/<slug>.deck     ← what you hand to the user
+<cwd>/<slug>/         ← packaging scratch — discard after packing
+<cwd>/<slug>.deck     ← the artifact you hand to the user
 ```
 
-You normally hand the user the `.deck`; the directory is a working artifact. Keep or remove it based on the user's preference.
+The `.deck` Pack is the only artifact the user works with. The `<slug>/` directory is packaging scaffolding — the Deck App's UI does not open folders, so don't tell the user to keep it. Delete it after packing unless the user explicitly asked to keep the unpacked form.
 
 ---
 
@@ -44,7 +44,7 @@ You normally hand the user the `.deck`; the directory is a working artifact. Kee
 5. **Pack** the directory into `<slug>.deck` — see below.
 6. **Preview**: hand the user `<slug>.deck` to double-click. The Deck App opens it directly; users edit it in place via the Editor, and edits are flushed back to the `.deck` on Save / close.
 
-You can also iterate on the directory directly via the Deck App's `File → Open Folder…` (the Editor opens the directory and writes through to it). The Pack the user gets is still the `.deck` you produce in step 5.
+The Deck App's UI exposes only the `.deck` Pack — there is no "Open Folder" entry point. Hand the user the Pack from step 5; the working directory `<slug>/` is your scratch space and can be discarded after packing.
 
 ---
 

@@ -30,7 +30,7 @@ edit-deck/
 
 ### `create-deck/`
 
-Creates a Deck Pack outside Deck App Editor — produces a `.deck` presentation file (or, intermediately, an unpacked directory ready to zip). Triggers for external agents that need to "write a .deck" or "pack a deck". Packs with system `zip`; no runtime dependencies.
+Creates a Deck Pack outside Deck App Editor — produces a `.deck` presentation file. The unpacked directory is packaging scaffolding only; the Deck App's UI opens `.deck` Packs, not folders, so the Pack is what you hand to the user. Triggers for external agents that need to "write a .deck" or "pack a deck". Packs with system `zip`; no runtime dependencies.
 
 ```
 create-deck/

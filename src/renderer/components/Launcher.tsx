@@ -1,6 +1,7 @@
-// Launcher — three primary actions (New / Open file / Open folder), a
-// recents list, the decorative card stack, drag-to-open ring, and a
-// loading overlay shown while main unpacks/extracts.
+// Launcher — two primary actions (New / Open file), a recents list, the
+// decorative card stack, drag-to-open ring, and a loading overlay shown
+// while main unpacks/extracts. Folder-form Decks have no UI entry point;
+// they reach the app only via drag-drop or CLI argv.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus, Folder, X } from 'lucide-react'
