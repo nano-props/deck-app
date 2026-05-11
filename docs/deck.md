@@ -94,7 +94,7 @@ See [`deck-spec.md` §3](./deck-spec.md). The Player supports both Deck Pack (ex
 
 ### 4.3 Window chrome
 
-Platform-appropriate chrome backs a single topbar shared by all three modes. Full per-platform rationale — macOS `hiddenInset` with centered traffic lights, Windows / Linux `titleBarOverlay`, why we no longer inject a drag strip — lives in [`window-chrome.md`](./window-chrome.md). For the author-facing contract (top 32px reserved, no clicks / no important visuals there), see [`deck-spec.md` §6](./deck-spec.md).
+Platform-appropriate chrome backs a single topbar shared by all three modes. Full per-platform rationale — macOS `hiddenInset` with centered traffic lights, Windows / Linux `titleBarOverlay` — lives in [`window-chrome.md`](./window-chrome.md). For the author-facing contract (the deck owns the whole viewport; the topbar handles window dragging), see [`deck-spec.md` §6](./deck-spec.md).
 
 **Container-level shortcuts** (handled by the Deck App; never forwarded to the deck page): `Esc` exits fullscreen · `F11` / `Cmd+Ctrl+F` toggles fullscreen · `Cmd+W` / `Ctrl+W` closes the window · `Cmd+Shift+W` / `Ctrl+Shift+W` closes just the Deck and returns to the Launcher · `Cmd+R` / `Ctrl+R` reloads the deck preview (never the chrome — would lose in-flight AI state) · `Cmd+E` / `Ctrl+E` switches to Editor, `Cmd+Alt+P` / `Ctrl+Alt+P` switches to Player. `Cmd+,` / `Ctrl+,` opens the in-window Settings overlay.
 
