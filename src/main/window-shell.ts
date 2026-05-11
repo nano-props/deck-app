@@ -41,7 +41,7 @@ export const sharedWebPreferences = {
  * `data-theme` afterward if the user picked a non-auto preference.
  */
 export function appCanvasBg(): string {
-  return nativeTheme.shouldUseDarkColors ? '#0c0d0f' : '#f7f7f5'
+  return nativeTheme.shouldUseDarkColors ? '#0c0d0f' : '#ffffff'
 }
 
 /** Rect in window content-area coordinates (CSS pixels). */
