@@ -1,35 +1,36 @@
 # Deck
 
-Desktop container for `.deck` presentations — a `.deck` is just a zipped static website.
+Desktop presentation tool for the AI era. A `.deck` is a zipped static website — open it to play, edit it with AI, or share it as a single file.
 
-- **Spec:** [`docs/deck-spec.md`](./docs/deck-spec.md)
-- **Product doc:** [`docs/deck.md`](./docs/deck.md)
-- **Terminology:** [`docs/terminology.md`](./docs/terminology.md)
+## Develop
 
-## Authoring a Deck
-
-See the skill at [`skills/create-deck/`](./skills/create-deck/) for a step-by-step authoring guide, and [`skills/create-deck/reference/spec-lite.md`](./skills/create-deck/reference/spec-lite.md) for a lite, author-oriented digest of the spec.
-
-## Dev
-
-```
+```bash
 bun install
 bun run dev
 ```
 
-Implementation design docs (read when hacking on the Deck App itself, not when authoring Decks):
+Install locally:
 
-- [`docs/window-chrome.md`](./docs/window-chrome.md) — per-platform titlebar, drag, and traffic light behavior.
-
-## Install
-
-```
-./install.sh                 # shorthand for `bun run build:app install`
-bun run build:app install    # build + move Deck.app into ~/Applications
-bun run build:app            # build only → release/mac-<arch>/Deck.app
-bun run build:app win        # build Windows portable → release/Deck-<version>-portable.exe
+```bash
+./install.sh
 ```
 
-## Sample decks
+## Authoring
 
-`scripts/pack-deck.ts <name>` reads `examples/<name>/` and writes `examples/<name>.deck`. `examples/` is gitignored, so sample sources aren't checked in — create one locally with a `deck.json` + `index.html` before running `bun run pack:deck <name>`.
+- In the app: `File → New Deck…` (`⌘N`)
+- With an external agent: use the [`skills/create-deck/`](./skills/create-deck/) skill
+
+Agent skills under [`skills/`](./skills/):
+
+| Skill | Purpose |
+|-------|---------|
+| `create-deck` | Create a `.deck` pack externally |
+| `edit-deck` | Guide the Editor's built-in AI |
+| `deck-design` | Visual design guidance |
+
+## Documentation
+
+- [`docs/deck.md`](./docs/deck.md) — product doc, architecture, design decisions
+- [`docs/deck-spec.md`](./docs/deck-spec.md) — `.deck` format spec
+- [`docs/terminology.md`](./docs/terminology.md) — project vocabulary
+- [`docs/window-chrome.md`](./docs/window-chrome.md) — platform titlebar behavior
