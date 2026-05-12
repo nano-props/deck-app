@@ -12,7 +12,7 @@ bun run dev
 Install locally:
 
 ```bash
-./install.sh
+./install.sh   # macOS only
 ```
 
 ## Authoring
