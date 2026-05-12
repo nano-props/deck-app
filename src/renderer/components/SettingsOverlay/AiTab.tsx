@@ -156,10 +156,10 @@ function AiGroup() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsDirty, settingsForSave, settings])
 
-  // Saved-flash auto-fade: leave 'saved' onscreen briefly so the user
-  // sees the confirmation, then return to idle so it doesn't linger.
+  // Saved-flash / cleared-flash auto-fade: leave transient success onscreen
+  // briefly so the user sees the confirmation, then return to idle.
   useEffect(() => {
-    if (status.kind !== 'saved') return
+    if (status.kind !== 'saved' && status.kind !== 'cleared') return
     const timer = setTimeout(() => setStatus({ kind: 'idle' }), SAVED_FLASH_MS)
     return () => clearTimeout(timer)
   }, [status])
@@ -281,14 +281,7 @@ function AiGroup() {
         })
         if (cancelled) return
         if (r.ok) {
-          setStatus({
-            kind: 'ok',
-            msg: t('settings.status.pingOk', {
-              provider: r.provider ?? '',
-              model: r.model ?? '',
-              text: r.text || t('chat.status.empty'),
-            }),
-          })
+          setStatus({ kind: 'idle' })
         } else {
           setStatus({ kind: 'err', msg: r.error ?? t('settings.status.pingFailed') })
         }
@@ -310,7 +303,7 @@ function AiGroup() {
       await window.deck.settings.clearApiKey(provider)
       setConfigured((c) => ({ ...c, [provider]: false }))
       setStatus({
-        kind: 'ok',
+        kind: 'cleared',
         msg: t('settings.status.clearedKey', { provider: providerLabel(provider) }),
       })
     } catch (e) {
@@ -336,8 +329,6 @@ function AiGroup() {
   const baseUrlValue = isCustom ? (custom[provider]?.baseUrl ?? '') : ''
   const baseUrlHintKey = isCustom ? BASEURL_HINT_KEY[provider] : undefined
   const baseUrlHint = baseUrlHintKey ? t(baseUrlHintKey as any) : ''
-
-  const keyHint = configured[provider] ? t('settings.apiKey.status.saved', { provider: providerLabel(provider) }) : ''
 
   return (
     <div className="flex flex-col gap-5">
@@ -427,7 +418,6 @@ function AiGroup() {
               />
             }
           />
-          {keyHint && <p className="m-0 text-[12px] leading-snug text-ink-3">{keyHint}</p>}
           <AiStatusMessage status={status} />
         </div>
       </Section>

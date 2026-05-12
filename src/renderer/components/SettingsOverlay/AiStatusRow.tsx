@@ -22,6 +22,7 @@ export type AiStatus =
   | { kind: 'saved' }
   | { kind: 'pinging' }
   | { kind: 'ok'; msg: string }
+  | { kind: 'cleared'; msg: string }
   | { kind: 'err'; msg: string }
 
 /**
@@ -51,6 +52,10 @@ export function AiStatusChip({ status, hasKey }: { status: AiStatus; hasKey: boo
     case 'ok':
       tone = 'connected'
       label = t('settings.status.connected')
+      break
+    case 'cleared':
+      tone = 'ok'
+      label = t('settings.status.cleared')
       break
     case 'err':
       tone = 'err'
@@ -92,12 +97,12 @@ export function AiStatusChip({ status, hasKey }: { status: AiStatus; hasKey: boo
  * other states are fully captured by the chip.
  */
 export function AiStatusMessage({ status }: { status: AiStatus }) {
-  if (status.kind !== 'ok' && status.kind !== 'err') return null
+  if (status.kind !== 'ok' && status.kind !== 'err' && status.kind !== 'cleared') return null
   return (
     <p
       className={cn(
         'm-0 text-[12px] leading-snug',
-        status.kind === 'ok' && 'text-ink-3',
+        (status.kind === 'ok' || status.kind === 'cleared') && 'text-ink-3',
         status.kind === 'err' && 'text-danger',
       )}
     >

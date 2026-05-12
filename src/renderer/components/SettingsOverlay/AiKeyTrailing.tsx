@@ -4,8 +4,8 @@
 //   - input has unsaved text → X clears the input (cheap undo)
 //   - input empty AND keychain has a saved key → Trash with native
 //     confirm clears the keychain entry
-//   - else: hidden so the eye toggle anchors at the right edge instead
-//     of jumping when the input clears.
+//   - eye toggle is always rendered (disabled when input is empty) so
+//     the right edge doesn't jump when icons swap.
 
 import { Eye, EyeOff, Trash2, X } from 'lucide-react'
 import { useI18n } from '#/renderer/stores/i18n.ts'
@@ -56,9 +56,13 @@ export function AiKeyTrailing({
           </IconButton>
         </Tooltip>
       ) : null}
-      <Tooltip content={revealed ? t('settings.toggleReveal.hide') : t('settings.toggleReveal.show')}>
+      <Tooltip
+        disabled={!hasInput}
+        content={revealed ? t('settings.toggleReveal.hide') : t('settings.toggleReveal.show')}
+      >
         <IconButton
           size="sm"
+          disabled={!hasInput}
           onClick={onToggleReveal}
           // Keep blur from firing on the eye toggle either; the user
           // hasn't finished entering the key yet.
