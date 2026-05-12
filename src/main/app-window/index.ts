@@ -9,7 +9,7 @@ import { type DeckContext } from '#/main/deck-types.ts'
 import { t } from '#/main/i18n/index.ts'
 import { buildMenu } from '#/main/menu/index.ts'
 import { TOPBAR_PX } from '#/main/window-layout.ts'
-import { registerAppWindow, unregisterAppWindow } from '#/main/window-registry.ts'
+import { allAppWindows, registerAppWindow, unregisterAppWindow } from '#/main/window-registry.ts'
 import {
   APP_ICON,
   appCanvasBg,
@@ -19,6 +19,12 @@ import {
   type Rect,
   sharedWebPreferences,
 } from '#/main/window-shell.ts'
+import {
+  flushWindowState,
+  getCachedWindowState,
+  resolveInitialBounds,
+  saveWindowState,
+} from '#/main/window-state.ts'
 import { DeckViewController } from '#/main/app-window/deck-view-controller.ts'
 import type { AppMode, AppState, DeckSubView } from '#/main/app-window/types.ts'
 
@@ -65,6 +71,16 @@ export class AppWindow {
   private disposed = false
 
   constructor() {
+    // Restore previous bounds when they still land on a connected
+    // display; otherwise size relative to the primary work area.
+    // `getCachedWindowState` is populated by `loadWindowState()` during
+    // boot (main.ts), so this read is sync and always up to date.
+    // The cascade offset (30px × N) prevents a New Window from landing
+    // exactly on top of the existing one. `allAppWindows()` here counts
+    // already-registered windows; this AppWindow registers itself
+    // *after* its BaseWindow is constructed (see `registerAppWindow`
+    // below), so the count is the number of older siblings.
+    const initial = resolveInitialBounds(getCachedWindowState(), allAppWindows().length)
     this.win = new BaseWindow({
       // Show immediately (default). `backgroundColor: appCanvasBg()`
       // paints the CALayer behind any web content, so the user sees the
@@ -79,8 +95,7 @@ export class AppWindow {
       // Center macOS traffic lights vertically in our 32px topbar.
       // y = (TOPBAR_PX - lightDiameter) / 2 = (32 - 12) / 2.
       trafficLightPosition: { x: 16, y: (TOPBAR_PX - 12) / 2 },
-      width: 1280,
-      height: 820,
+      ...initial,
       minWidth: 960,
       minHeight: 600,
       title: 'Deck',
@@ -444,7 +459,9 @@ export class AppWindow {
     this.win.on('resize', () => {
       this.applyChromeLayout()
       this.deckCtrl.refreshLockedBounds()
+      this.persistBounds()
     })
+    this.win.on('move', () => this.persistBounds())
 
     // Fullscreen state mirror + presentation lock pairing. Symmetric:
     // enter refreshes the locked rect with the post-animation content
@@ -474,6 +491,14 @@ export class AppWindow {
     // when focus shifts between our windows.
     this.win.on('focus', () => buildMenu())
 
+    // `close` fires before the native window is destroyed so we can
+    // still read bounds; `closed` happens after destruction. Capture
+    // here, flush there.
+    this.win.on('close', () => {
+      this.persistBounds()
+      void flushWindowState(this.winId)
+    })
+
     // `handleClosed` is async; swallow any rejection so an unexpected
     // throw can't surface as Electron's "uncaught exception" dialog.
     this.win.once('closed', () => {
@@ -481,6 +506,21 @@ export class AppWindow {
         console.error('[AppWindow] handleClosed failed', err)
       })
     })
+  }
+
+  /** Snapshot the current "normal" window bounds to disk. Skipped while
+   *  fullscreen — `getNormalBounds()` is unreliable mid-fullscreen, and
+   *  resize events fire during the OS animation before the
+   *  `enter-full-screen` / `leave-full-screen` listener runs, so we
+   *  can't rely on `this.isFullScreen` to gate them. Querying the
+   *  BaseWindow directly avoids the event-ordering question. */
+  private persistBounds(): void {
+    if (this.win.isDestroyed()) return
+    if (this.win.isFullScreen()) return
+    // `getNormalBounds()` returns the pre-maximize/zoom rect on every
+    // platform — exactly what we want to restore on the next launch.
+    const b = this.win.getNormalBounds()
+    saveWindowState(this.winId, { x: b.x, y: b.y, width: b.width, height: b.height })
   }
 
   private broadcastState(): void {

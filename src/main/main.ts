@@ -20,9 +20,19 @@ import { initTheme } from '#/main/theme.ts'
 import { recordOpen } from '#/main/recents.ts'
 import { getSettings } from '#/main/settings.ts'
 import { closeSettingsWindow, isSettingsWindowOpen } from '#/main/settings-window/index.ts'
+import { awaitAllWindowStateFlushes, loadWindowState } from '#/main/window-state.ts'
 
 /** Files queued up before the app was ready (macOS open-file, argv). */
 const pendingOpens: string[] = []
+
+/** Resolves once `main()` finishes its boot sequence. open-file
+ *  handlers wait on this so a path dragged onto the Dock during boot
+ *  doesn't construct an AppWindow before window-state and theme are
+ *  primed. */
+let signalBootDone!: () => void
+const bootDone = new Promise<void>((resolve) => {
+  signalBootDone = resolve
+})
 
 function argvDeckPaths(argv: string[]): string[] {
   // argv layout:
@@ -63,22 +73,27 @@ function wireAppEvents(): void {
   app.on('open-file', (event, filePath) => {
     event.preventDefault()
     if (app.isReady()) {
-      void openDeckSomewhere(filePath)
+      // Wait for boot to finish: `app.isReady()` flips before main()'s
+      // post-whenReady awaits land, so an event in this gap could
+      // construct an AppWindow with un-primed window-state / theme.
+      void bootDone.then(() => openDeckSomewhere(filePath))
     } else {
       pendingOpens.push(filePath)
     }
   })
 
   app.on('second-instance', (_event, argv) => {
-    const paths = argvDeckPaths(argv)
-    if (paths.length > 0) {
-      for (const p of paths) void openDeckSomewhere(p)
-    } else {
-      // Focus an existing window, or spawn a fresh launcher if none exist.
-      const existing = allAppWindows()[0]
-      if (existing) existing.focus()
-      else new AppWindow()
-    }
+    void bootDone.then(() => {
+      const paths = argvDeckPaths(argv)
+      if (paths.length > 0) {
+        for (const p of paths) void openDeckSomewhere(p)
+      } else {
+        // Focus an existing window, or spawn a fresh launcher if none exist.
+        const existing = allAppWindows()[0]
+        if (existing) existing.focus()
+        else new AppWindow()
+      }
+    })
   })
 
   app.on('window-all-closed', () => {
@@ -98,11 +113,25 @@ function wireAppEvents(): void {
   // ceiling when something does go wrong.
   const QUIT_TIMEOUT_MS = 3000
   app.on('before-quit', async (event) => {
-    // Quit can fire after every window is already closed (the user hit
-    // the last red button). Skip the close-all dance if there's nothing
-    // to close — both AppWindows and the Settings window must be gone.
     if (isQuitting) return
-    if (allAppWindows().length === 0 && !isSettingsWindowOpen()) return
+    // Quit can fire after every window is already closed (the user hit
+    // the last red button). Skip the close-all dance — but the close
+    // listener of the last window may still have a window-state flush
+    // in flight. Block the natural exit just long enough to drain it,
+    // otherwise the last resize before quit gets truncated.
+    if (allAppWindows().length === 0 && !isSettingsWindowOpen()) {
+      event.preventDefault()
+      isQuitting = true
+      try {
+        await Promise.race([
+          awaitAllWindowStateFlushes(),
+          new Promise((resolve) => setTimeout(resolve, QUIT_TIMEOUT_MS)),
+        ])
+      } finally {
+        app.exit(0)
+      }
+      return
+    }
     event.preventDefault()
     isQuitting = true
     const closeAll = Promise.all([
@@ -120,7 +149,12 @@ function wireAppEvents(): void {
       // would skip its React unmount path and drop any debounced save
       // / un-blurred apiKey edit on the floor.
       closeSettingsWindow(),
-    ])
+    ]).then(() =>
+      // Each AppWindow's `close` listener fires a flush; before exiting
+      // make sure the writeFile + rename land. Without this, the last
+      // resize before quit can be truncated by app.exit.
+      awaitAllWindowStateFlushes(),
+    )
     const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT_MS))
     try {
       const winner = await Promise.race([closeAll.then(() => 'closed' as const), timeout])
@@ -134,6 +168,19 @@ function wireAppEvents(): void {
 }
 
 async function main(): Promise<void> {
+  // `signalBootDone` MUST run on every exit path — failure to resolve
+  // `bootDone` would orphan any queued open-file / second-instance
+  // handler. The try/finally wraps the entire boot so an unexpected
+  // throw still releases gated handlers (they'll then fail visibly
+  // rather than hang silently).
+  try {
+    await mainInner()
+  } finally {
+    signalBootDone()
+  }
+}
+
+async function mainInner(): Promise<void> {
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return
@@ -153,6 +200,11 @@ async function main(): Promise<void> {
   }
 
   await sweepStaleTempDirs()
+  // Prime the saved bounds before the first AppWindow constructs — its
+  // constructor reads from the cache synchronously. open-file and
+  // second-instance handlers gate on `bootDone`, so they won't try to
+  // construct an AppWindow before this lands.
+  await loadWindowState()
   configureDeckSession()
   auditModelCatalog()
   assertDictionaryParity(!app.isPackaged)
