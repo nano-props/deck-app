@@ -18,6 +18,15 @@
  * the keys are absolute paths, so concurrent sessions on different
  * decks don't collide. Resetting would force a fresh syscall on every
  * tool call (read/grep/find can fire hundreds of times per turn).
+ *
+ * Trust note: read-side rejections distinguish "outside the sandbox" from
+ * "doesn't exist on disk" so a hallucinating model can self-correct
+ * without thinking it found a forbidden file. This is a tiny existence
+ * oracle (a model can probe whether `/some/path` exists by inspecting
+ * which error it gets). Acceptable in this app — we run alongside a
+ * model that already has `read_url`/`fetch_url`, no built-in secrets,
+ * and a single-user threat model. Don't paste this layer into a
+ * multi-tenant context without rethinking.
  */
 import { realpath } from 'node:fs/promises'
 import path from 'node:path'
@@ -36,18 +45,23 @@ function isInsideString(abs: string, root: string): boolean {
 
 /**
  * Resolve symlinks for sandbox checks. If the path itself doesn't exist
- * (a fresh write), walk up to the nearest existing ancestor, realpath
- * that, and rejoin the missing tail. This way a write to
- * `<root>/new/file` resolves through `<root>` (whose realpath we trust)
- * rather than failing the resolve and silently allowing a symlinked
- * `<root>` to escape.
+ * (a fresh write, or a hallucinated path from the model), walk up to the
+ * nearest existing ancestor, realpath that, and rejoin the missing tail.
+ * This way a write to `<root>/new/file` resolves through `<root>` (whose
+ * realpath we trust) rather than failing the resolve and silently
+ * allowing a symlinked `<root>` to escape.
  *
  * The escape vector this closes: a Deck Source containing a symlink
  * `escape -> /` would otherwise let `read_file('<root>/escape/etc/passwd')`
  * pass `isInsideString` (it's a string-prefix match) and then traverse
  * through the link in the underlying `readFile`.
+ *
+ * Returns `exists=true` only when realpath succeeded on the original path
+ * with no tail-stripping. Callers use this to distinguish "doesn't exist"
+ * from "escapes the sandbox" — both fail containment but mean different
+ * things to a model.
  */
-async function realpathSafe(p: string): Promise<string> {
+async function realpathSafe(p: string): Promise<{ real: string; exists: boolean }> {
   let current = path.resolve(p)
   const tail: string[] = []
   // Bound by the path depth — `path.dirname('/')` returns '/' so this
@@ -57,15 +71,18 @@ async function realpathSafe(p: string): Promise<string> {
   for (let i = 0; i < 64; i++) {
     try {
       const real = await realpath(current)
-      return tail.length === 0 ? real : path.join(real, ...tail)
+      return {
+        real: tail.length === 0 ? real : path.join(real, ...tail),
+        exists: tail.length === 0,
+      }
     } catch {
       const parent = path.dirname(current)
-      if (parent === current) return path.join(current, ...tail)
+      if (parent === current) return { real: path.join(current, ...tail), exists: false }
       tail.unshift(path.basename(current))
       current = parent
     }
   }
-  return path.resolve(p)
+  return { real: path.resolve(p), exists: false }
 }
 
 // Cache realpath of trusted roots (deck rootDir + editor-visible skill
@@ -77,7 +94,7 @@ const realpathRootCache = new Map<string, Promise<string>>()
 function realpathRootCached(p: string): Promise<string> {
   let cached = realpathRootCache.get(p)
   if (!cached) {
-    cached = realpathSafe(p)
+    cached = realpathSafe(p).then((r) => r.real)
     realpathRootCache.set(p, cached)
   }
   return cached
@@ -102,7 +119,7 @@ export async function resolveSandboxPath(
   writable: boolean,
 ): Promise<{ relPath: string | null }> {
   const allowedReadRoots = writable ? [] : editorSkillRoots()
-  const real = await realpathSafe(abs)
+  const { real, exists } = await realpathSafe(abs)
   const realRoot = await realpathRootCached(rootDir)
   if (isInsideString(real, realRoot)) {
     return { relPath: toRelPosixFromResolved(real, realRoot) }
@@ -115,7 +132,25 @@ export async function resolveSandboxPath(
       }
     }
   }
-  throw new Error(`Path escapes the Deck sandbox: ${abs}`)
+  // The path is outside every allowed root. Two distinct shapes:
+  //   - read of a nonexistent path → most likely a hallucinated absolute
+  //     path. Tag with `code: 'ENOENT'` so the grep tool's
+  //     `(e as ErrnoException).code === 'ENOENT'` branch reports it as a
+  //     missing file instead of an escape attempt. The model retries
+  //     with a relative path instead of asking for forgiveness.
+  //   - everything else (write to outside, or a real file that's outside)
+  //     → genuine escape. Echo the deck root so the model can
+  //     self-correct. Writes always take this branch even when the target
+  //     doesn't exist: a `write_file('/etc/foo', …)` should read as
+  //     refusal, not as "not found".
+  if (!exists && !writable) {
+    const err = new Error(`Path not found: ${abs}`) as NodeJS.ErrnoException
+    err.code = 'ENOENT'
+    throw err
+  }
+  throw new Error(
+    `Path is outside the deck root (${rootDir}): ${abs}. Pass a path relative to the deck root.`,
+  )
 }
 
 export function toRelPosixFromResolved(abs: string, rootDir: string): string | null {

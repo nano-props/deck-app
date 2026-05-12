@@ -45,6 +45,9 @@ interface AttachmentStore {
 
 let nextId = 1
 
+// `hasValid` / `hasAny` have stable identities, so `useAttachments(s => s.hasValid)`
+// would never re-render. Today's only consumer takes the whole store;
+// new callers should subscribe to `items` and call the predicate inline.
 export const useAttachments = create<AttachmentStore>((set, get) => ({
   items: [],
   hasValid: () => get().items.some((a) => !a.error),

@@ -34,7 +34,7 @@ export function deleteFileTool(ctx: DeckToolsContext): AgentTool<typeof deleteFi
       const relPosix = checked.relPath
       if (relPosix === null) {
         // resolveSandboxPath should already have thrown, but defense in depth.
-        throw new Error(`Path escapes the Deck sandbox: ${params.path}`)
+        throw new Error(`Path is outside the deck root: ${params.path}`)
       }
       if (relPosix === '') {
         throw new Error('Refusing to delete the Deck Source root.')

@@ -159,6 +159,7 @@ export const ko: Record<DictKey, string> = {
   'chat.status.empty': '(빈 응답)',
   'chat.thinking.label': '생각 중',
   'chat.thinking.empty': '생각 결과 대기 중…',
+  'chat.tool.running': '(실행 중…)',
 
   // ---- Aria labels --------------------------------------------------------
   'aria.chatInput': '채팅 입력',

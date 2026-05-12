@@ -31,14 +31,19 @@ function format(raw: string, params?: Record<string, string | number>): string {
   })
 }
 
-export const useI18n = create<I18nStore>((set, get) => ({
+function makeT(dict: Dict): I18nStore['t'] {
+  return (key, params) => format(dict[key] ?? key, params)
+}
+
+export const useI18n = create<I18nStore>((set) => ({
   lang: 'en',
   pref: 'auto',
   dict: {},
-  t: (key, params) => {
-    const raw = get().dict[key] ?? key
-    return format(raw, params)
-  },
+  // Bound to the current `dict` so its identity changes on every language
+  // swap — components selecting `s.t` re-render on switch. A `get().dict`
+  // closure would keep the same reference forever and silently skip the
+  // re-render.
+  t: makeT({}),
   setPref: async (pref) => {
     // Optimistic: main will broadcast the canonical state back; we wait
     // for that rather than mutating locally. Errors swallowed — the
@@ -46,7 +51,7 @@ export const useI18n = create<I18nStore>((set, get) => ({
     await window.deck.i18n.setPref(pref).catch(() => {})
   },
   _apply: ({ lang, pref, dict }) => {
-    set({ lang, pref, dict })
+    set({ lang, pref, dict, t: makeT(dict) })
     // Reflect on <html lang> so screen readers / spell checkers pick the
     // right language. BCP 47-ish.
     document.documentElement.setAttribute('lang', lang === 'zh' ? 'zh-CN' : lang === 'ko' ? 'ko-KR' : 'en')
@@ -64,8 +69,11 @@ void window.deck.i18n.get().then((payload) => {
 })
 
 /** Non-reactive `t()` for call sites outside React render (event
- *  handlers, console-bound logs, etc.). Re-reads the latest dict each
- *  call — components should still subscribe via `useI18n(s => s.t)`. */
+ *  handlers, console-bound logs, etc.). Re-reads the current `t`
+ *  closure each call — DO NOT cache the return value, since each `t`
+ *  is bound to the dict that was active when it was created. Use as
+ *  `getT()(key)` at the call site. Components should still subscribe
+ *  via `useI18n(s => s.t)`. */
 export function getT() {
   return useI18n.getState().t
 }

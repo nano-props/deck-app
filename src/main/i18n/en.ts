@@ -167,6 +167,7 @@ export const en = {
   'chat.status.empty': '(empty reply)',
   'chat.thinking.label': 'Thinking',
   'chat.thinking.empty': 'Waiting for reasoning…',
+  'chat.tool.running': '(running…)',
 
   // ---- Aria labels --------------------------------------------------------
   'aria.chatInput': 'Chat input',

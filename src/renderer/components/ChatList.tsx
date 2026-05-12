@@ -230,12 +230,17 @@ function ToolChip({ node }: { node: Extract<ChatNode, { kind: 'tool' }> }) {
   // text on a different node) skip the work. Radix Collapsible.Content
   // stays mounted while collapsed (it just toggles `data-state`), so
   // these computations happen whether or not the user has expanded it.
+  const t = useI18n((s) => s.t)
   const summary = useMemo(() => summarizeArgs(node.args), [node.args])
   const argsJson = useMemo(() => JSON.stringify(node.args, null, 2), [node.args])
-  const resultText = useMemo(
-    () => (node.result ? readResultText(node.result) : node.running ? '(running…)' : ''),
-    [node.result, node.running],
+  // Memoize the heavy result branch separately from the (cheap, l10n-driven)
+  // running label, so a language switch doesn't bust the result cache and
+  // re-run `readResultText` on every (potentially MB-sized) tool result.
+  const resultBody = useMemo(
+    () => (node.result ? readResultText(node.result) : null),
+    [node.result],
   )
+  const resultText = resultBody ?? (node.running ? t('chat.tool.running') : '')
   return (
     <RC.Root className="overflow-hidden rounded-lg border border-line bg-bg-deep font-mono text-[12px]">
       <RC.Trigger

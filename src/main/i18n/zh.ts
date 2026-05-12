@@ -158,6 +158,7 @@ export const zh: Record<DictKey, string> = {
   'chat.status.empty': '(空回复)',
   'chat.thinking.label': '思考中',
   'chat.thinking.empty': '等待思考输出…',
+  'chat.tool.running': '(运行中…)',
 
   // ---- Aria labels --------------------------------------------------------
   'aria.chatInput': '聊天输入框',

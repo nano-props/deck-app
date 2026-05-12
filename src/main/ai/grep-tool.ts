@@ -29,7 +29,10 @@ import path from 'node:path'
 const grepSchema = Type.Object({
   pattern: Type.String({ description: 'Search pattern (regex or literal string)' }),
   path: Type.Optional(
-    Type.String({ description: 'Directory or file to search (default: current directory)' }),
+    Type.String({
+      description:
+        'Directory or file to search, relative to the deck root (e.g. "src" or "index.html"). Default: deck root.',
+    }),
   ),
   glob: Type.Optional(
     Type.String({ description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" }),
@@ -244,6 +247,7 @@ export function createDeckGrepTool(opts: DeckGrepOptions): AgentTool<typeof grep
     label: 'grep',
     description:
       `Search file contents for a pattern. Returns matching lines with file paths and line numbers. ` +
+      `Pass 'path' as a deck-relative path (e.g. "src" or "index.html"). Don't reconstruct absolute filesystem paths even if you've seen one elsewhere — they may not match the deck's current location. ` +
       `Directory searches skip node_modules / .git / dotfiles / binaries by default. ` +
       `Single-file searches bypass those defaults so a deliberately named file is always read. ` +
       `The optional 'glob' parameter (e.g. '*.ts', '**/*.css') is always applied as an extra filter. ` +
@@ -264,9 +268,12 @@ export function createDeckGrepTool(opts: DeckGrepOptions): AgentTool<typeof grep
         // Distinguish "doesn't exist" from "sandbox refused": ENOENT is
         // a plain not-found, anything else (sandbox rejection, EACCES,
         // etc.) deserves its own message so the model isn't told a
-        // forbidden path "doesn't exist".
+        // forbidden path "doesn't exist". Echo the model's input rather
+        // than `searchPath` (the resolved absolute) — the absolute path
+        // is what tripped up the model in the first place; showing it
+        // back doesn't help.
         const code = (e as NodeJS.ErrnoException | undefined)?.code
-        if (code === 'ENOENT') throw new Error(`Path not found: ${searchPath}`)
+        if (code === 'ENOENT') throw new Error(`Path not found: ${params.path ?? '.'}`)
         throw e
       }
 
