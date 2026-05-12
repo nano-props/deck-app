@@ -211,7 +211,7 @@ export const zh: Record<DictKey, string> = {
   'settings.clearKey': '清除密钥',
   'settings.testConnection': '测试连接',
   'settings.status.saving': '保存中…',
-  'settings.status.saved': '已保存。',
+  'settings.status.saved': '已保存',
   'settings.status.clearing': '清除中…',
   'settings.status.clearedKey': '已清除 {provider} 的密钥。',
   'settings.status.cleared': '已清除',

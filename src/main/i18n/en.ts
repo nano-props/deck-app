@@ -220,7 +220,7 @@ export const en = {
   'settings.clearKey': 'Clear key',
   'settings.testConnection': 'Test connection',
   'settings.status.saving': 'Saving…',
-  'settings.status.saved': 'Saved.',
+  'settings.status.saved': 'Saved',
   'settings.status.clearing': 'Clearing…',
   'settings.status.clearedKey': 'Cleared key for {provider}.',
   'settings.status.cleared': 'Cleared',

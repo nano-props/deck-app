@@ -5,10 +5,10 @@
 //     when nothing is happening, and transient states (Saving / Pinging
 //     / Saved / Error) inline as they fire.
 //
-//   - <AiStatusMessage> — full message line for ping responses. Only
-//     renders when the status carries a meaningful body (`ok` with the
-//     model echo, `err` with the failure reason). Saving/Saved/Pinging
-//     don't have a body — the chip alone tells the story.
+//   - <AiStatusMessage> — full message line beneath the input. Only
+//     renders when the status carries a meaningful body (`cleared` with
+//     the provider name, `err` with the failure reason). Saving/Saved/
+//     Pinging don't have a body — the chip alone tells the story.
 
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { cn } from '#/renderer/lib/cn.ts'
@@ -21,7 +21,6 @@ export type AiStatus =
   | { kind: 'saving' }
   | { kind: 'saved' }
   | { kind: 'pinging' }
-  | { kind: 'ok'; msg: string }
   | { kind: 'cleared'; msg: string }
   | { kind: 'err'; msg: string }
 
@@ -48,10 +47,6 @@ export function AiStatusChip({ status, hasKey }: { status: AiStatus; hasKey: boo
     case 'pinging':
       tone = 'pending'
       label = t('settings.status.pinging')
-      break
-    case 'ok':
-      tone = 'connected'
-      label = t('settings.status.connected')
       break
     case 'cleared':
       tone = 'ok'
@@ -93,16 +88,16 @@ export function AiStatusChip({ status, hasKey }: { status: AiStatus; hasKey: boo
 
 /**
  * Long-form status detail shown beneath the API key field. Renders
- * only when the latest status carries a meaningful message (ok / err);
- * other states are fully captured by the chip.
+ * only when the latest status carries a meaningful message (cleared /
+ * err); other states are fully captured by the chip.
  */
 export function AiStatusMessage({ status }: { status: AiStatus }) {
-  if (status.kind !== 'ok' && status.kind !== 'err' && status.kind !== 'cleared') return null
+  if (status.kind !== 'err' && status.kind !== 'cleared') return null
   return (
     <p
       className={cn(
         'm-0 text-[12px] leading-snug',
-        (status.kind === 'ok' || status.kind === 'cleared') && 'text-ink-3',
+        status.kind === 'cleared' && 'text-ink-3',
         status.kind === 'err' && 'text-danger',
       )}
     >

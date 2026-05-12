@@ -30,7 +30,7 @@ async function scanDir(dir: string, patterns: string[]): Promise<{ files: number
 }
 
 async function main() {
-  const srcPatterns = ['**/*.ts', '**/*.tsx', '**/*.css', '**/*.html', '**/*.d.ts']
+  const srcPatterns = ['**/*.ts', '**/*.tsx', '**/*.css', '**/*.html']
   const skillsPatterns = ['**/*.md', '**/*.html', '**/*.json', '**/*.txt']
 
   const src = await scanDir(path.join(repoRoot, 'src'), srcPatterns)
