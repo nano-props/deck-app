@@ -33,19 +33,25 @@ export function DeckShell() {
   const [dragging, setDragging] = useState(false)
   const isPlaying = useAppStore((s) => s.subView === 'play')
 
-  // Clamp on every relevant change (mount, window resize, drag). The
-  // shell width is the source of truth; we never let chat go past
+  // Clamp on every relevant change (mount, container resize, drag).
+  // The shell width is the source of truth; we never let chat go past
   // total - MIN_PREVIEW - DIVIDER.
+  //
+  // ResizeObserver on `<main>` rather than window.resize: the latter
+  // misses cases where the window is unchanged but the host box did
+  // resize (devtools docked, future surrounding chrome, etc.). RO fires
+  // synchronously once on observe, which seeds the initial clamp.
   useEffect(() => {
-    const onResize = () => {
-      const total = mainRef.current?.getBoundingClientRect().width ?? 0
+    const el = mainRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      const total = el.getBoundingClientRect().width
       if (total === 0) return
       const max = Math.max(MIN_CHAT, total - MIN_PREVIEW - DIVIDER)
       setChatWidth((w) => Math.max(MIN_CHAT, Math.min(max, w)))
-    }
-    window.addEventListener('resize', onResize)
-    onResize()
-    return () => window.removeEventListener('resize', onResize)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [])
 
   // Persist with a 250ms idle debounce. localStorage.setItem is
@@ -131,16 +137,16 @@ export function DeckShell() {
           style={{ width: chatPaneWidth, transition: widthTransition }}
           inert={isPlaying}
         >
-          {/* During the play↔edit collapse the inner wrapper holds a
-           * fixed `chatWidth`, so chat content (markdown, message
-           * bubbles) doesn't reflow each animation frame as the aside
-           * narrows — it's just clipped by `overflow: hidden` on the
-           * aside instead. While the user is dragging the divider, we
-           * intentionally let the inner wrapper match the aside (100%)
-           * so they see the live reflow as they drag. */}
+          {/* Inner wrapper width: in edit (and while dragging the divider)
+           * we follow the aside (100%) so chat content reflows correctly
+           * with the container. During the edit→play→edit collapse the
+           * aside animates between `chatWidth` and 0; we freeze the inner
+           * at `chatWidth` then so the chat content doesn't reflow each
+           * animation frame — it's just clipped by `overflow: hidden` on
+           * the aside. */}
           <div
             className="grid grid-rows-[1fr_auto] h-full min-h-0"
-            style={{ width: dragging ? '100%' : chatWidth }}
+            style={{ width: isPlaying ? chatWidth : '100%' }}
           >
             <ChatList />
             <Composer />

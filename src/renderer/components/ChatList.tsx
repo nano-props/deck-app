@@ -26,19 +26,46 @@ export function ChatList() {
   const followingRef = useRef(true)
   const lastWrittenScrollTopRef = useRef(-1)
 
+  const pinToBottom = () => {
+    const el = scrollerRef.current
+    if (!el || !followingRef.current) return
+    // Browsers clamp scrollTop to an integer on assign (CSS sub-pixel
+    // layout makes scrollHeight - clientHeight non-integer in some
+    // cases). Pre-clamp ourselves so the value we cache matches the
+    // value the next `scroll` event will read back.
+    const target = Math.floor(el.scrollHeight - el.clientHeight)
+    lastWrittenScrollTopRef.current = target
+    el.scrollTop = target
+  }
+
+  useEffect(() => {
+    pinToBottom()
+  }, [nodes])
+
+  // Re-pin to bottom whenever the scroller's box changes size while
+  // we're still in follow mode:
+  //   - width changes (chat pane resize, window resize) re-wrap text
+  //     so scrollHeight grows but scrollTop doesn't — without this
+  //     re-pin the user would silently end up N px above the bottom.
+  //   - height changes (Composer auto-grows when the user types a
+  //     long draft, shrinking the 1fr scroller) shrink the viewport,
+  //     so following the tail also requires nudging scrollTop.
+  // Skips the synchronous initial fire because the [nodes] effect
+  // above already pinned on mount.
   useEffect(() => {
     const el = scrollerRef.current
     if (!el) return
-    if (followingRef.current) {
-      // Browsers clamp scrollTop to an integer on assign (CSS sub-pixel
-      // layout makes scrollHeight - clientHeight non-integer in some
-      // cases). Pre-clamp ourselves so the value we cache matches the
-      // value the next `scroll` event will read back.
-      const target = Math.floor(el.scrollHeight - el.clientHeight)
-      lastWrittenScrollTopRef.current = target
-      el.scrollTop = target
-    }
-  }, [nodes])
+    let firstFire = true
+    const ro = new ResizeObserver(() => {
+      if (firstFire) {
+        firstFire = false
+        return
+      }
+      pinToBottom()
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const onScroll = () => {
     const el = scrollerRef.current
