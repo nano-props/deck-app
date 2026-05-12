@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "dev": "concurrently -k -n vite,electron -c blue,green \"vite build --watch --mode development\" \"electron .\"",
+    "dev": "concurrently -k -n vite,electron -c blue,green 'vite build --watch --mode development' 'electron .'",
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json",
     "pack:deck": "bun scripts/pack-deck.ts",
