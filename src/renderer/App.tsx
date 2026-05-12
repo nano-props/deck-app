@@ -1,6 +1,13 @@
 // Root layout — replicates the old grid-based shell:
 //   row 1 (32px): Topbar (always)
-//   row 2 (1fr):  mode-specific body (Launcher / EditorLayout / PlayerLayout)
+//   row 2 (1fr):  mode-specific body (Launcher in launcher mode,
+//                  DeckShell in deck mode for both sub-views).
+//
+// In deck mode DeckShell stays mounted across edit/play; entering
+// Play just collapses the chat pane to width 0, which lets the
+// underlying preview BrowserView grow continuously into full width —
+// no React swap, no flicker. See `DeckShell.tsx` for the
+// width-transition details.
 //
 // We keep `data-mode` / `data-subview` / `data-fullscreen` on <body>
 // because some legacy CSS bits (and a couple of platform-specific
@@ -11,8 +18,7 @@ import { TOPBAR_PX } from '#/main/window-layout.ts'
 import { useAppStore } from '#/renderer/stores/app.ts'
 import { Topbar } from '#/renderer/components/Topbar.tsx'
 import { Launcher } from '#/renderer/components/Launcher.tsx'
-import { Editor } from '#/renderer/components/Editor.tsx'
-import { Player } from '#/renderer/components/Player.tsx'
+import { DeckShell } from '#/renderer/components/DeckShell.tsx'
 import { AppMenu } from '#/renderer/components/AppMenu.tsx'
 import { TooltipProvider } from '#/renderer/components/ui/Tooltip.tsx'
 
@@ -39,8 +45,7 @@ export function App() {
         <Topbar />
         <div className="relative min-h-0 min-w-0 overflow-hidden">
           {mode === 'launcher' && <Launcher />}
-          {mode === 'deck' && subView === 'edit' && <Editor />}
-          {mode === 'deck' && subView === 'play' && <Player />}
+          {mode === 'deck' && <DeckShell />}
         </div>
         <AppMenu />
       </div>

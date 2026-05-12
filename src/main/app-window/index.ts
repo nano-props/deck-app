@@ -320,24 +320,24 @@ export class AppWindow {
    *  `handleClosed` only.
    *
    *  Renderer-driven layout: broadcast the new sub-view, the renderer
-   *  flips `data-subview`, CSS reflows chat-pane / preview-pane, a
-   *  ResizeObserver pushes the new preview bounds via
-   *  `setPreviewBounds`, and main re-shows the view at the new rect.
-   *  To cover the ~1 frame IPC+reflow gap during which deckView still
-   *  has its OLD bounds, we hide it here and let setPreviewBounds
-   *  re-show it. The chromeView beneath uses `var(--bg)` (matching the
-   *  deckView's own backing color), so the gap reads as a clean layout
-   *  shift, not a flash. */
+   *  collapses (or expands) the chat pane via a CSS width transition,
+   *  and a ResizeObserver pushes preview bounds every frame so the
+   *  deckView grows continuously into the freed space. We do NOT hide
+   *  the view here — that would cause the deckView to disappear for the
+   *  whole transition. */
   setSubView(next: DeckSubView): void {
     if (this.mode !== 'deck' || !this.deckSession.getDeck()) return
     if (this.subView === next) return
-    this.deckCtrl.hideForLayoutFlip()
     this.subView = next
-    // When entering Play mode, move focus to the deck content so arrow
-    // keys / space work immediately without requiring a manual click.
-    // Edit mode keeps focus in the chrome (chat pane) for typing.
+    // Move focus to the layer the user is about to interact with:
+    // play hands focus to the deck's webContents (so arrow keys /
+    // space drive the slides), edit hands focus back to the chrome
+    // (so typing in the chat input works without a manual click —
+    // Composer's effect then puts the caret in the textarea).
     if (next === 'play') {
       this.deckCtrl.focusContent()
+    } else if (!this.chromeView.webContents.isDestroyed()) {
+      this.chromeView.webContents.focus()
     }
     this.broadcastState()
   }

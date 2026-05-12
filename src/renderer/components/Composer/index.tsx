@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SquarePen, Clock, Paperclip } from 'lucide-react'
 import { useAiStore, canSendSelector } from '#/renderer/stores/ai.ts'
+import { useAppStore } from '#/renderer/stores/app.ts'
 import { useAttachments } from '#/renderer/stores/attachments.ts'
 import { useChatStore } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
@@ -41,12 +42,19 @@ export function Composer() {
   const history = usePromptHistory(text, setText, setPendingCaret)
   const staging = useFileStaging()
 
-  // Focus on mount (entering Edit mode) and re-focus whenever the chat
-  // resets to empty — that's the "New Chat" button, the menu's reset
-  // shortcut, or a session switch. The user almost certainly wants to
-  // start typing immediately after either trigger.
+  // Focus the chat input whenever the user is (or returns to) Edit
+  // mode. Covers initial mount (subView starts at 'edit') and the
+  // play→edit transition — DeckShell stays mounted across sub-views
+  // now, so a mount-only focus would miss the return trip.
+  const subView = useAppStore((s) => s.subView)
   useEffect(() => {
-    inputRef.current?.focus()
+    if (subView === 'edit') inputRef.current?.focus()
+  }, [subView])
+
+  // Re-focus whenever the chat resets to empty — "New Chat" button,
+  // the menu's reset shortcut, or a session switch. The user almost
+  // certainly wants to start typing immediately after either trigger.
+  useEffect(() => {
     const unsub = useChatStore.subscribe((state, prev) => {
       if (state.nodes.length === 0 && prev.nodes.length > 0) {
         inputRef.current?.focus()

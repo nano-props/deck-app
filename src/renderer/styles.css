@@ -115,6 +115,11 @@ html[data-theme='dark'] {
 
 :root {
   color-scheme: light dark;
+
+  /* Shared motion tokens. Material/Apple desktop "standard easing" —
+   * symmetric in/out, used for sidebar collapse and similar reveals. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-pane: 240ms;
 }
 html[data-theme='dark'] {
   color-scheme: dark;

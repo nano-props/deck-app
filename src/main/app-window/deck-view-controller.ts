@@ -192,13 +192,6 @@ export class DeckViewController {
     this.tryReveal()
   }
 
-  /** Hide the deckView for the ~1-frame IPC gap during sub-view flips.
-   *  setBounds re-shows it once the renderer pushes the new rect. */
-  hideForLayoutFlip(): void {
-    if (!this.view || this.view.webContents.isDestroyed()) return
-    this.view.setVisible(false)
-  }
-
   /**
    * Snapshot the deck preview and return it with the bounds we last
    * pushed to the view. AI tool runs that include a preview image in
