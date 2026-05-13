@@ -6,7 +6,7 @@
     <title>Deck — A desktop container for .deck presentations</title>
     <meta
       name="description"
-      content="Deck is a desktop app that opens .deck files — a .deck is just a zipped static website. Author your slides as a web page; Deck runs them like a native app."
+      content="Tell AI what you want to present — get a real deck on your desktop. Yours to keep, offline, in an open format."
     />
     <link
       rel="icon"
@@ -355,6 +355,16 @@
         content: '→';
         font-size: 15px;
         line-height: 1;
+      }
+      .hero-tip {
+        margin-top: 18px;
+        font-size: 13px;
+        color: var(--mute);
+        line-height: 1.5;
+      }
+      .hero-tip .mono {
+        color: var(--ink-2);
+        font-size: 12px;
       }
 
       /* Hero visual: app-window mock showing what Deck opens */
@@ -708,73 +718,6 @@
         }
       }
 
-      /* ===== Features: four tiles ===== */
-      .features {
-        background: var(--surface);
-        border-top: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-      }
-      .features .grid {
-        margin-top: 48px;
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 14px;
-      }
-      .feat {
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 28px 26px 26px;
-        background: var(--bg);
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-        transition:
-          border-color 0.2s,
-          transform 0.2s,
-          box-shadow 0.2s;
-      }
-      .feat:hover {
-        border-color: var(--line-2);
-        transform: translateY(-2px);
-        box-shadow: var(--shadow);
-      }
-      .feat .hd {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .feat .ic {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        background: color-mix(in srgb, var(--accent) 10%, transparent);
-        border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--accent);
-      }
-      .feat .ic svg {
-        width: 18px;
-        height: 18px;
-      }
-      .feat h3 {
-        font-size: 20px;
-      }
-      .feat p {
-        color: var(--ink-2);
-        font-size: 14.5px;
-        line-height: 1.6;
-      }
-      .feat .note {
-        font:
-          500 12px 'JetBrains Mono',
-          monospace;
-        color: var(--mute);
-        padding-top: 12px;
-        border-top: 1px dashed var(--line-2);
-      }
-
       /* ===== How it works: numbered steps ===== */
       .how-lead {
         margin-top: 18px;
@@ -871,8 +814,35 @@
         color: var(--accent);
         font-weight: 600;
       }
+      .skill-bridge .skill-paths {
+        list-style: none;
+        margin: 18px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 52ch;
+      }
+      .skill-bridge .skill-paths li {
+        display: flex;
+        gap: 8px;
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--ink-2);
+        padding-left: 14px;
+        border-left: 2px solid var(--accent);
+      }
+      .skill-bridge .skill-paths b {
+        color: var(--ink);
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      .skill-bridge .skill-paths .mono {
+        color: var(--accent);
+        font-size: 12.5px;
+      }
       .skill-bridge .cta-row {
-        margin-top: 20px;
+        margin-top: 22px;
       }
       .skill-bridge .btn {
         height: 38px;
@@ -1203,9 +1173,6 @@
         .meta .cell:nth-child(4) {
           border-top: 1px solid var(--line);
         }
-        .features .grid {
-          grid-template-columns: 1fr;
-        }
         .steps {
           grid-template-columns: repeat(2, 1fr);
         }
@@ -1314,14 +1281,17 @@
         <div class="hero-head">
           <h1 class="reveal" data-i18n="heroTitle">Slides, reinvented.</h1>
           <p class="lead reveal" data-i18n="heroLead">
-            Tell your AI what you want to present. A few minutes later — open a real deck on your desktop.
+            Tell your AI what you want to present — and open a real deck on your desktop.
           </p>
           <div class="cta-row reveal">
             <a class="btn primary has-arrow" href="https://github.com/nano-props/deck-app/releases" target="_blank" rel="noreferrer">
               <span data-i18n="heroCta1">Get Deck</span>
             </a>
-            <a class="btn ghost" href="#how" data-i18n="heroCta2"> Learn more </a>
+            <a class="btn ghost" href="#skill" data-i18n="heroCta2">See AI in action</a>
           </div>
+          <p class="hero-tip reveal" data-i18n="heroTip">
+            Opens <span class="mono">.deck</span> files and plain <span class="mono">.html</span> — a <span class="mono">.deck</span> is just a zipped web page.
+          </p>
         </div>
 
         <div class="hero-visual reveal">
@@ -1354,12 +1324,12 @@
     <section class="meta" style="padding: 0">
       <div class="wrap">
         <div class="cell"><span class="v stat">1</span><span class="k" data-i18n="metaK1">file to share</span></div>
-        <div class="cell"><span class="v stat">0</span><span class="k" data-i18n="metaK2">accounts needed</span></div>
+        <div class="cell"><span class="v stat">0</span><span class="k" data-i18n="metaK2">Deck accounts to sign up</span></div>
         <div class="cell">
           <span class="v stat">∞</span><span class="k" data-i18n="metaK3">works offline, forever</span>
         </div>
         <div class="cell">
-          <span class="v stat">3</span><span class="k" data-i18n="metaK4">platforms · Mac, Windows, Linux</span>
+          <span class="v stat">2</span><span class="k" data-i18n="metaK4">platforms · Mac &amp; Windows</span>
         </div>
       </div>
     </section>
@@ -1450,111 +1420,11 @@
       </div>
     </section>
 
-    <!-- ===== Features ===== -->
-    <section class="features" id="features">
-      <div class="wrap">
-        <div class="kicker reveal"><b data-i18n="s2Kicker">02</b> <span data-i18n="s2KickerSub">Why</span></div>
-        <h2 class="reveal section-h2" data-i18n="s2Title">A deck should feel like a deck.</h2>
-
-        <div class="grid">
-          <div class="feat reveal">
-            <div class="hd">
-              <span class="ic" aria-hidden="true">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <path d="M3 9h18" />
-                </svg>
-              </span>
-            </div>
-            <h3 data-i18n="f1Title">Double-click. Done.</h3>
-            <p data-i18n="f1Desc">
-              No browser tab. No loading spinner. It opens in its own window, full-screen ready, just like Keynote.
-            </p>
-            <div class="note" data-i18n="f1Note">Mac · Windows · Linux</div>
-          </div>
-
-          <div class="feat reveal">
-            <div class="hd">
-              <span class="ic" aria-hidden="true">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" />
-                </svg>
-              </span>
-            </div>
-            <h3 data-i18n="f2Title">From outline to finished deck.</h3>
-            <p data-i18n="f2Desc">
-              Performance review, product launch, class lecture, wedding toast — describe it, and your AI turns it into
-              slides you can actually walk on stage with.
-            </p>
-            <div class="note" data-i18n="f2Note">Works with Claude, ChatGPT, and more</div>
-          </div>
-
-          <div class="feat reveal">
-            <div class="hd">
-              <span class="ic" aria-hidden="true">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M4 7h16M4 12h16M4 17h10" />
-                </svg>
-              </span>
-            </div>
-            <h3 data-i18n="f3Title">Anything you can imagine.</h3>
-            <p data-i18n="f3Desc">
-              Animations, videos, live charts, 3D models, tiny games — if the web can do it, your deck can do it.
-            </p>
-            <div class="note" data-i18n="f3Note">Not boxed into "slides"</div>
-          </div>
-
-          <div class="feat reveal">
-            <div class="hd">
-              <span class="ic" aria-hidden="true">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4z" />
-                </svg>
-              </span>
-            </div>
-            <h3 data-i18n="f4Title">Your files stay yours.</h3>
-            <p data-i18n="f4Desc">
-              No account. No upload. No one watching. Your deck sits on your disk — like a document should.
-            </p>
-            <div class="note" data-i18n="f4Note">Private by default</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- ===== How it works ===== -->
     <section class="how" id="how">
       <div class="wrap">
         <div class="kicker reveal">
-          <b data-i18n="s3Kicker">03</b> <span data-i18n="s3KickerSub">How it works</span>
+          <b data-i18n="s3Kicker">01</b> <span data-i18n="s3KickerSub">How it works</span>
         </div>
         <h2 class="reveal section-h2" data-i18n="s3Title">Three steps, from idea to stage.</h2>
         <p class="how-lead reveal" data-i18n="s3Lead">
@@ -1574,7 +1444,7 @@
             <span class="n" data-i18n="s3S2N">STEP 02</span>
             <h4 data-i18n="s3S2Title">AI builds the slides.</h4>
             <p data-i18n="s3S2Desc">
-              A few minutes later, a finished deck lands on your desktop — not a link, not a tab in the browser. Yours
+              When it's done, a finished deck lands on your disk — not a link, not a tab in the browser. Yours
               to keep.
             </p>
           </div>
@@ -1602,6 +1472,16 @@
             Tell it what you're presenting, who it's for, how long it should be. Paste in your notes. The AI does the
             layout, the visuals, the polish — and hands you back a finished deck.
           </p>
+          <ul class="skill-paths">
+            <li>
+              <b data-i18n="skillPath1Name">In Deck.</b>
+              <span data-i18n="skillPath1Desc">Open the built-in editor — chat on the left, your deck live-reloading on the right.</span>
+            </li>
+            <li>
+              <b data-i18n="skillPath2Name">In your AI of choice.</b>
+              <span data-i18n="skillPath2Desc">Use the <span class="mono">create-deck</span> skill in Claude Code, Cursor, or any agent — it hands you back a finished <span class="mono">.deck</span>.</span>
+            </li>
+          </ul>
           <div class="cta-row">
             <a
               class="btn primary has-arrow"
@@ -1609,7 +1489,7 @@
               target="_blank"
               rel="noreferrer"
             >
-              <span data-i18n="skillCta1">See how it works</span>
+              <span data-i18n="skillCta1">Get the skill</span>
             </a>
           </div>
         </div>
@@ -1623,13 +1503,13 @@
           <div class="chat-msg ai">
             <span class="chat-who" data-i18n="chatWho2">AI</span>
             <span class="chat-body" data-i18n="chatBody2"
-              >On it — outlining the story, picking colors, drafting the slides. Two minutes.</span
+              >On it — outlining the story, picking colors, drafting the slides.</span
             >
           </div>
           <div class="chat-msg sys">
             <span class="chat-who" data-i18n="chatWho3">Done</span>
             <span class="chat-body" data-i18n="chatBody3">
-              <b>coffee-launch.deck</b> is on your desktop. Double-click to present.
+              <b>coffee-launch.deck</b> is ready. Double-click to present.
             </span>
           </div>
         </div>
@@ -1640,7 +1520,7 @@
     <section class="security" id="security">
       <div class="wrap">
         <div class="kicker reveal">
-          <b data-i18n="s4Kicker">04</b> <span data-i18n="s4KickerSub">Safe &amp; private</span>
+          <b data-i18n="s4Kicker">02</b> <span data-i18n="s4KickerSub">Safe &amp; private</span>
         </div>
         <h2 class="reveal section-h2" data-i18n="s4Title" style="max-width: 24ch">Built to be trusted, by default.</h2>
 
@@ -1650,7 +1530,8 @@
             <div>
               <h4 data-i18n="sec1Title">It stays on your computer.</h4>
               <p data-i18n="sec1Desc">
-                No uploads. No servers. No analytics. Your deck never leaves your machine unless you send it yourself.
+                No uploads, no servers, no analytics. A deck can't phone home or load a tracker —
+                what's in the file is all there is.
               </p>
             </div>
           </div>
@@ -1667,16 +1548,6 @@
           <div class="sec-item">
             <span class="mk">3</span>
             <div>
-              <h4 data-i18n="sec3Title">No network, unless you ask.</h4>
-              <p data-i18n="sec3Desc">
-                By default, a deck can't phone home. Period. If it ever needs to, you'll know, and you'll be the one to
-                decide.
-              </p>
-            </div>
-          </div>
-          <div class="sec-item">
-            <span class="mk">4</span>
-            <div>
               <h4 data-i18n="sec4Title">Open and inspectable.</h4>
               <p data-i18n="sec4Desc">
                 A <span class="mono">.deck</span> is not a black box — it's the web, zipped. You can always look inside
@@ -1692,7 +1563,7 @@
     <section class="compare" id="compare">
       <div class="wrap">
         <div class="kicker reveal">
-          <b data-i18n="s5Kicker">05</b> <span data-i18n="s5KickerSub">How we're different</span>
+          <b data-i18n="s5Kicker">03</b> <span data-i18n="s5KickerSub">How we're different</span>
         </div>
         <h2 class="reveal section-h2" data-i18n="s5Title">The best of every world.</h2>
 
@@ -1700,16 +1571,16 @@
           <thead>
             <tr>
               <th></th>
-              <th data-i18n="cmpH1">Gamma / Tome</th>
+              <th data-i18n="cmpH1">Gamma / Beautiful.ai</th>
               <th data-i18n="cmpH2">Keynote / PPT</th>
               <th class="self" data-i18n="cmpH4">Deck</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <th scope="row" data-i18n="cmpR1">Made by AI</th>
+              <th scope="row" data-i18n="cmpR1">AI-first authoring</th>
               <td data-label-i18n="cmpH1"><span class="y" data-i18n="cmpYes">Yes</span></td>
-              <td data-label-i18n="cmpH2"><span class="n" data-i18n="cmpNo">No</span></td>
+              <td data-label-i18n="cmpH2" data-i18n="cmpLow">Add-on</td>
               <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
             </tr>
             <tr>
@@ -1719,15 +1590,9 @@
               <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
             </tr>
             <tr>
-              <th scope="row" data-i18n="cmpR3">Double-click to open</th>
+              <th scope="row" data-i18n="cmpR4">Web-native interactivity (3D, demos, code)</th>
               <td data-label-i18n="cmpH1"><span class="n" data-i18n="cmpNo">No</span></td>
-              <td data-label-i18n="cmpH2"><span class="y" data-i18n="cmpYes">Yes</span></td>
-              <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
-            </tr>
-            <tr>
-              <th scope="row" data-i18n="cmpR4">Animations, video, anything</th>
-              <td data-label-i18n="cmpH1" data-i18n="cmpLow">Limited</td>
-              <td data-label-i18n="cmpH2" data-i18n="cmpLow">Limited</td>
+              <td data-label-i18n="cmpH2"><span class="n" data-i18n="cmpNo">No</span></td>
               <td class="self" data-label-i18n="cmpH4"><span class="y" data-i18n="cmpYes">Yes</span></td>
             </tr>
             <tr>
@@ -1773,7 +1638,6 @@
       <div class="wrap">
         <div class="brand">
           <span>Deck</span>
-          <span class="v mono">v0.1</span>
         </div>
         <div class="links">
           <a href="#whatis" data-i18n="navWhat">What's a Deck</a>
@@ -1796,16 +1660,18 @@
           navCta: 'GitHub →',
           heroTitle: 'Slides, reinvented.',
           heroLead:
-            'Tell your AI what you want to present. A few minutes later — open a real deck on your desktop.',
+            'Tell your AI what you want to present — and open a real deck on your desktop.',
           heroCta1: 'Get Deck',
-          heroCta2: 'Learn more',
+          heroCta2: 'See AI in action',
+          heroTip:
+            'Opens <span class="mono">.deck</span> files and plain <span class="mono">.html</span> — a <span class="mono">.deck</span> is just a zipped web page.',
           mockTitle: 'Q3 <em>Performance Review</em>.',
           mockBody: "Where we stood, where we're going — 12 slides from a single prompt.",
 
           metaK1: 'file to share',
-          metaK2: 'accounts needed',
+          metaK2: 'Deck accounts to sign up',
           metaK3: 'works offline, forever',
-          metaK4: 'platforms · Mac, Windows, Linux',
+          metaK4: 'platforms · Mac &amp; Windows',
 
           insideKicker: 'What goes in',
           insideTitle: 'Put anything on a slide.',
@@ -1835,25 +1701,7 @@
           k6: '<b>Works too</b> — any presenter remote, plug and go.',
           kLNote: 'Same as Keynote, PowerPoint, Google Slides.',
 
-          s2Kicker: '02',
-          s2KickerSub: 'Why',
-          s2Title: 'A deck should feel like a deck.',
-          f1Title: 'Double-click. Done.',
-          f1Desc:
-            'No browser tab. No loading spinner. It opens in its own window, full-screen ready, just like Keynote.',
-          f1Note: 'Mac · Windows · Linux',
-          f2Title: 'From outline to finished deck.',
-          f2Desc:
-            "Performance review, product launch, class lecture, wedding toast — describe it, and your AI turns it into slides you can actually walk on stage with.",
-          f2Note: 'Works with Claude, ChatGPT, and more',
-          f3Title: 'Anything you can imagine.',
-          f3Desc: 'Animations, videos, live charts, 3D models, tiny games — if the web can do it, your deck can do it.',
-          f3Note: 'Not boxed into "slides"',
-          f4Title: 'Your files stay yours.',
-          f4Desc: 'No account. No upload. No one watching. Your deck sits on your disk — like a document should.',
-          f4Note: 'Private by default',
-
-          s3Kicker: '03',
+          s3Kicker: '01',
           s3KickerSub: 'How it works',
           s3Title: 'Three steps, from idea to stage.',
           s3Lead: "Nothing to learn. Nothing to set up. Tell your AI what you want — and you're done.",
@@ -1864,7 +1712,7 @@
           s3S2N: 'STEP 02',
           s3S2Title: 'AI builds the slides.',
           s3S2Desc:
-            "A few minutes later, a finished deck lands on your desktop — not a link, not a tab in the browser. Yours to keep.",
+            "When it's done, a finished deck lands on your disk — not a link, not a tab in the browser. Yours to keep.",
           s3S3N: 'STEP 03',
           s3S3Title: 'Double-click. Present.',
           s3S3Desc:
@@ -1874,46 +1722,48 @@
           skillTitle: 'Just talk to your AI, like you would a teammate.',
           skillDesc:
             "Tell it what you're presenting, who it's for, how long it should be. Paste in your notes. The AI does the layout, the visuals, the polish — and hands you back a finished deck.",
-          skillCta1: 'See how it works',
+          skillPath1Name: 'In Deck.',
+          skillPath1Desc:
+            'Open the built-in editor — chat on the left, your deck live-reloading on the right.',
+          skillPath2Name: 'In your AI of choice.',
+          skillPath2Desc:
+            'Use the <span class="mono">create-deck</span> skill in Claude Code, Cursor, or any agent — it hands you back a finished <span class="mono">.deck</span>.',
+          skillCta1: 'Get the skill',
           chatWho1: 'You',
           chatBody1:
             'Make me a 10-slide deck for our coffee app launch. Friendly tone, lots of product shots.',
           chatWho2: 'AI',
-          chatBody2: 'On it — outlining the story, picking colors, drafting the slides. Two minutes.',
+          chatBody2: 'On it — outlining the story, picking colors, drafting the slides.',
           chatWho3: 'Done',
-          chatBody3: '<b>coffee-launch.deck</b> is on your desktop. Double-click to present.',
+          chatBody3: '<b>coffee-launch.deck</b> is ready. Double-click to present.',
 
-          s4Kicker: '04',
+          s4Kicker: '02',
           s4KickerSub: 'Safe & private',
           s4Title: 'Built to be trusted, by default.',
           sec1Title: 'It stays on your computer.',
           sec1Desc:
-            'No uploads. No servers. No analytics. Your deck never leaves your machine unless you send it yourself.',
+            "No uploads, no servers, no analytics. A deck can't phone home or load a tracker — what's in the file is all there is.",
           sec2Title: 'Opens in its own box.',
           sec2Desc:
             "Each deck runs in an isolated window. It can't read your files or peek at other apps — even if someone sends you a shady one.",
-          sec3Title: 'No network, unless you ask.',
-          sec3Desc:
-            "By default, a deck can't phone home. Period. If it ever needs to, you'll know, and you'll be the one to decide.",
           sec4Title: 'Open and inspectable.',
           sec4Desc:
             'A <span class="mono">.deck</span> is not a black box — it\'s the web, zipped. You can always look inside and see exactly what it does.',
 
-          s5Kicker: '05',
+          s5Kicker: '03',
           s5KickerSub: "How we're different",
           s5Title: 'The best of every world.',
-          cmpH1: 'Gamma / Tome',
+          cmpH1: 'Gamma / Beautiful.ai',
           cmpH2: 'Keynote / PPT',
           cmpH4: 'Deck',
-          cmpR1: 'Made by AI',
+          cmpR1: 'AI-first authoring',
           cmpR2: 'Your file, your disk',
-          cmpR3: 'Double-click to open',
-          cmpR4: 'Animations, video, anything',
+          cmpR4: 'Web-native interactivity (3D, demos, code)',
           cmpR5: 'Works offline',
           cmpR6: 'Open format',
           cmpYes: 'Yes',
           cmpNo: 'No',
-          cmpLow: 'Limited',
+          cmpLow: 'Add-on',
 
           endTitle: 'Ready <span class="accent">when you are</span>.',
           endCta1: 'Get Deck',
@@ -1928,16 +1778,18 @@
           navHow: '怎么用',
           navCta: 'GitHub →',
           heroTitle: '幻灯片，重新发明。',
-          heroLead: '告诉 AI 你想讲什么。几分钟后 —— 一份能直接上台的演示，就在你的桌面上。',
+          heroLead: '告诉 AI 你想讲什么 —— 一份能直接上台的演示，就在你的桌面上。',
           heroCta1: '获取 Deck',
-          heroCta2: '了解更多',
+          heroCta2: '看看 AI 怎么做',
+          heroTip:
+            '能打开 <span class="mono">.deck</span> 文件，也能打开普通 <span class="mono">.html</span> —— 一份 <span class="mono">.deck</span> 就是一段打包好的网页。',
           mockTitle: 'Q3 <em>业绩汇报</em>。',
           mockBody: '我们走到哪了，下一步去哪 —— 一句话，做出 12 页。',
 
           metaK1: '个文件，发给谁都能打开',
-          metaK2: '个账号，什么都不用注册',
+          metaK2: '个 Deck 账号要注册',
           metaK3: '离线可用，没有过期',
-          metaK4: '个平台 · Mac、Windows、Linux',
+          metaK4: '个平台 · Mac、Windows',
 
           insideKicker: '能放什么',
           insideTitle: '一页幻灯片，能装下你的故事。',
@@ -1967,23 +1819,7 @@
           k6: '<b>也支持</b> · 任何演讲遥控器，插上就能用。',
           kLNote: '和 Keynote、PowerPoint、Google Slides 完全一样。',
 
-          s2Kicker: '02',
-          s2KickerSub: '为什么',
-          s2Title: '演示该有的样子。',
-          f1Title: '双击，就好了。',
-          f1Desc: '不是一个浏览器标签页。没有加载转圈。一打开就是全屏的窗口，和 Keynote 一样干脆。',
-          f1Note: 'Mac · Windows · Linux 都能用',
-          f2Title: '从一个想法，到一份完整的 Deck。',
-          f2Desc: '业绩汇报、产品发布、课堂讲义、婚礼致辞 —— 你说一下场景，AI 帮你做成真正能上台讲的幻灯片。',
-          f2Note: '支持 Claude、ChatGPT 等',
-          f3Title: '你能想到的，它都能做。',
-          f3Desc: '动画、视频、实时图表、3D 模型、小游戏 —— 网页能做的，你的 Deck 都能做。',
-          f3Note: '不只是「一页一页」',
-          f4Title: '文件永远是你自己的。',
-          f4Desc: '不用账号、不会上传、没人在盯着。你的 Deck 就躺在你硬盘里 —— 本该如此。',
-          f4Note: '默认就是私密的',
-
-          s3Kicker: '03',
+          s3Kicker: '01',
           s3KickerSub: '怎么用',
           s3Title: '三步，从想法到讲台。',
           s3Lead: '什么都不用学，也什么都不用装。告诉 AI 你要什么 —— 就完事了。',
@@ -1993,7 +1829,7 @@
           s3S2N: 'STEP 02',
           s3S2Title: 'AI 做好整份幻灯片。',
           s3S2Desc:
-            '几分钟后，一份完成的 Deck 出现在你桌面上 —— 不是链接，不是浏览器标签页。是真正属于你的一份文件。',
+            '做好之后，一份完整的 Deck 出现在你硬盘里 —— 不是链接，不是浏览器标签页。是真正属于你的一份文件。',
           s3S3N: 'STEP 03',
           s3S3Title: '双击开讲。',
           s3S3Desc:
@@ -2003,42 +1839,45 @@
           skillTitle: '像跟同事说话一样，告诉 AI 就行。',
           skillDesc:
             '说一下你要讲的内容、面对的是谁、大概多长。把笔记贴进去 —— 排版、配图、调色，AI 都替你搞定，最后给你一份做好的 Deck。',
-          skillCta1: '看看怎么用',
+          skillPath1Name: '在 Deck 里。',
+          skillPath1Desc: '打开内置编辑器 —— 左边和 AI 对话，右边实时预览你的 Deck。',
+          skillPath2Name: '在你常用的 AI 里。',
+          skillPath2Desc:
+            '在 Claude Code、Cursor 或任何 agent 里用 <span class="mono">create-deck</span> skill —— 直接给你一份做好的 <span class="mono">.deck</span>。',
+          skillCta1: '获取 Skill',
           chatWho1: '你',
           chatBody1: '帮我给新的咖啡 App 发布会做一份 10 页的 Deck。语气活泼一点，多放点产品图。',
           chatWho2: 'AI',
-          chatBody2: '收到 —— 我先理一下故事线，挑配色，把每一页画出来。两分钟。',
+          chatBody2: '收到 —— 我先理一下故事线，挑配色，把每一页画出来。',
           chatWho3: '完成',
-          chatBody3: '<b>coffee-launch.deck</b> 已经放到你桌面上了。双击就能开讲。',
+          chatBody3: '<b>coffee-launch.deck</b> 做好了。双击就能开讲。',
 
-          s4Kicker: '04',
+          s4Kicker: '02',
           s4KickerSub: '安全 & 私密',
           s4Title: '默认就值得信任。',
           sec1Title: '它就在你电脑里。',
-          sec1Desc: '不上传、不回传、不埋点。除非你自己发给别人，否则你的 Deck 不会离开你的设备。',
+          sec1Desc:
+            '不上传、不回传、不埋点。Deck 不能偷偷连网，也不能加载追踪器 —— 文件里有什么，就只有什么。',
           sec2Title: '跑在自己的小盒子里。',
           sec2Desc: '每份 Deck 都在独立的窗口里运行。就算别人发了一个可疑的 Deck，它也读不了你的文件、碰不到别的应用。',
-          sec3Title: '不联网，除非你同意。',
-          sec3Desc: '默认情况下，Deck 不能偷偷连网。就这么定的。哪天真的需要联网，也会明确问你。',
           sec4Title: '开放，可检查。',
           sec4Desc:
             '一份 <span class="mono">.deck</span> 不是黑盒 —— 它就是一段打包好的网页。你随时可以打开看看里面到底在做什么。',
 
-          s5Kicker: '05',
+          s5Kicker: '04',
           s5KickerSub: '我们有什么不一样',
           s5Title: '把每一类的好处都拿过来。',
-          cmpH1: 'Gamma / Tome',
+          cmpH1: 'Gamma / Beautiful.ai',
           cmpH2: 'Keynote / PPT',
           cmpH4: 'Deck',
-          cmpR1: 'AI 帮你做',
+          cmpR1: 'AI 是主角',
           cmpR2: '文件在自己电脑里',
-          cmpR3: '双击打开',
-          cmpR4: '动画、视频、任意交互',
+          cmpR4: '原生 Web 交互（3D、demo、代码）',
           cmpR5: '离线可用',
           cmpR6: '开放格式',
           cmpYes: '可以',
           cmpNo: '不行',
-          cmpLow: '有限',
+          cmpLow: '附加功能',
 
           endTitle: '准备好了，<span class="accent">就来</span>。',
           endCta1: '获取 Deck',
