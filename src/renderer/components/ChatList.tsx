@@ -148,8 +148,30 @@ function PendingDots() {
   )
 }
 
+// Routes between empty-state variants based on the bound session's
+// identity. The CLI-resumed branch exists because Claude Code stores
+// its transcript under ~/.claude and we don't mirror it — without an
+// explanation users assume their history vanished. Other providers
+// replay their transcript via `deck:history_replay`, so an empty list
+// for them really does mean "fresh chat" and the default copy applies.
 function ChatEmpty() {
+  const bound = useAiStore((s) => s.boundSession)
+  if (bound?.provider === 'claude-cli' && bound.resumed) {
+    return <ChatEmptyCliResumed />
+  }
+  return <ChatEmptyDefault />
+}
+
+function ChatEmptyDefault() {
   const t = useI18n((s) => s.t)
+  // Pack+CLI is the one combination where the History button never
+  // appears (transcripts live under tmpdir-keyed paths in
+  // ~/.claude/projects, unreachable on reopen). Without an
+  // explanation users assume the feature is broken or that their
+  // chats vanished. One-liner footnote covers it.
+  const isPackCli = useAiStore(
+    (s) => s.boundSession?.provider === 'claude-cli' && !s.boundSession?.resumeSurvivesReopen,
+  )
   return (
     <div className="px-1 py-4 text-[13px] leading-relaxed text-ink-3">
       <div className="mb-2.5 text-[13px] font-semibold text-ink">{t('chat.empty.title')}</div>
@@ -159,7 +181,18 @@ function ChatEmpty() {
             we trust the dictionary string and dangerously-set it. */}
         <li dangerouslySetInnerHTML={{ __html: t('chat.empty.shortcuts') }} />
         <li>{t('chat.empty.dropTip')}</li>
+        {isPackCli && <li>{t('chat.empty.cliPackHint')}</li>}
       </ul>
+    </div>
+  )
+}
+
+function ChatEmptyCliResumed() {
+  const t = useI18n((s) => s.t)
+  return (
+    <div className="px-1 py-4 text-[13px] leading-relaxed text-ink-3">
+      <div className="mb-2.5 text-[13px] font-semibold text-ink">{t('chat.empty.cliResumed.title')}</div>
+      <div>{t('chat.empty.cliResumed.body')}</div>
     </div>
   )
 }

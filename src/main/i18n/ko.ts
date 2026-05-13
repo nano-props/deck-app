@@ -120,6 +120,11 @@ export const ko: Record<DictKey, string> = {
   'chat.empty.shortcuts':
     '<span class="kbd">⏎</span> 보내기 · <span class="kbd">⇧⏎</span> 줄바꿈 · <span class="kbd">Esc</span> 중단',
   'chat.empty.dropTip': '이미지, 동영상, 폰트를 끌어다 놓거나 붙여넣어 첨부하세요.',
+  'chat.empty.cliResumed.title': '이전 Claude Code 대화를 이어갑니다',
+  'chat.empty.cliResumed.body':
+    'Claude Code 는 이 대화의 전체 컨텍스트를 그대로 기억하고 있습니다. 이전 메시지는 Deck 에 아직 표시되지 않습니다. 다음 메시지를 보내면 이전 내용을 바탕으로 Claude 가 답변합니다.',
+  'chat.empty.cliPackHint':
+    '.deck 파일의 Claude Code 대화는 열 때마다 새로 시작됩니다 — 폴더 형식의 deck 에서만 대화 기록이 유지됩니다.',
 
   // ---- Editor: composer ---------------------------------------------------
   'composer.placeholder': 'Deck AI 에게…',

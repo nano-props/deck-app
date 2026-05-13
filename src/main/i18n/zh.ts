@@ -119,6 +119,10 @@ export const zh: Record<DictKey, string> = {
   'chat.empty.shortcuts':
     '<span class="kbd">⏎</span> 发送 · <span class="kbd">⇧⏎</span> 换行 · <span class="kbd">Esc</span> 停止',
   'chat.empty.dropTip': '拖入或粘贴图片、视频、字体即可附加。',
+  'chat.empty.cliResumed.title': '已回到上一段 Claude Code 对话',
+  'chat.empty.cliResumed.body':
+    'Claude Code 仍记得这个对话的全部上下文，Deck 暂不展示历史消息。继续发送消息即可，Claude 会基于之前的内容回复。',
+  'chat.empty.cliPackHint': '.deck 文件中的 Claude Code 对话每次都是新会话——只有文件夹形式的 deck 会保留历史。',
 
   // ---- Editor: composer ---------------------------------------------------
   'composer.placeholder': '问 Deck AI…',

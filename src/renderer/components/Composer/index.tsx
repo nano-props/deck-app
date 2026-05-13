@@ -34,6 +34,14 @@ export function Composer() {
   const setError = useAiStore((s) => s.setError)
   const canSend = useAiStore(canSendSelector)
   const hasHistory = useAiStore((s) => s.hasHistory)
+  // Capability flag pushed from main alongside the bound session.
+  // Null means we haven't received `deck:session_bound` yet — keep
+  // the button slot occupied but invisible during that window so the
+  // toolbar doesn't shift when bind completes (avoids the "button
+  // appears then disappears" flicker on Pack+CLI decks). Once bound,
+  // `resumeSurvivesReopen` is the source of truth: pi-agent backends
+  // always true, cwd-keyed CLI providers only true for Source decks.
+  const showHistoryButton = useAiStore((s) => s.boundSession?.resumeSurvivesReopen ?? null)
   const attachments = useAttachments()
   const hasNodes = useChatStore((s) => s.nodes.length > 0)
 
@@ -409,15 +417,28 @@ export function Composer() {
               <SquarePen />
             </IconButton>
           </Tooltip>
-          <ChatHistoryPopover
-            tooltipContent={t('composer.history.title')}
-            disabled={!hasHistory}
-            trigger={
-              <IconButton size="lg" aria-label={t('composer.history.aria')} disabled={!hasHistory}>
-                <Clock />
-              </IconButton>
-            }
-          />
+          {/* Visibility states:
+                - showHistoryButton === null  → invisible placeholder
+                  (keeps toolbar layout stable while we wait for the
+                  first session_bound; avoids flicker)
+                - showHistoryButton === true  → real button
+                - showHistoryButton === false → not rendered at all
+                  (Pack+CLI: no transcript persistence, button would
+                  always be empty) */}
+          {showHistoryButton === null && (
+            <span className="inline-block size-8" aria-hidden="true" />
+          )}
+          {showHistoryButton === true && (
+            <ChatHistoryPopover
+              tooltipContent={t('composer.history.title')}
+              disabled={!hasHistory}
+              trigger={
+                <IconButton size="lg" aria-label={t('composer.history.aria')} disabled={!hasHistory}>
+                  <Clock />
+                </IconButton>
+              }
+            />
+          )}
           <Tooltip content={t('composer.attach.title')}>
             <IconButton
               size="lg"

@@ -121,6 +121,11 @@ export const en = {
   'chat.empty.shortcuts':
     '<span class="kbd">⏎</span> send · <span class="kbd">⇧⏎</span> newline · <span class="kbd">Esc</span> stop',
   'chat.empty.dropTip': 'Drop or paste images, video, or fonts to attach.',
+  'chat.empty.cliResumed.title': 'Resumed your previous Claude Code chat',
+  'chat.empty.cliResumed.body':
+    "Claude Code still has the full context of this conversation. The transcript isn't shown here yet — just send your next message and Claude will reply with the prior context in mind.",
+  'chat.empty.cliPackHint':
+    'Claude Code conversations in .deck files start fresh each open — chat history is only kept for folder-based decks.',
 
   // ---- Editor: composer ---------------------------------------------------
   'composer.placeholder': 'Ask Deck AI…',
