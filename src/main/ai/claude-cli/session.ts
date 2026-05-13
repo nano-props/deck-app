@@ -3,10 +3,12 @@ import type { Readable } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { watch, type FSWatcher } from 'node:fs'
 import type { WebContents } from 'electron'
-import type { ChatUiContext, DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
-import { detectClaudeCli } from '#/main/ai/cli/detect.ts'
-import { enhancedPath } from '#/main/ai/cli/path.ts'
-import { deriveSummary, saveSession } from '#/main/ai/session-store.ts'
+import type { ChatUiContext, DeckAiSession, DeckOnlyAiEvent, SendResult, SessionParams } from '#/main/ai/session/types.ts'
+import { detectClaudeCli } from '#/main/ai/claude-cli/detect.ts'
+import { enhancedPath } from '#/main/ai/claude-cli/path.ts'
+import { DeckError } from '#/main/ai/errors.ts'
+import { deriveSummary, promoteToActive, saveSession } from '#/main/ai/session-store.ts'
+import type { DeckSessionRecord } from '#/main/ai/session-store.ts'
 
 /**
  * Renderer-side AI event shape (matches src/renderer/deck.d.ts:AiEvent).
@@ -15,6 +17,10 @@ import { deriveSummary, saveSession } from '#/main/ai/session-store.ts'
  * that we can't fill in from the CLI's stream-json output. The renderer
  * only consumes `{role, timestamp, content}` (see ai-events.ts), so a
  * structurally-narrower partial is what's actually wire-compatible.
+ *
+ * The `deck:*` half is shared via `DeckOnlyAiEvent` — adding a new deck
+ * event type only needs to land in session/types.ts; this union picks
+ * it up for free and the type checker pins the wiring.
  */
 type CliEmittedEvent =
   | { type: 'agent_start' }
@@ -24,10 +30,7 @@ type CliEmittedEvent =
   | { type: 'message_end'; message: { role: 'assistant'; timestamp: number; content: unknown[] } }
   | { type: 'tool_execution_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_execution_end'; toolCallId: string; toolName: string; result: unknown; isError: boolean }
-  | { type: 'deck:file_change'; path: string }
-  | { type: 'deck:fatal'; error: string }
-  | { type: 'deck:session_reset' }
-  | { type: 'deck:context_usage'; tokens: number; contextWindow: number }
+  | DeckOnlyAiEvent
 
 /**
  * Local Claude Code CLI adapter.
@@ -46,13 +49,32 @@ type CliEmittedEvent =
  * `record.providerSessionId`) and pass it as `--session-id` on the
  * first turn / `--resume <uuid>` afterwards so Claude restores the
  * prior transcript. The CLI persists the JSONL itself under
- * `~/.claude/projects/<hash>/<uuid>.jsonl`; we don't mirror it into
- * `userData/chats/`. As a consequence, switching back to a CLI deck
- * session via the history popover continues the Claude conversation
- * (next `--resume` sees prior context) but the chat panel comes up
- * empty — we have no transcript on hand to replay. Acceptable v1
- * trade-off; documenting Claude's transcripts back into our UI would
- * mean parsing Claude's stream-json format from the JSONL on disk.
+ * `~/.claude/projects/<hash>/<uuid>.jsonl` where `<hash>` is derived
+ * from cwd; we don't mirror it into `userData/chats/`. Two consequences
+ * fall out of that:
+ *
+ *   1. Source decks (stable directory cwd) round-trip fine: switching
+ *      back to a CLI deck session via the history popover continues
+ *      the Claude conversation (next `--resume` sees prior context),
+ *      but the chat panel comes up empty — we have no transcript on
+ *      hand to replay. The `chat.empty.cliResumed` empty-state copy
+ *      (rendered when `boundSession.resumed` is true for a CLI
+ *      session) explains this to the user.
+ *
+ *   2. Pack decks (`.deck` zips) extract to a fresh tmpdir each open,
+ *      so the cwd hash changes and the prior `<uuid>.jsonl` becomes
+ *      unreachable. The session manager passes `persistResume: false`
+ *      for those, which suppresses both the `--resume` attempt AND
+ *      `saveSession` — pack+CLI sessions never appear in the history
+ *      popover. The Composer additionally hides the History button in
+ *      that combination so there's no permanently-empty affordance.
+ *
+ * Known trade-off: those tmpdir-keyed JSONLs become orphans under
+ * `~/.claude/projects/-private-var-folders-...-deck-app-<uuid>/` once
+ * the deck closes. We don't sweep them — Claude Code owns its own
+ * storage layout and reaching across processes to delete is risky
+ * (race conditions, version drift). Users can `rm -rf` those dirs by
+ * hand if disk usage becomes a concern.
  *
  * Tools: we let the CLI use its own builtin tool surface (Read, Write,
  * Edit, Bash, Grep, Glob, ...) restricted to the deck rootDir via `cwd`.
@@ -134,33 +156,40 @@ interface TurnState {
 }
 
 export async function createClaudeCliSession(params: SessionParams): Promise<DeckAiSession> {
-  const { sender, rootDir, deckName, chatKey, record } = params
+  const { sender, rootDir, resumeSurvivesReopen, deckName, chatKey, record } = params
 
   // Verify binary is available before we hand back a session — surface
   // a synchronous error rather than letting the first send fail with
   // ENOENT after the user has already typed a message.
   const detected = await detectClaudeCli()
   if (!detected.found) {
-    // This Error only ends up in main-process console.warn (see
-    // ai-session-manager.ts) — the user-facing "install the CLI" prompt
-    // comes from the readiness check + composer.disabled.no-cli i18n
-    // string. We keep the message English for log readability.
-    throw new Error(detected.error || 'Claude Code CLI not found in PATH or common install locations')
+    // The `code` is what ai-session-manager's localizeFatal switches on
+    // to pick the right i18n string for the renderer. The fallback
+    // message here is what shows up in main-process logs and in any
+    // unrecognized-code path — keep it informative for bug reports.
+    throw new DeckError(
+      'CLI_NOT_FOUND',
+      detected.error || 'Claude Code CLI not found in PATH or common install locations',
+    )
   }
 
-  // Live mutable copy of the deck-session record so the adapter can
-  // update lastUsedMs / providerSessionId / summary on each turn
-  // without forcing the manager to re-pass a refreshed record.
-  const liveRecord = { ...record }
+  // Live deck-session record. Promoted draft → active (via
+  // `promoteToActive`) on first successful turn for resume-supported
+  // decks. Held in a mutable holder because the discriminated union
+  // forbids in-place mutation of a draft into an active.
+  const liveRecord: { current: DeckSessionRecord } = { current: record }
 
-  // For CLI sessions, providerSessionId holds Claude Code's own
-  // --session-id uuid. When the deck-session has one (resumed from
-  // disk), pass it via --resume so Claude restores the prior
-  // transcript. When null (brand-new deck-session), mint a uuid and
-  // use --session-id on the first turn; we write it back to the
-  // record after that turn succeeds.
-  const sessionIdHolder = { current: liveRecord.providerSessionId ?? randomUUID() }
-  let firstTurn = liveRecord.providerSessionId === null
+  // For CLI sessions, an active record's providerSessionId holds
+  // Claude Code's own --session-id uuid. When the deck-session is
+  // active, pass that uuid via --resume so Claude restores the prior
+  // transcript. When draft (brand-new deck-session, or a Pack deck
+  // the manager demoted because the uuid would be unreachable under
+  // the new tmpdir's hash), mint a uuid and use --session-id on the
+  // first turn; we promote the record after that turn succeeds.
+  const sessionIdHolder = {
+    current: record.kind === 'active' ? record.providerSessionId : randomUUID(),
+  }
+  let firstTurn = record.kind === 'draft'
   let active: ChildProcess | null = null
 
   // FS watcher for live-reload + dirty detection. The CLI runs out of
@@ -185,6 +214,20 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
       if (f.startsWith('.') || f.includes('/.')) return
       safeSend(sender, 'ai:event', { type: 'deck:file_change', path: f })
       params.onMutation?.()
+    })
+    // Async errors from the watcher (NFS volume disconnect, external
+    // drive ejected, FUSE mount torn down) arrive as 'error' events.
+    // Without a listener, Node treats them as uncaught and crashes the
+    // main process. Drop the watcher on error — losing live-reload is
+    // far better than killing the app.
+    watcher.on('error', (e) => {
+      console.warn('[claude-cli] file watcher error; live-reload disabled:', e)
+      try {
+        watcher?.close()
+      } catch {
+        // already closed
+      }
+      watcher = null
     })
   } catch (e) {
     console.warn('[claude-cli] file watcher failed to start; live-reload disabled:', e)
@@ -448,16 +491,36 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
             // glitch rather than aborting the whole turn.
           }
         }
+        // Cap the unparsed tail in case the CLI ever emits a single
+        // line larger than RAM (or never emits a newline at all). 1MB
+        // is far above any legitimate stream-json line; past that,
+        // assume the CLI is wedged and drop the buffer rather than
+        // grow it without bound.
+        if (stdoutTail.length > 1_000_000) stdoutTail = ''
       })
 
       stderr.setEncoding('utf8')
       stderr.on('data', (chunk: string) => {
         stderrBuf += chunk
+        // Keep only the last 64KB. We surface stderr only on non-zero
+        // exit (sliced to last 2KB for the log line), so unbounded
+        // accumulation buys us nothing — but a misbehaving CLI piping
+        // GBs of warnings would otherwise bloat the main process.
+        if (stderrBuf.length > 64_000) stderrBuf = stderrBuf.slice(-64_000)
       })
 
       child.on('error', (err) => {
         if (active !== child) return
         active = null
+        // Spawn-level failure (ENOENT, EPERM, ...). The CLI never
+        // started, so the uuid we minted for this turn isn't yet
+        // associated with anything in `~/.claude/projects`. Mint a
+        // fresh one so a future retry doesn't reuse a uuid that
+        // happens to share a prefix with whatever Claude's hash
+        // algorithm produces on the next attempt.
+        if (isFirstTurn) {
+          sessionIdHolder.current = randomUUID()
+        }
         emit({ type: 'deck:fatal', error: err.message })
         emit({ type: 'agent_end', messages: [] })
         resolve({ ok: false, reason: 'error', message: err.message })
@@ -475,6 +538,13 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
           return
         }
         if (code !== 0 || state.resultIsError) {
+          // Note: we deliberately don't mint a fresh uuid on first-turn
+          // exit failure. The CLI may have already opened the jsonl
+          // and written user/system events before the failing tool
+          // call; resuming with the same uuid surfaces that partial
+          // history (truthful: that IS what Claude saw). Compare to
+          // `child.on('error')` above where the spawn never reached
+          // that point.
           // Prefer the structured error text from the terminal `result`
           // event (Claude often puts auth/credit/rate-limit messages
           // there). Fall back to stderr, then to a generic exit code.
@@ -482,6 +552,17 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
             state.resultErrorText ||
             stderrBuf.trim() ||
             `Claude Code exited with code ${code}`
+          // Mirror the failure to the main-process console so a user
+          // bug report ("the chip went red, here's a screenshot") can
+          // be cross-referenced with stderr — the renderer only sees
+          // `message`, not the surrounding context.
+          console.warn('[claude-cli] non-zero exit', {
+            code,
+            signal,
+            sessionId: sessionIdHolder.current,
+            stderr: stderrBuf.slice(-2000),
+            resultErrorText: state.resultErrorText,
+          })
           emit({ type: 'deck:fatal', error: message })
           emit({ type: 'agent_end', messages: [] })
           resolve({ ok: false, reason: 'error', message })
@@ -492,10 +573,31 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
         if (isFirstTurn) firstTurn = false
         // Persist deck-session metadata so a future relaunch (or a
         // history-popover switch) resumes the right Claude conversation.
-        liveRecord.providerSessionId = sessionIdHolder.current
-        if (!liveRecord.summary) liveRecord.summary = deriveSummary(text)
-        liveRecord.lastUsedMs = Date.now()
-        void saveSession(chatKey, liveRecord)
+        // Skip the entire write for Pack/preview decks: the resume
+        // uuid is unreachable under a future tmpdir-hash anyway, and
+        // a row in the history popover with no recoverable transcript
+        // is misleading — clicking it would silently start a new CLI
+        // session even though the row's summary suggests otherwise.
+        if (resumeSurvivesReopen) {
+          // Promote draft → active (or refresh existing active's
+          // lastUsedMs). Either way `liveRecord.current` becomes a
+          // saveable `ActiveSessionRecord`.
+          const prior = liveRecord.current
+          if (prior.kind === 'draft') {
+            liveRecord.current = promoteToActive(prior, sessionIdHolder.current, deriveSummary(text))
+          } else {
+            liveRecord.current = { ...prior, lastUsedMs: Date.now() }
+          }
+          void saveSession(chatKey, liveRecord.current)
+        } else {
+          // Visible breadcrumb: when a user reports "my chats/<deckId>/
+          // meta directory has no new file after talking to Claude",
+          // this log line is the answer. Pack+CLI is by design.
+          console.info('[claude-cli] skipped saveSession (Pack/preview deck)', {
+            sessionId: sessionIdHolder.current,
+            recordId: liveRecord.current.id,
+          })
+        }
         emit({ type: 'agent_end', messages: [] })
         resolve({ ok: true })
       })
@@ -505,6 +607,13 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
   async function abort(): Promise<void> {
     if (!active) return
     const child = active
+    // The child may have already exited between the caller's read of
+    // `active` and our `kill`. In that case `child.once('exit', ...)`
+    // below would never fire (the event is already past), and we'd
+    // wait the full 500ms just to time out. Skip cleanly when the
+    // process is already gone — the exit handler has either already
+    // run (in which case `active === null`) or is about to.
+    if (child.exitCode !== null || child.signalCode !== null) return
     child.kill('SIGTERM')
     // Give the child up to 500ms to exit cleanly, then SIGKILL. Without
     // the escalation a wedged child would pin the next send forever.
@@ -542,6 +651,6 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
     send,
     abort,
     dispose,
-    getRecord: () => liveRecord,
+    getRecord: () => liveRecord.current,
   }
 }

@@ -452,7 +452,7 @@ export class AppWindow {
    * runtime), then builds a fresh backend bound to that session's
    * recorded provider. pi-agent backends emit `deck:history_replay`
    * to repaint the chat list; CLI backends come up empty (Claude's
-   * own transcript is opaque to us — see ai/cli/session.ts header).
+   * own transcript is opaque to us — see ai/claude-cli/session.ts header).
    */
   async switchAiSession(deckSessionId: string): Promise<void> {
     return this.aiManager.switchToSession(deckSessionId)

@@ -65,10 +65,21 @@ export function isCustomProvider(id: ProviderId): boolean {
  * Provider that delegates to a locally-installed CLI binary instead of
  * calling a model API directly. These providers never store an API key
  * (the CLI handles its own auth) and bypass the API-key readiness gate.
+ *
+ * Derived from the backend descriptor table — see
+ * `src/main/ai/backend-descriptors.ts` for the source of truth.
  */
 export function isCliProvider(id: ProviderId): boolean {
+  // Inline check to avoid a circular import (`backend-descriptors.ts`
+  // imports `ProviderId` from this file). The two CLI ids that need
+  // to stay in sync with `DESCRIPTORS[id].kind === 'cli'` are
+  // checked statically by TypeScript's `Record<ProviderId, ...>`
+  // exhaustiveness in backend-descriptors.ts — any new ProviderId
+  // added without a descriptor fails to compile there, drawing the
+  // maintainer's eye to keep this predicate in sync too.
   return id === 'claude-cli'
 }
+
 
 /** Path to the on-disk secrets file. Lazy-computed because `app.getPath`
  * isn't valid before `app.whenReady()`. */

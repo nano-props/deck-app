@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { enhancedPath } from '#/main/ai/cli/path.ts'
+import { enhancedPath } from '#/main/ai/claude-cli/path.ts'
 
 const execFileAsync = promisify(execFile)
 

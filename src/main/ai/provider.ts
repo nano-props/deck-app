@@ -1,4 +1,5 @@
 import { getModel, type Api, type KnownProvider, type Model } from '@earendil-works/pi-ai'
+import { getBackendDescriptor } from '#/main/ai/backend-descriptors.ts'
 import { isCustomProvider, type ProviderId } from '#/main/secrets.ts'
 import type { CustomProviderConfig } from '#/main/settings.ts'
 
@@ -53,6 +54,23 @@ const CUSTOM_API: Record<CustomProviderId, Api> = {
 
 export function isBuiltin(id: ProviderId): id is BuiltinProviderId {
   return id === 'anthropic' || id === 'openai' || id === 'google'
+}
+
+/**
+ * Provider whose resume key is keyed off cwd, meaning the same uuid
+ * resolves to a different transcript file when cwd changes. Claude
+ * Code stores `~/.claude/projects/<cwd-hash>/<uuid>.jsonl` — so a
+ * Pack deck (fresh tmpdir each open) makes the resume key
+ * unreachable. Used by `decideResumeStrategy` to decide whether
+ * `record.providerSessionId` survives a deck reopen.
+ *
+ * Derived from the backend descriptor's `transcriptStorage` field
+ * (see `src/main/ai/backend-descriptors.ts`). A future CLI provider
+ * with `'app-userData'` storage will correctly answer false here,
+ * even though `isCliProvider` answers true — separate questions.
+ */
+export function isCwdKeyedResume(id: ProviderId): boolean {
+  return getBackendDescriptor(id).transcriptStorage === 'cwd-keyed'
 }
 
 /**

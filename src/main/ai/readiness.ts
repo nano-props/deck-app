@@ -1,7 +1,7 @@
 import { getSecret, isCliProvider, type ProviderId } from '#/main/secrets.ts'
 import { getSettings, resolveModel } from '#/main/settings.ts'
 import { isBuiltin, isKnownBuiltinModel, type AiReadiness, type AiUnreadyReason } from '#/main/ai/provider.ts'
-import { detectClaudeCli } from '#/main/ai/cli/detect.ts'
+import { detectClaudeCli } from '#/main/ai/claude-cli/detect.ts'
 
 /**
  * Check whether the current AI settings can actually stream a turn.

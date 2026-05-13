@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 import { createDeckAiSession } from '#/main/ai/session/index.ts'
-import { createClaudeCliSession } from '#/main/ai/cli/session.ts'
+import { createClaudeCliSession } from '#/main/ai/claude-cli/session.ts'
 import type { DeckAiSession, SessionParams } from '#/main/ai/session/types.ts'
 import type { DeckContext } from '#/main/deck-types.ts'
 import { getSettings } from '#/main/settings.ts'

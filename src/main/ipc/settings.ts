@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { pingAi } from '#/main/ai/ping.ts'
 import { isBuiltin } from '#/main/ai/provider.ts'
 import { checkAiReadiness } from '#/main/ai/readiness.ts'
-import { detectClaudeCli, invalidateClaudeCliDetection } from '#/main/ai/cli/detect.ts'
+import { detectClaudeCli, invalidateClaudeCliDetection } from '#/main/ai/claude-cli/detect.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
 import {
   clearSecret,
