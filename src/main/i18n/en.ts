@@ -206,7 +206,7 @@ export const en = {
   'settings.cli.recheck': 'Re-check',
   'settings.cli.checking': 'Checking…',
   'settings.cli.found': 'Found — version {version}',
-  'settings.cli.notFound': 'Not found on PATH',
+  'settings.cli.notFound': 'Not found in PATH or common install locations',
   'settings.cli.installHint': 'Install from claude.com/claude-code, then click Re-check.',
   'settings.cli.description':
     'Uses your locally-installed Claude Code to edit this deck.\n\n· Login and model are managed by the CLI — no API key needed.\n· Deck-specific tools (add_asset / screenshot_preview / validate_deck) are unavailable in this mode.',

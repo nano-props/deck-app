@@ -5,6 +5,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import type { WebContents } from 'electron'
 import type { ChatUiContext, DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
 import { detectClaudeCli } from '#/main/ai/cli/detect.ts'
+import { enhancedPath } from '#/main/ai/cli/path.ts'
 import { deriveSummary, saveSession } from '#/main/ai/session-store.ts'
 
 /**
@@ -140,7 +141,11 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
   // ENOENT after the user has already typed a message.
   const detected = await detectClaudeCli()
   if (!detected.found) {
-    throw new Error(detected.error || 'Claude Code CLI not found on PATH')
+    // This Error only ends up in main-process console.warn (see
+    // ai-session-manager.ts) — the user-facing "install the CLI" prompt
+    // comes from the readiness check + composer.disabled.no-cli i18n
+    // string. We keep the message English for log readability.
+    throw new Error(detected.error || 'Claude Code CLI not found in PATH or common install locations')
   }
 
   // Live mutable copy of the deck-session record so the adapter can
@@ -385,9 +390,15 @@ export async function createClaudeCliSession(params: SessionParams): Promise<Dec
       try {
         child = spawn('claude', args, {
           cwd: rootDir,
-          // Inherit env so the user's shell-set ANTHROPIC_API_KEY /
-          // AWS_PROFILE / etc. flow through. The CLI handles its own auth.
-          env: process.env,
+          // Inherit env so any ANTHROPIC_API_KEY / AWS_PROFILE / etc.
+          // available to the main process flow through to the CLI — it
+          // handles its own auth. (In `bun dev` these come from the
+          // user's shell; under the packaged GUI app they come from
+          // launchd's environment, so the surface here is smaller.)
+          // PATH is augmented because Finder/Dock-launched apps get a
+          // minimal PATH that doesn't include common claude install dirs
+          // — see `enhancedPath` for the rationale.
+          env: { ...process.env, PATH: enhancedPath() },
           stdio: ['ignore', 'pipe', 'pipe'],
         })
       } catch (e) {

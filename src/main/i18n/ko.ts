@@ -197,7 +197,7 @@ export const ko: Record<DictKey, string> = {
   'settings.cli.recheck': '다시 확인',
   'settings.cli.checking': '확인 중…',
   'settings.cli.found': '발견 — 버전 {version}',
-  'settings.cli.notFound': 'PATH에서 찾을 수 없음',
+  'settings.cli.notFound': 'PATH 또는 일반적인 설치 경로에서 찾을 수 없음',
   'settings.cli.installHint': 'claude.com/claude-code 에서 설치한 뒤 "다시 확인"을 누르세요.',
   'settings.cli.description':
     '로컬에 설치된 Claude Code 로 이 Deck 을 편집합니다.\n\n· 로그인과 모델은 CLI 가 관리하며, API 키가 필요하지 않습니다.\n· Deck 전용 도구(add_asset / screenshot_preview / validate_deck)는 이 모드에서 사용할 수 없습니다.',

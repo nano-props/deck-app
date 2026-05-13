@@ -196,7 +196,7 @@ export const zh: Record<DictKey, string> = {
   'settings.cli.recheck': '重新检测',
   'settings.cli.checking': '检测中…',
   'settings.cli.found': '已找到 — 版本 {version}',
-  'settings.cli.notFound': '未在 PATH 中找到',
+  'settings.cli.notFound': '未在 PATH 或常见安装目录中找到',
   'settings.cli.installHint': '请前往 claude.com/claude-code 安装,然后点击"重新检测"。',
   'settings.cli.description':
     '使用本机已安装的 Claude Code 编辑 Deck。\n\n· 登录与模型由 CLI 自行管理,无需 API Key。\n· Deck 专属工具(add_asset / screenshot_preview / validate_deck)在此模式不可用。',
