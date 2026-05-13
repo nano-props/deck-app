@@ -5,6 +5,7 @@ import { stageAttachments, type StagedInput } from '#/main/attachments.ts'
 import { deleteChatSession } from '#/main/chats.ts'
 import { t } from '#/main/i18n/index.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
+import { decideResumeStrategy } from '#/main/ai/resume-strategy.ts'
 import { deleteSession, listSessions, readSession } from '#/main/ai/session-store.ts'
 import { appWindowByWebContents } from '#/main/window-registry.ts'
 import type { ChatUiContext } from '#/main/ai/session/types.ts'
@@ -155,12 +156,47 @@ export function wireAiIpc(): void {
       const deck = w?.getDeck()
       if (!deck) return { sessions: [], activeId: null } as const
       const records = await listSessions(deck.sourcePath)
-      // Empty sessions (no successful turn yet) carry an empty
-      // `summary`; hide them — the popover row would have nothing to
-      // show. They stay on disk only as in-memory drafts until the
-      // first turn lands.
-      const visible = records.filter((r) => r.summary.length > 0)
-      const activeId = w?.getAiSession()?.getRecord().id ?? null
+      // Two-stage filter:
+      //   1. drop drafts — they have no `summary` to show and exist
+      //      only as in-memory placeholders before the first turn
+      //      lands. (The discriminated union narrows the surviving
+      //      reads to active records automatically.)
+      //   2. drop unrecoverable rows for the current deck.kind. The
+      //      most common case is a Pack+CLI record written under
+      //      Source mode: the providerSessionId points at a uuid the
+      //      CLI hashes against the current cwd, but Pack opens use
+      //      a fresh tmpdir each time so that hash never resolves —
+      //      clicking the row would silently start a brand-new CLI
+      //      session, and the Composer's History button is already
+      //      hidden in that combination so the row is unreachable.
+      //
+      // Hide-only, never delete. The same record may be perfectly
+      // recoverable under a different deck.kind (e.g. the user
+      // re-opens the same source folder directly instead of through
+      // a generated Pack), and a fire-and-forget unlink during the
+      // wrong-kind visit would silently destroy that history. The
+      // legacy debris this used to clean up is rare and harmless;
+      // accidental data loss isn't.
+      const activeRecords = records.filter((r) => r.kind === 'active')
+      const visible = activeRecords.filter(
+        (r) => decideResumeStrategy(r, deck.kind).resumeSurvivesReopen,
+      )
+      // `activeId` mirrors the *currently bound* session id, but the
+      // popover only renders rows from `visible` above. Returning an
+      // id that isn't in `visible` would put the popover into a state
+      // where it can't paint a "you are here" highlight on any row —
+      // misleading. Two cases produce that mismatch:
+      //   - first turn on a fresh chat: the bound record is still
+      //     `kind:'draft'` (no providerSessionId / summary yet), so it
+      //     was filtered out at stage 1 above.
+      //   - bound record is unrecoverable for this deck.kind: filtered
+      //     at stage 2.
+      // In both cases there genuinely is no popover row corresponding
+      // to the bound session — `null` is the honest answer. The
+      // composer's empty/resumed empty-state copy still tells the user
+      // a session is bound; popover highlight is purely a list affordance.
+      const boundId = w?.getAiSession()?.getRecord().id ?? null
+      const activeId = boundId !== null && visible.some((r) => r.id === boundId) ? boundId : null
       return {
         sessions: visible.map((r) => ({
           id: r.id,
@@ -208,7 +244,7 @@ export function wireAiIpc(): void {
       // pi-flavored session. CLI sessions store their transcript in
       // `~/.claude/projects/...` which is Claude's to manage.
       const target = await readSession(deck.sourcePath, sessionId)
-      if (target && target.provider !== 'claude-cli' && target.providerSessionId) {
+      if (target && target.kind === 'active' && target.provider !== 'claude-cli') {
         deleteChatSession(deck.sourcePath, target.providerSessionId)
       }
       const ok = await deleteSession(deck.sourcePath, sessionId)
