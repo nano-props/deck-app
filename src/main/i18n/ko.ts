@@ -150,6 +150,8 @@ export const ko: Record<DictKey, string> = {
   'composer.disabled.unknown-builtin-model': '선택된 모델은 더 이상 사용할 수 없습니다. 설정에서 다른 모델을 고르세요.',
   'composer.disabled.no-cli': 'Claude Code CLI 를 찾을 수 없습니다. 설치하거나 설정에서 다른 제공자를 선택하세요.',
 
+  'chat.switchFallback': '해당 대화를 불러올 수 없어 최근 대화를 대신 열었습니다.',
+
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': '생각 중…',
   'chat.status.generating': '생성 중…',

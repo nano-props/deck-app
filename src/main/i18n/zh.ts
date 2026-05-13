@@ -149,6 +149,8 @@ export const zh: Record<DictKey, string> = {
   'composer.disabled.unknown-builtin-model': '当前选择的模型已不可用,请在设置中换一个模型。',
   'composer.disabled.no-cli': '未找到 Claude Code CLI。请安装,或在设置中切换到其他服务商。',
 
+  'chat.switchFallback': '无法加载这段对话，已为你打开最近的会话。',
+
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': '思考中…',
   'chat.status.generating': '生成中…',

@@ -159,6 +159,8 @@ export const en = {
   'composer.disabled.no-cli':
     'Claude Code CLI not found. Install it or pick a different provider in Settings.',
 
+  'chat.switchFallback': 'Could not load that conversation; opened the most recent one instead.',
+
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': 'Thinking…',
   'chat.status.generating': 'Generating…',
