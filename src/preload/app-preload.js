@@ -134,10 +134,12 @@ contextBridge.exposeInMainWorld('deck', {
   aiReset: () => ipcRenderer.invoke('ai:reset'),
 
   // ---- Chat history switcher ----------------------------------------------
+  // `sessionId` is the deck-level session uuid (see ai/session-store.ts),
+  // NOT a backend transcript path. Main resolves it via session-store.
   chats: {
     list: () => ipcRenderer.invoke('chats:list'),
-    switch: (sessionPath) => ipcRenderer.invoke('chats:switch', sessionPath),
-    delete: (sessionPath) => ipcRenderer.invoke('chats:delete', sessionPath),
+    switch: (sessionId) => ipcRenderer.invoke('chats:switch', sessionId),
+    delete: (sessionId) => ipcRenderer.invoke('chats:delete', sessionId),
   },
 
   // ---- Attachments --------------------------------------------------------
@@ -286,5 +288,9 @@ contextBridge.exposeInMainWorld('deck', {
     /** Returns { ready: boolean, reason?: string } — used to gate the
      *  composer Send button when the active provider isn't usable yet. */
     aiReadiness: () => ipcRenderer.invoke('settings:ai-readiness'),
+    /** Detect the local Claude Code CLI. Pass refresh=true to bust the
+     *  one-shot cache (used by the Settings "Re-check" button after the
+     *  user installs the binary). */
+    detectClaudeCli: (refresh) => ipcRenderer.invoke('settings:cli-detect', !!refresh),
   },
 })

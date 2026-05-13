@@ -4,15 +4,16 @@ import type { WebContents } from 'electron'
 import { buildModel } from '#/main/ai/provider.ts'
 import { checkAiReadiness } from '#/main/ai/readiness.ts'
 import { createDeckTools } from '#/main/ai/tools/index.ts'
+import { SessionManager } from '@earendil-works/pi-coding-agent'
 import {
+  deckChatDir,
   openDeckChatSession,
-  openDeckSessionManager,
   persistAgentMessages,
-  resetDeckSessionManager,
   restoredMessages,
 } from '#/main/chats.ts'
 import { getSecret, type ProviderId } from '#/main/secrets.ts'
 import { getSettings, resolveModel, type Settings } from '#/main/settings.ts'
+import { deriveSummary, saveSession } from '#/main/ai/session-store.ts'
 import { contextTokensFromBranch } from '#/main/ai/session/context-usage.ts'
 import { buildSystemPrompt } from '#/main/ai/session/system-prompt.ts'
 import type { ChatUiContext, DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
@@ -74,7 +75,13 @@ async function withTimeout(p: Promise<unknown>, ms: number): Promise<'settled' |
  *     without changing the event shape.
  */
 export async function createDeckAiSession(params: SessionParams): Promise<DeckAiSession> {
-  const { sender, rootDir, chatKey } = params
+  const { sender, rootDir, chatKey, record } = params
+
+  // The deck session record is the source of truth for "which provider /
+  // which transcript". Live mutable copy so the adapter can update
+  // lastUsedMs / providerSessionId / summary on each turn without
+  // forcing the manager to re-pass a refreshed record on every send.
+  const liveRecord = { ...record }
 
   const systemPrompt = await buildSystemPrompt(params)
   let systemPromptUiContextKey = ''
@@ -92,21 +99,21 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     capturePreview: params.capturePreview,
   })
 
-  // Try to seed with the currently-configured model. `send` re-reads
-  // Settings on every turn anyway, so this is purely for the pre-first-
-  // turn window: it lets `emitContextUsage` (called during
-  // history_replay) report a real contextWindow instead of pi's
-  // DEFAULT_MODEL placeholder (contextWindow=0). If buildModel throws —
-  // missing key, broken custom-endpoint config — we leave the field
-  // unset; pi falls back to DEFAULT_MODEL and the context indicator
-  // hides itself until `send` rebuilds with a usable model.
+  // Seed with the model for this session's locked provider so the
+  // pre-first-turn `emitContextUsage` (fired during history_replay)
+  // reports a real contextWindow instead of pi's DEFAULT_MODEL
+  // placeholder (contextWindow=0). `send` re-reads Settings every turn,
+  // so model/thinkingLevel stay live. If buildModel throws — missing
+  // key, broken custom config — we leave the field unset and pi falls
+  // back to DEFAULT_MODEL until `send` rebuilds with a usable model.
   let initialModel: ReturnType<typeof buildModel> | undefined
   let initialThinking: ThinkingLevel | undefined
   try {
     const settings = await getSettings()
+    const synthetic: Settings = { ...settings, ai: { ...settings.ai, provider: liveRecord.provider } }
     initialModel = buildModel({
-      provider: settings.ai.provider,
-      model: resolveModel(settings),
+      provider: liveRecord.provider,
+      model: resolveModel(synthetic),
       custom: settings.ai.custom,
     })
     initialThinking = settings.ai.thinkingLevel
@@ -114,13 +121,25 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     // Missing/invalid config — `send` will re-try and emit a fatal event.
   }
 
-  // Open (or resume) the pi-managed SessionManager for this deck.
-  // History switcher passes an explicit `sessionPath` to load a
-  // specific past session; bare openDeckSessionManager picks the most
-  // recent / makes a new one.
-  const sessionManager = params.sessionPath
-    ? openDeckChatSession(chatKey, rootDir, params.sessionPath)
-    : openDeckSessionManager(chatKey, rootDir)
+  // Open the pi SessionManager corresponding to this deck-level
+  // session. record.providerSessionId, when set, is the absolute
+  // path to pi's JSONL — a session that has already had at least one
+  // successful turn. When null (fresh deck session), we mint a new
+  // in-memory SessionManager rooted at the deck's chat directory; pi
+  // flushes it to disk on the first assistant message, at which point
+  // we also write the resulting file path back into the record's
+  // `providerSessionId` for future resumes.
+  let sessionManager: SessionManager
+  if (liveRecord.providerSessionId) {
+    sessionManager = openDeckChatSession(chatKey, rootDir, liveRecord.providerSessionId)
+  } else {
+    const piDir = deckChatDir(chatKey)
+    sessionManager = SessionManager.continueRecent(rootDir, piDir)
+    // `continueRecent` may have reattached to a stale file from a
+    // previous deck session. Force a fresh file so two deck sessions
+    // never share a pi transcript.
+    sessionManager.newSession()
+  }
   const priorMessages = restoredMessages(sessionManager)
 
   const agent = new Agent({
@@ -202,6 +221,26 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
           // Persistence should never crash the session; any I/O error
           // here just means the transcript line won't survive restart.
         }
+        // Refresh the deck-session metadata so future "open this deck"
+        // resumes the right pi JSONL and the history popover shows
+        // accurate fields. pi defers its first disk flush until an
+        // assistant message lands, so we only trust getSessionFile()
+        // after persistAgentMessages has run.
+        const piFile = sessionManager.getSessionFile() ?? null
+        if (piFile) liveRecord.providerSessionId = piFile
+        if (!liveRecord.summary) {
+          for (const m of persistable) {
+            if (m.role === 'user') {
+              const text = stringifyUserContent(m.content)
+              if (text) {
+                liveRecord.summary = deriveSummary(text)
+                break
+              }
+            }
+          }
+        }
+        liveRecord.lastUsedMs = Date.now()
+        void saveSession(chatKey, liveRecord)
       }
       const usage = emitContextUsage()
 
@@ -249,28 +288,27 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     // provider with an opaque error string. Surface as `not-ready` so
     // the renderer can produce an actionable hint instead of treating
     // the run as fatal.
-    const readiness = await checkAiReadiness()
+    const readiness = await checkAiReadiness(liveRecord.provider)
     if (!readiness.ready) {
       return { ok: false, reason: 'not-ready', message: `AI not configured: ${readiness.reason}` }
     }
-    // Re-resolve model + key + compaction settings on each send so the
-    // user can change Settings mid-session and have the next message
-    // pick it up. A failure here happens BEFORE pi has emitted
-    // agent_start, so the renderer never enters streaming state — we
-    // need to push deck:fatal ourselves to surface the error.
+    // Re-resolve model + key on each send. The session's *provider* is
+    // locked to the record at creation time (so a user changing
+    // settings.provider mid-deck doesn't silently retarget this
+    // conversation), but model/thinkingLevel/key for that provider
+    // come from the latest settings — so picking a different model in
+    // Settings still applies on the next turn.
     try {
       const settings = await getSettings()
       runtimeSettingsSnapshot = settings
+      const provider = liveRecord.provider
+      const synthetic: Settings = { ...settings, ai: { ...settings.ai, provider } }
       const model = buildModel({
-        provider: settings.ai.provider,
-        model: resolveModel(settings),
+        provider,
+        model: resolveModel(synthetic),
         custom: settings.ai.custom,
       })
       agent.state.model = model
-      // Settings → reasoning toggle is a per-turn knob; pi reads
-      // `_state.thinkingLevel` when it builds the next prompt's context.
-      // Without this assign, changes to thinkingLevel in Settings
-      // wouldn't take effect until the user reopened the deck.
       agent.state.thinkingLevel = settings.ai.thinkingLevel
       if (uiContext) {
         const nextUiContextKey = uiContextKey(uiContext)
@@ -322,48 +360,6 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     await withTimeout(agent.waitForIdle(), 500)
   }
 
-  /**
-   * Ordering matters here:
-   *
-   *   1. If a run is active, abort and wait for it to settle.
-   *      Otherwise its `agent_end` listener will call
-   *      `persistAgentMessages` *after* we've started a fresh session,
-   *      resurrecting stale messages onto a transcript the user just
-   *      asked us to clear.
-   *   2. Roll over to a new session file (see chats.ts::resetDeckSessionManager
-   *      for why the old file is deleted instead of kept).
-   *   3. Clear the Agent's in-memory state. Done last so any
-   *      still-pending listener has already seen consistent state by
-   *      the time it fires.
-   *   4. Tell the renderer to drop its DOM.
-   */
-  async function reset(): Promise<void> {
-    // We deliberately wait for the active run to settle (rather than
-    // bounding it like abort()'s 500ms) — its `agent_end` listener
-    // mutates the SessionManager we're about to roll over, and a
-    // premature return would land the old transcript on the new
-    // session file. The 10s ceiling is a last-resort guard so a
-    // hung tool can't pin the IPC channel and freeze the user's UI;
-    // in practice listeners settle in milliseconds.
-    if (agent.state.isStreaming) {
-      agent.abort()
-      const outcome = await withTimeout(agent.waitForIdle(), 10_000)
-      if (outcome === 'timeout') {
-        // The listener never finished. Skipping the SessionManager rollover
-        // here is the lesser evil: the user will see a fresh chat on the
-        // next ai:event, but the in-flight run might still write to the
-        // old session file later. Better than corrupting the new file by
-        // mixing both turns into one transcript.
-        agent.reset()
-        safeSend(sender, 'ai:event', { type: 'deck:session_reset' })
-        return
-      }
-    }
-    resetDeckSessionManager(sessionManager)
-    agent.reset()
-    safeSend(sender, 'ai:event', { type: 'deck:session_reset' })
-  }
-
   async function dispose(): Promise<void> {
     unsubscribe()
     if (agent.state.isStreaming) {
@@ -376,10 +372,33 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   return {
     send,
     abort,
-    reset,
     dispose,
-    getSessionFile: () => sessionManager.getSessionFile() ?? null,
+    getRecord: () => liveRecord,
   }
+}
+
+/**
+ * Best-effort flatten of an AgentMessage's user-content into preview
+ * text. AgentMessage.content can be a string, a structured array, or a
+ * mix of text/image blocks; we only need the text portion. Returns ''
+ * if no usable text is found.
+ */
+function stringifyUserContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const c of content) {
+    if (typeof c === 'string') parts.push(c)
+    else if (
+      c &&
+      typeof c === 'object' &&
+      (c as { type?: unknown }).type === 'text' &&
+      typeof (c as { text?: unknown }).text === 'string'
+    ) {
+      parts.push((c as { text: string }).text)
+    }
+  }
+  return parts.join(' ')
 }
 
 /**

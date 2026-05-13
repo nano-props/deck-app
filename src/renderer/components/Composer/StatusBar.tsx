@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useAiStore } from '#/renderer/stores/ai.ts'
-import { useChatStore } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { cn } from '#/renderer/lib/cn.ts'
 import { formatNumber, formatTokens } from '#/renderer/components/Composer/format.ts'
@@ -39,46 +38,28 @@ export function StatusBar({ text, attachStatus }: { text: string; attachStatus: 
     const id = setInterval(() => setElapsedMs(Date.now() - startedAt), 1000)
     return () => clearInterval(id)
   }, [streaming])
-  // Tail-of-nodes derivations split into atomic selectors so the
-  // status bar only re-renders when one of these primitives actually
-  // changes — not on every 20-40Hz streaming chunk. A single object-
-  // returning selector would yield a fresh reference per chunk and
-  // force a re-render even when the displayed message is identical.
-  const runningToolLabel = useChatStore((s) => {
-    if (!streaming) return null
-    for (let i = s.nodes.length - 1; i >= 0; i--) {
-      const n = s.nodes[i]
-      if (n.kind === 'tool' && n.running) return summarizeToolLabel(n.toolName, n.args)
-    }
-    return null
-  })
-  const generating = useChatStore((s) => {
-    if (!streaming) return false
-    const last = s.nodes[s.nodes.length - 1]
-    return !!last && last.kind === 'assistant' && last.streaming && last.text.length > 0
-  })
-
-  // Status priority: error > attaching > live-agent-status > typing-counter > idle context-usage.
+  // Status priority: error > attaching > streaming-elapsed > typing-counter > idle context-usage.
   // The typing counter shadows context-usage because it's the more
   // immediate feedback once the user starts writing.
+  //
+  // The "Thinking…" / "Generating…" / "Running tool: X" labels used to
+  // live here next to the Send button. They moved to a `[…]` chat
+  // bubble at the tail of ChatList — it reads as a chat affordance
+  // ("the model is replying"), where this bar reads as a UI affordance
+  // ("the form is busy"). What's left here in streaming state: just the
+  // elapsed time, plus a slow-turn hint past STUCK_MS.
   const message = (() => {
     if (error) return error
     if (attachStatus) return attachStatus
     if (streaming) {
-      const base = runningToolLabel
-        ? t('chat.status.runningTool', { tool: runningToolLabel })
-        : generating
-          ? t('chat.status.generating')
-          : t('chat.status.thinking')
-      // Show elapsed once at least one full second has rolled over so
-      // the very first tick doesn't flash a confusing "0s". `Math.floor`
-      // here matches the formatter, so the gate trips on the same tick
-      // the first non-zero label would render.
+      // Hold off the elapsed counter for the first second so the bar
+      // doesn't flash a confusing "0s" between agent_start and the
+      // first tick.
       const elapsedSec = Math.floor(elapsedMs / 1000)
-      if (elapsedSec < 1) return base
-      const elapsed = ` ${formatElapsed(elapsedMs)}`
-      if (elapsedMs >= STUCK_MS) return `${base}${elapsed} · ${t('chat.status.slowHint')}`
-      return `${base}${elapsed}`
+      if (elapsedSec < 1) return ''
+      const elapsed = formatElapsed(elapsedMs)
+      if (elapsedMs >= STUCK_MS) return `${elapsed} · ${t('chat.status.slowHint')}`
+      return elapsed
     }
     if (text.length > 0) {
       // 4 chars/token is the canonical English approximation; CJK is
@@ -119,20 +100,3 @@ export function StatusBar({ text, attachStatus }: { text: string; attachStatus: 
   )
 }
 
-// Build the short tool label for the status line — `toolName(arg)` if
-// args carry a path/name, otherwise just the tool name. Mirrors
-// ChatList's chip-summary heuristic but trims aggressively so the
-// one-line status doesn't wrap.
-function summarizeToolLabel(toolName: string, args: unknown): string {
-  if (!args || typeof args !== 'object') return toolName
-  const a = args as Record<string, unknown>
-  const candidate =
-    typeof a.path === 'string'
-      ? a.path
-      : typeof a.name === 'string'
-        ? a.name
-        : ''
-  if (!candidate) return toolName
-  const trimmed = candidate.length > 32 ? '…' + candidate.slice(-31) : candidate
-  return `${toolName}(${trimmed})`
-}

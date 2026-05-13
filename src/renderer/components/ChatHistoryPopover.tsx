@@ -5,9 +5,11 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import * as RP from '@radix-ui/react-popover'
+import * as RT from '@radix-ui/react-tooltip'
 import { X } from 'lucide-react'
 import { formatDistanceToNowStrict, type Locale } from 'date-fns'
 import { enUS, zhCN, ko } from 'date-fns/locale'
+import { useAiStore } from '#/renderer/stores/ai.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import type { Lang } from '#/main/i18n/index.ts'
 import { cn } from '#/renderer/lib/cn.ts'
@@ -15,18 +17,45 @@ import { POPOVER_SURFACE } from '#/renderer/components/ui/popover-surface.ts'
 
 const LOCALES: Record<Lang, Locale> = { en: enUS, zh: zhCN, ko }
 
+import type { ProviderId } from '#/main/secrets.ts'
+import { BUILTIN_LABELS, CUSTOM_LABEL_KEY } from '#/renderer/components/SettingsOverlay/providers.ts'
+
 interface ChatSummary {
-  path: string
-  firstMessage: string
-  messageCount: number
-  modifiedMs: number
+  id: string
+  provider: ProviderId
+  summary: string
+  createdMs: number
+  lastUsedMs: number
 }
 
-export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
+export function ChatHistoryPopover({
+  trigger,
+  tooltipContent,
+  disabled,
+}: {
+  /** The bare button element used to open the popover. Must be a single
+   *  DOM-rendering element — see the comment above `<RP.Trigger>` below
+   *  for why nesting another `asChild` component (e.g. our `<Tooltip>`)
+   *  in here breaks the click. */
+  trigger: ReactNode
+  /** Optional hover-tooltip text. We mount Tooltip here (rather than in
+   *  the caller) so we can stack `Tooltip.Trigger asChild` and
+   *  `Popover.Trigger asChild` directly on the same DOM button —
+   *  Radix Slot only forwards props one level, so the two Triggers must
+   *  be the immediate parents of the IconButton, not separated by
+   *  another function component. */
+  tooltipContent?: ReactNode
+  /** When true the popover never opens (clicks are no-ops). Use this to
+   *  match a disabled trigger button: passing `disabled` to the
+   *  IconButton inside `trigger` blocks the click anyway, but Radix
+   *  controls open-state through `onOpenChange` which the IconButton's
+   *  disabled native attribute does not gate by itself. */
+  disabled?: boolean
+}) {
   const t = useI18n((s) => s.t)
   const [open, setOpen] = useState(false)
   const [sessions, setSessions] = useState<ChatSummary[] | null>(null) // null = loading
-  const [activePath, setActivePath] = useState<string | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
 
   // Re-fetch each time the popover opens. Stale data on reopen is the
   // worst UX here (deleted item still showing) — refetching is cheap.
@@ -43,12 +72,12 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
         if (aborted) return
         const list = res?.sessions
         setSessions(Array.isArray(list) ? list : [])
-        setActivePath(res?.activePath ?? null)
+        setActiveId(res?.activeId ?? null)
       })
       .catch(() => {
         if (!aborted) {
           setSessions([])
-          setActivePath(null)
+          setActiveId(null)
         }
       })
     return () => {
@@ -56,10 +85,38 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
     }
   }, [open])
 
+  // Stack the two `asChild` Triggers directly around the user-supplied
+  // button so Radix Slot forwards BOTH sets of props (popover open +
+  // tooltip hover) to the same DOM element. Note the ordering: the
+  // tooltip Root must wrap the popover Root, but the two `Trigger`
+  // elements must be adjacent (no function component between them) —
+  // Radix Slot only walks one level when cloning, so any intermediate
+  // function component (a non-Slot wrapper) silently swallows the
+  // injected handlers.
   return (
-    <RP.Root open={open} onOpenChange={setOpen}>
-      <RP.Trigger asChild>{trigger}</RP.Trigger>
-      <RP.Portal>
+    <RT.Root>
+      <RP.Root open={open && !disabled} onOpenChange={(v) => !disabled && setOpen(v)}>
+        <RT.Trigger asChild>
+          <RP.Trigger asChild>{trigger}</RP.Trigger>
+        </RT.Trigger>
+        {tooltipContent && (
+          <RT.Portal>
+            <RT.Content
+              side="top"
+              sideOffset={6}
+              className={cn(
+                'z-[1000] max-w-[260px] rounded-md px-2 py-1.5 text-[11px] leading-snug',
+                'bg-ink text-bg shadow-card',
+                'dark:bg-[#2a2c30] dark:text-[#f2f3f5]',
+                'data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95',
+                'pointer-events-none select-none',
+              )}
+            >
+              {tooltipContent}
+            </RT.Content>
+          </RT.Portal>
+        )}
+        <RP.Portal>
         <RP.Content
           side="top"
           align="start"
@@ -78,17 +135,17 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
             <div className="flex-1 overflow-y-auto p-1">
               {sessions.map((s) => (
                 <SessionRow
-                  key={s.path}
+                  key={s.id}
                   session={s}
-                  active={s.path === activePath}
+                  active={s.id === activeId}
                   onSwitch={async () => {
-                    if (s.path === activePath) {
+                    if (s.id === activeId) {
                       setOpen(false)
                       return
                     }
-                    setActivePath(s.path)
+                    setActiveId(s.id)
                     setOpen(false)
-                    await window.deck.chats.switch(s.path).catch(() => {})
+                    await window.deck.chats.switch(s.id).catch(() => {})
                   }}
                   onDelete={async () => {
                     // Update state only if delete actually succeeded —
@@ -97,14 +154,22 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
                     // would resurrect it, looking like the delete bounced.
                     let ok = false
                     try {
-                      const r = await window.deck.chats.delete(s.path)
+                      const r = await window.deck.chats.delete(s.id)
                       ok = !!r?.ok
                     } catch {
                       ok = false
                     }
                     if (!ok) return
-                    if (s.path === activePath) setActivePath(null)
-                    setSessions((prev) => (prev ? prev.filter((x) => x.path !== s.path) : prev))
+                    if (s.id === activeId) setActiveId(null)
+                    setSessions((prev) => {
+                      const next = prev ? prev.filter((x) => x.id !== s.id) : prev
+                      // If we just deleted the last row, surface that to
+                      // the composer so its History button greys out.
+                      if (next && next.length === 0) {
+                        useAiStore.getState().setHasHistory(false)
+                      }
+                      return next
+                    })
                   }}
                 />
               ))}
@@ -112,7 +177,8 @@ export function ChatHistoryPopover({ trigger }: { trigger: ReactNode }) {
           )}
         </RP.Content>
       </RP.Portal>
-    </RP.Root>
+      </RP.Root>
+    </RT.Root>
   )
 }
 
@@ -152,9 +218,12 @@ function SessionRow({
       <span className={cn('h-8 w-[3px] rounded-sm', active ? 'bg-accent' : 'bg-transparent')} aria-hidden="true" />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="line-clamp-2 overflow-hidden text-ellipsis text-[13px] leading-snug text-ink">
-          {session.firstMessage || ''}
+          {session.summary || ''}
         </span>
-        <span className="flex gap-2 text-[11px] text-ink-4">{relativeTime(session.modifiedMs, lang)}</span>
+        <span className="flex items-center gap-2 text-[11px] text-ink-4">
+          <ProviderChip provider={session.provider} />
+          <span>{relativeTime(session.lastUsedMs, lang)}</span>
+        </span>
       </span>
       <button
         type="button"
@@ -176,4 +245,23 @@ function SessionRow({
 // locale's own translation handles ("5 minutes ago" / "5 分钟前" / "5분 전").
 function relativeTime(ms: number, lang: Lang): string {
   return formatDistanceToNowStrict(ms, { addSuffix: true, locale: LOCALES[lang] })
+}
+
+/** Tiny provider tag shown on each session row. Provider lock is a
+ *  fundamental property of a deck session in Phase 1 — surfacing it
+ *  here helps the user understand "this old conversation is in
+ *  Anthropic; switching back to it temporarily uses Anthropic even
+ *  though my default is now Claude Code". */
+function ProviderChip({ provider }: { provider: ProviderId }) {
+  const t = useI18n((s) => s.t)
+  const customKey = CUSTOM_LABEL_KEY[provider]
+  // Fallback to the raw provider id when neither label table knows
+  // about it — handles forward-compat (a record written by a newer
+  // version) and corrupted on-disk metadata gracefully.
+  const label = BUILTIN_LABELS[provider] ?? (customKey ? t(customKey as never) : provider)
+  return (
+    <span className="rounded border border-line bg-bg-deep px-1.5 py-0.5 text-[10px] font-medium text-ink-3">
+      {label}
+    </span>
+  )
 }

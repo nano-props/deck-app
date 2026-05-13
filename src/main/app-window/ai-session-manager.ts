@@ -1,49 +1,76 @@
 import type { WebContents } from 'electron'
 import { createDeckAiSession } from '#/main/ai/session/index.ts'
-import type { DeckAiSession } from '#/main/ai/session/types.ts'
+import { createClaudeCliSession } from '#/main/ai/cli/session.ts'
+import type { DeckAiSession, SessionParams } from '#/main/ai/session/types.ts'
 import type { DeckContext } from '#/main/deck-types.ts'
+import { getSettings } from '#/main/settings.ts'
+import { isCliProvider } from '#/main/secrets.ts'
+import {
+  type DeckSessionRecord,
+  mostRecentSession,
+  newSessionRecord,
+  readSession,
+} from '#/main/ai/session-store.ts'
 import type { Rect } from '#/main/window-shell.ts'
 
 /**
  * Owns the AI chat session lifecycle for a single AppWindow.
  *
- * Responsibilities:
- *   - Lazy-create the session once both a deck is loaded and the chrome
- *     WebContents has finished its initial load (so `deck:history_replay`
- *     emitted at session construction reaches a renderer that's already
- *     subscribed to `ai:event`).
- *   - Switch between persisted chat transcripts (History popover): abort
- *     the in-flight turn, dispose the runtime, replay a fresh session
- *     pointed at the picked file. Falls back to the default session if
- *     the file is missing or corrupt rather than leaving the window
- *     session-less.
- *   - Tear down on deck close, with an explicit `session_reset` IPC
- *     before `dispose()` so the renderer drops streaming flags / chat
- *     nodes before the listener detaches.
+ * The unit of work here is the *deck session* (see session-store.ts).
+ * Each deck session is locked to one AI provider at creation time and
+ * persists across app restarts as a metadata file under
+ * `userData/chats/<deckId>/meta/`.
+ *
+ *   - `ensure()` resumes the most recently used deck session for the
+ *     current deck. If none exists, it creates one bound to the user's
+ *     current `settings.ai.provider`.
+ *   - `newChat()` discards the active session in memory and mints a
+ *     fresh deck session — bound to whatever provider is selected
+ *     *now* in Settings. The user's preferred way of switching
+ *     provider mid-deck (Phase 1: switching is allowed only at
+ *     conversation boundaries).
+ *   - `switchToSession(id)` loads a specific past session by id and
+ *     uses *its recorded provider* — not the current settings — so a
+ *     user looking at an old anthropic-flavored conversation gets pi
+ *     even if they've since changed their default to claude-cli.
  *
  * The manager holds no back-reference to AppWindow. All AppWindow-side
  * concerns (mark-dirty, capture preview) flow in via callbacks at
  * construction time, mirroring `DeckViewController`'s decoupling
- * pattern. This is a factory rather than a class because it owns a
- * single field (`session`) and has no reentrancy state machine —
- * matching the style of `createDeckAiSession` itself.
+ * pattern.
  */
 
+async function buildBackend(p: SessionParams): Promise<DeckAiSession> {
+  // Decision is keyed off the deck session's own recorded provider,
+  // NOT the current settings.ai.provider. This is what lets a user
+  // open an old anthropic conversation while their default is now
+  // claude-cli — the old session keeps running on pi.
+  return isCliProvider(p.record.provider) ? createClaudeCliSession(p) : createDeckAiSession(p)
+}
+
 export interface AiSessionManager {
+  /** Currently-bound deck session, or null when no deck is loaded /
+   *  the session is still being constructed. */
   get(): DeckAiSession | null
 
-  /** Create the session for the currently-open deck. No-op if one
-   *  exists, if no deck is loaded, or if the chrome WebContents was
-   *  destroyed during the readiness wait. Awaits chrome-ready first
+  /** Resume (or create) the deck's most-recently-used session.
+   *  No-op if a session is already bound. Awaits chrome-ready first
    *  so a synchronous `deck:history_replay` doesn't fire before the
    *  renderer has registered its `ai:event` listener. */
   ensure(): Promise<void>
 
-  /** Replace the active session with one pointing at `sessionPath`.
-   *  Aborts any in-flight turn first. If the requested file is missing
-   *  or corrupted, falls back to the deck's default session so the
-   *  window doesn't end up session-less. */
-  switch(sessionPath: string): Promise<void>
+  /** Replace the active session with the deck-session matching `id`.
+   *  Aborts any in-flight turn first. Falls back to the deck's most
+   *  recent session if `id` is unknown so the window doesn't end up
+   *  session-less. The new backend matches the loaded session's
+   *  recorded provider, regardless of current settings. */
+  switchToSession(id: string): Promise<void>
+
+  /** Discard the active session and create a fresh one bound to
+   *  `settings.ai.provider` at this moment. The old session's
+   *  metadata file (if it had a successful turn) stays on disk and
+   *  appears in the history popover. */
+  newChat(): Promise<void>
 
   /** Best-effort teardown. Always resolves. */
   teardown(): Promise<void>
@@ -59,9 +86,9 @@ export interface AiSessionManagerDeps {
   chromeWebContents: WebContents
   /** Pulls the current deck context at session-create time. */
   getDeck: () => DeckContext | null
-  /** Forwarded to createDeckAiSession's onMutation hook. */
+  /** Forwarded to backend's onMutation hook. */
   onMutation: () => void
-  /** Forwarded to createDeckAiSession's capturePreview hook. */
+  /** Forwarded to backend's capturePreview hook. */
   capturePreview: () => Promise<{ dataUrl: string; rect: Rect } | null>
 }
 
@@ -69,21 +96,6 @@ export function createAiSessionManager(deps: AiSessionManagerDeps): AiSessionMan
   const { chromeWebContents, getDeck, onMutation, capturePreview } = deps
   let session: DeckAiSession | null = null
 
-  /**
-   * Resolve when chromeView has finished its initial load. Uses
-   * `webContents.isLoading()` as the fast path, `did-finish-load` /
-   * `did-fail-load` as the slow path. Safe after disposal.
-   *
-   * The `destroyed` listener is load-bearing: if the user closes the
-   * window during the very narrow window between our `isDestroyed()`
-   * check and a load-event firing, the WebContents transitions through
-   * destruction without emitting `did-finish-load` or `did-fail-load`.
-   * Without the destroy hook the awaiter (in `ensure()` / `switch()`)
-   * would hang forever, parking the AI-session creation flow on a
-   * dead reference. Electron's own `loadURL` plumbing uses the same
-   * three-event coalesce — see web-contents.ts::_awaitNextLoad in the
-   * Electron source.
-   */
   function whenChromeReady(): Promise<void> {
     if (chromeWebContents.isDestroyed()) return Promise.resolve()
     if (!chromeWebContents.isLoading()) return Promise.resolve()
@@ -100,104 +112,143 @@ export function createAiSessionManager(deps: AiSessionManagerDeps): AiSessionMan
     })
   }
 
+  /** Tear down the active session in place; caller decides what to
+   *  build next. Idempotent. */
+  async function clearActive(): Promise<void> {
+    if (!session) return
+    const prior = session
+    session = null
+    try {
+      await prior.abort()
+    } catch {
+      // already settling
+    }
+    await prior.dispose().catch(() => {})
+  }
+
+  /** Mint a backend for `record` and bind it to the manager. Caller
+   *  must have already torn down any prior session. Bails (and
+   *  disposes the freshly-built backend) if the deck went away during
+   *  the await. */
+  async function bindNew(record: DeckSessionRecord): Promise<void> {
+    const deck = getDeck()
+    if (!deck || chromeWebContents.isDestroyed()) return
+    const built = await buildBackend({
+      sender: chromeWebContents,
+      rootDir: deck.rootDir,
+      chatKey: deck.sourcePath,
+      deckName: deck.manifest.name,
+      record,
+      onMutation,
+      capturePreview,
+    })
+    if (!getDeck() || chromeWebContents.isDestroyed()) {
+      await built.dispose().catch(() => {})
+      return
+    }
+    session = built
+  }
+
+  async function ensure(): Promise<void> {
+    if (session) return
+    const deck = getDeck()
+    if (!deck) return
+    await whenChromeReady()
+    const currentDeck = getDeck()
+    if (!currentDeck || chromeWebContents.isDestroyed()) return
+    // Resume the deck's most-recent session if it has one. Otherwise
+    // mint a brand-new record. If either path throws (stale path
+    // after userData move, missing CLI binary, etc.), bail without
+    // a session — the composer's readiness gate already shows the
+    // user a "fix this in Settings" hint, and we'd rather open the
+    // deck without AI than not open it at all.
+    const recent = await mostRecentSession(currentDeck.sourcePath)
+    const settings = await getSettings()
+    try {
+      if (recent) {
+        await bindNew(recent)
+        return
+      }
+      await bindNew(newSessionRecord(settings.ai.provider))
+    } catch (err) {
+      console.warn('[AiSessionManager] could not create AI session:', err)
+      if (recent) {
+        // Recent record was the problem (stale path, etc.) — try a
+        // fresh record once before giving up.
+        try {
+          await bindNew(newSessionRecord(settings.ai.provider))
+        } catch (err2) {
+          console.warn('[AiSessionManager] fresh session also failed:', err2)
+        }
+      }
+    }
+  }
+
   return {
     get() {
       return session
     },
 
-    async ensure(): Promise<void> {
-      if (session) return
+    ensure,
+
+    async switchToSession(id: string): Promise<void> {
       const deck = getDeck()
       if (!deck) return
-      // Wait for the chrome renderer to finish loading before we construct
-      // the session. Session construction can emit `deck:history_replay`
-      // synchronously (when there's a prior transcript on disk), and if
-      // the renderer hasn't registered its `ai:event` listener yet that
-      // message is lost. On cold start, chromeView.loadFile races deck
-      // extraction — a warm filesystem cache can win the race.
-      await whenChromeReady()
-      const currentDeck = getDeck()
-      if (!currentDeck || chromeWebContents.isDestroyed()) return
-      const created = await createDeckAiSession({
-        sender: chromeWebContents,
-        rootDir: currentDeck.rootDir,
-        chatKey: currentDeck.sourcePath,
-        deckName: currentDeck.manifest.name,
-        onMutation,
-        capturePreview,
-      })
-      // Window-close may have already run during the second await.
-      // Dispose immediately and bail.
-      if (!getDeck() || chromeWebContents.isDestroyed()) {
-        await created.dispose().catch(() => {})
+      const target = await readSession(deck.sourcePath, id)
+      if (!target) {
+        // Unknown id (deleted under us, etc.). Fall back to ensure() so
+        // the window doesn't end up session-less.
+        await clearActive()
+        await ensure()
         return
       }
-      session = created
+      await clearActive()
+      // Drop the old chat DOM before the new session emits its
+      // history_replay. Without this the renderer would concatenate
+      // the two transcripts visually.
+      if (!chromeWebContents.isDestroyed()) {
+        try {
+          chromeWebContents.send('ai:event', { type: 'deck:session_reset' })
+        } catch {
+          // teardown race
+        }
+      }
+      await whenChromeReady()
+      try {
+        await bindNew(target)
+      } catch (err) {
+        console.warn('[AiSessionManager] failed to switch to session, falling back:', err)
+        await ensure()
+      }
     },
 
-    async switch(sessionPath: string): Promise<void> {
+    async newChat(): Promise<void> {
       const deck = getDeck()
       if (!deck) return
-      if (session) {
+      await clearActive()
+      if (!chromeWebContents.isDestroyed()) {
         try {
-          await session.abort()
+          chromeWebContents.send('ai:event', { type: 'deck:session_reset' })
         } catch {
-          // session already disposed mid-await — fine
+          // teardown race
         }
-        const prior = session
-        session = null
-        await prior.dispose().catch(() => {})
       }
       await whenChromeReady()
-      const currentDeck = getDeck()
-      if (!currentDeck || chromeWebContents.isDestroyed()) return
-      // Tell the renderer to drop the prior chat DOM before we replay the
-      // new transcript — otherwise the two would concatenate visually.
+      // Brand-new record bound to whatever provider is currently
+      // selected in Settings. Stays in memory until the first
+      // successful turn writes it to disk. Swallow build errors
+      // (CLI binary went missing, etc.) — readiness gate surfaces the
+      // hint; better to leave the chat empty than crash the IPC.
+      const settings = await getSettings()
       try {
-        chromeWebContents.send('ai:event', { type: 'deck:session_reset' })
-      } catch {
-        // Destroyed between the check and the send — teardown race.
-      }
-      // If sessionPath has been removed/corrupted out from under us
-      // (external delete, partial transfer), don't leave the window
-      // session-less — fall back to the default session so the user can
-      // keep chatting. Caller's `chats:switch` IPC swallows the throw,
-      // but a session-less window forces the renderer into a no-session
-      // dead-end until the user reopens the deck.
-      let created: DeckAiSession
-      try {
-        created = await createDeckAiSession({
-          sender: chromeWebContents,
-          rootDir: currentDeck.rootDir,
-          chatKey: currentDeck.sourcePath,
-          deckName: currentDeck.manifest.name,
-          sessionPath,
-          onMutation,
-          capturePreview,
-        })
+        await bindNew(newSessionRecord(settings.ai.provider))
       } catch (err) {
-        console.warn('[AiSessionManager] switch: failed to open requested session, falling back to default', err)
-        created = await createDeckAiSession({
-          sender: chromeWebContents,
-          rootDir: currentDeck.rootDir,
-          chatKey: currentDeck.sourcePath,
-          deckName: currentDeck.manifest.name,
-          onMutation,
-          capturePreview,
-        })
+        console.warn('[AiSessionManager] could not create new chat:', err)
       }
-      if (!getDeck() || chromeWebContents.isDestroyed()) {
-        await created.dispose().catch(() => {})
-        return
-      }
-      session = created
     },
 
     async teardown(): Promise<void> {
-      if (!session) return
-      const prior = session
-      session = null
-      await prior.dispose().catch(() => {})
+      await clearActive()
     },
 
     emitSessionResetIfActive(): void {

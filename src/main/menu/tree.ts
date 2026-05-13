@@ -18,6 +18,14 @@ function canEditCurrentDeck(): boolean {
   return !!deck && deck.kind !== 'preview'
 }
 
+/** True when the focused window is currently in Edit mode (so the
+ *  toggle shortcut would exit it). Drives the menu label so users see
+ *  the action that's about to happen, not the constant feature name. */
+function isEditingCurrentDeck(): boolean {
+  const w = focusedAppWindow()
+  return !!w?.getDeck() && w.getSubView() === 'edit'
+}
+
 /**
  * Save flushes the live extraction back into the original `.deck` file.
  * Only meaningful for Pack-kind decks; Source-kind decks already write
@@ -65,7 +73,10 @@ export function buildMenuTree(): MenuNode[] {
     {
       kind: 'leaf',
       id: 'file.editDeck',
-      label: t('menu.file.editDeck'),
+      // Cmd+E toggles in/out of Edit mode; reflect the action about to
+      // happen in the label so users in Edit mode read "Exit Editor"
+      // instead of "Edit Deck" (which would imply a no-op).
+      label: isEditingCurrentDeck() ? t('menu.file.exitEditor') : t('menu.file.editDeck'),
       accelerator: 'CmdOrCtrl+E',
       enabled: canEditCurrentDeck(),
     },

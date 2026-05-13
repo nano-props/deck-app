@@ -32,6 +32,7 @@ export const en = {
   'menu.file.newWindow': 'New Window',
   'menu.file.openFile': 'Open .deck…',
   'menu.file.editDeck': 'Edit Deck',
+  'menu.file.exitEditor': 'Exit Editor',
   'menu.file.playDeck': 'Play Deck',
   'menu.file.save': 'Save',
   'menu.file.saveAs': 'Save As .deck…',
@@ -155,6 +156,8 @@ export const en = {
   'composer.disabled.no-model-id': 'Set a Model id for the custom endpoint in Settings.',
   'composer.disabled.unknown-builtin-model':
     'The selected model is no longer available. Pick a different model in Settings.',
+  'composer.disabled.no-cli':
+    'Claude Code CLI not found. Install it or pick a different provider in Settings.',
 
   // ---- Editor: status bar -------------------------------------------------
   'chat.status.thinking': 'Thinking…',
@@ -196,8 +199,17 @@ export const en = {
   'settings.ai.section.behavior': 'Behavior',
   'settings.ai.section.credentials': 'Credentials',
   'settings.provider': 'Provider',
-  'settings.provider.builtin': 'Built-in',
+  'settings.provider.builtin': 'Cloud API',
+  'settings.provider.local': 'Local CLI',
   'settings.provider.custom': 'Custom endpoint',
+  'settings.cli.binaryStatus': 'Claude Code CLI',
+  'settings.cli.recheck': 'Re-check',
+  'settings.cli.checking': 'Checking…',
+  'settings.cli.found': 'Found — version {version}',
+  'settings.cli.notFound': 'Not found on PATH',
+  'settings.cli.installHint': 'Install from claude.com/claude-code, then click Re-check.',
+  'settings.cli.description':
+    'Uses your locally-installed Claude Code to edit this deck.\n\n· Login and model are managed by the CLI — no API key needed.\n· Deck-specific tools (add_asset / screenshot_preview / validate_deck) are unavailable in this mode.',
   'settings.provider.label.customOpenai': 'Custom (OpenAI-compatible)',
   'settings.provider.label.customAnthropic': 'Custom (Anthropic-compatible)',
   'settings.provider.label.customResponses': 'Custom (OpenAI Responses)',

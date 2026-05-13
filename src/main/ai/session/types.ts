@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { WebContents } from 'electron'
+import type { DeckSessionRecord } from '#/main/ai/session-store.ts'
 
 /**
  * Result of `send()`. Distinguishes "the user can retry, nothing went
@@ -23,12 +24,14 @@ export interface DeckAiSession {
   /** Abort the in-flight turn. Resolves once the agent settles, so a
    *  follow-up send won't race the still-shutting-down agent. */
   abort(): Promise<void>
-  reset(): Promise<void>
+  /** Discard the in-memory state of this session. Caller is responsible
+   *  for spinning up a successor session (via the manager). */
   dispose(): Promise<void>
-  /** Path to the session's .jsonl on disk, or null if pi hasn't flushed
-   *  the file yet (no message has been appended). Used by the History
-   *  switcher to detect "is this session the active one". */
-  getSessionFile(): string | null
+  /** The deck-level session record this adapter is bound to. The provider
+   *  field is what the IPC layer uses to gate sends against a stale
+   *  settings.ai.provider. Read-only from the caller's POV — adapters
+   *  update it on disk via session-store. */
+  getRecord(): DeckSessionRecord
 }
 
 /**
@@ -67,6 +70,13 @@ export interface SessionParams {
   /** Human-visible deck name, used in the system prompt. */
   deckName: string
   /**
+   * Deck-level session this backend is binding to. Provider lock,
+   * resume hint (providerSessionId), and on-disk identity all live
+   * here. Adapters mutate it via session-store on first successful
+   * turn / reset; callers see updates through `getRecord()`.
+   */
+  record: import('#/main/ai/session-store.ts').DeckSessionRecord
+  /**
    * Called when the AI mutates a file under `rootDir`. Independent of
    * the chokidar watcher path: that route also fires markDirty, but
    * the watcher debounces (~120ms) and may merge a write+close pair
@@ -75,13 +85,6 @@ export interface SessionParams {
    * any teardown, so this guarantees `dirty` flips for AI-driven edits.
    */
   onMutation?: () => void
-  /**
-   * Optional explicit session-file path. When set, opens that file
-   * instead of `continueRecent`'s most-recent pick — used by the
-   * History switcher to load a past session. If omitted, falls back to
-   * "resume the most recent / start a fresh one".
-   */
-  sessionPath?: string
   /**
    * Snapshot the live deck preview as a PNG data URL. Wired to the
    * `screenshot_preview` tool so the agent can see what it just edited.

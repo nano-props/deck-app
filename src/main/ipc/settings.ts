@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { pingAi } from '#/main/ai/ping.ts'
 import { isBuiltin } from '#/main/ai/provider.ts'
 import { checkAiReadiness } from '#/main/ai/readiness.ts'
+import { detectClaudeCli, invalidateClaudeCliDetection } from '#/main/ai/cli/detect.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
 import {
   clearSecret,
@@ -137,5 +138,14 @@ export function wireSettingsIpc(): void {
   ipcMain.handle(
     'settings:ai-readiness',
     chromeOnly(async () => checkAiReadiness()),
+  )
+  ipcMain.handle(
+    'settings:cli-detect',
+    chromeOnly(async (_event, refresh?: unknown) => {
+      // Settings UI's "Re-check" button passes refresh=true so a fresh
+      // install during the session becomes visible without an app restart.
+      if (refresh === true) invalidateClaudeCliDetection()
+      return detectClaudeCli()
+    }),
   )
 }

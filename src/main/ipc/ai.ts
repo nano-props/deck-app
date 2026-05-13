@@ -2,9 +2,10 @@ import { dialog, ipcMain } from 'electron'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { stageAttachments, type StagedInput } from '#/main/attachments.ts'
-import { deleteChatSession, listDeckChatSessions } from '#/main/chats.ts'
+import { deleteChatSession } from '#/main/chats.ts'
 import { t } from '#/main/i18n/index.ts'
 import { chromeOnly } from '#/main/ipc/guard.ts'
+import { deleteSession, listSessions, readSession } from '#/main/ai/session-store.ts'
 import { appWindowByWebContents } from '#/main/window-registry.ts'
 import type { ChatUiContext } from '#/main/ai/session/types.ts'
 
@@ -41,6 +42,11 @@ export function wireAiIpc(): void {
       const w = appWindowByWebContents(event.sender)
       const session = w?.getAiSession()
       if (!session) return { ok: false as const, reason: 'no-session' as const, error: 'no active AI session' }
+      // The session is locked to its creation-time provider — backends
+      // read from session.record.provider, not from settings. So a
+      // user changing settings.ai.provider mid-deck simply has no
+      // effect on the active conversation; it kicks in for the next
+      // New Chat. No IPC-level mismatch gate is needed.
       const result = await session.send(text, parseChatUiContext(uiContext))
       if (result.ok) return { ok: true as const }
       return { ok: false as const, reason: result.reason, error: result.message }
@@ -58,7 +64,7 @@ export function wireAiIpc(): void {
   ipcMain.handle(
     'ai:reset',
     chromeOnly(async (event) => {
-      await appWindowByWebContents(event.sender)?.getAiSession()?.reset()
+      await appWindowByWebContents(event.sender)?.newAiChat()
     }),
   )
 
@@ -147,27 +153,35 @@ export function wireAiIpc(): void {
     chromeOnly(async (event) => {
       const w = appWindowByWebContents(event.sender)
       const deck = w?.getDeck()
-      if (!deck) return { sessions: [], activePath: null } as const
-      const sessions = await listDeckChatSessions(deck.sourcePath, deck.rootDir)
-      // The active session's file path may be null when pi hasn't flushed
-      // any messages yet (fresh "new chat" with no send) — in that case
-      // there's nothing in the listing to highlight either.
-      const activePath = w?.getAiSession()?.getSessionFile?.() ?? null
-      return { sessions, activePath }
+      if (!deck) return { sessions: [], activeId: null } as const
+      const records = await listSessions(deck.sourcePath)
+      // Empty sessions (no successful turn yet) carry an empty
+      // `summary`; hide them — the popover row would have nothing to
+      // show. They stay on disk only as in-memory drafts until the
+      // first turn lands.
+      const visible = records.filter((r) => r.summary.length > 0)
+      const activeId = w?.getAiSession()?.getRecord().id ?? null
+      return {
+        sessions: visible.map((r) => ({
+          id: r.id,
+          provider: r.provider,
+          summary: r.summary,
+          createdMs: r.createdMs,
+          lastUsedMs: r.lastUsedMs,
+        })),
+        activeId,
+      }
     }),
   )
 
   ipcMain.handle(
     'chats:switch',
-    chromeOnly(async (event, sessionPath: unknown) => {
-      if (typeof sessionPath !== 'string' || !sessionPath) return { ok: false as const }
+    chromeOnly(async (event, sessionId: unknown) => {
+      if (typeof sessionId !== 'string' || !sessionId) return { ok: false as const }
       const w = appWindowByWebContents(event.sender)
       if (!w?.getDeck()) return { ok: false as const }
-      // switchAiSession ultimately calls openDeckChatSession, which
-      // throws if sessionPath escapes the deck's chat directory.
-      // Surface a benign ok:false instead of an unhandled rejection.
       try {
-        await w.switchAiSession(sessionPath)
+        await w.switchAiSession(sessionId)
       } catch {
         return { ok: false as const }
       }
@@ -177,24 +191,27 @@ export function wireAiIpc(): void {
 
   ipcMain.handle(
     'chats:delete',
-    chromeOnly(async (event, sessionPath: unknown) => {
-      if (typeof sessionPath !== 'string' || !sessionPath) return { ok: false as const }
+    chromeOnly(async (event, sessionId: unknown) => {
+      if (typeof sessionId !== 'string' || !sessionId) return { ok: false as const }
       const w = appWindowByWebContents(event.sender)
       const deck = w?.getDeck()
       if (!w || !deck) return { ok: false as const }
-      // If the user is deleting the currently-active session, treat it
-      // like "new chat": reset the runtime first (which deletes its own
-      // session file via resetDeckSessionManager), then short-circuit —
-      // there's nothing else to delete.
-      const active = w.getAiSession()?.getSessionFile?.()
-      if (active && active === sessionPath) {
-        await w.getAiSession()?.reset()
-        return { ok: true as const }
+      const active = w.getAiSession()?.getRecord()
+      // Deleting the active session = "new chat": the manager tears
+      // down the live backend before we remove the on-disk metadata.
+      // Without this, the backend would happily keep writing to a
+      // file we just unlinked.
+      if (active && active.id === sessionId) {
+        await w.newAiChat()
       }
-      // deleteChatSession scopes the rmSync to the deck's chat directory;
-      // a path that escapes returns false (defence-in-depth). Renderer
-      // uses the result to decide whether to drop the row optimistically.
-      const ok = deleteChatSession(deck.sourcePath, sessionPath)
+      // Best-effort: also clean up the pi-agent JSONL when deleting a
+      // pi-flavored session. CLI sessions store their transcript in
+      // `~/.claude/projects/...` which is Claude's to manage.
+      const target = await readSession(deck.sourcePath, sessionId)
+      if (target && target.provider !== 'claude-cli' && target.providerSessionId) {
+        deleteChatSession(deck.sourcePath, target.providerSessionId)
+      }
+      const ok = await deleteSession(deck.sourcePath, sessionId)
       return ok ? { ok: true as const } : { ok: false as const }
     }),
   )

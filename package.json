@@ -1,6 +1,6 @@
 {
   "name": "deck-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Desktop container for .deck presentations",
   "private": true,
   "type": "module",

@@ -8,19 +8,20 @@ import path from 'node:path'
 import { canonicalPath } from '#/main/util/path-identity.ts'
 
 /**
- * Chat transcript persistence for the deck-bound Agent.
+ * pi-agent transcript helpers, scoped to one deck.
  *
- * We delegate to pi-coding-agent's `SessionManager`, which owns the
- * append-only JSONL format (SessionEntry per line, with parent-child
- * linkage via entry ids). pi uses this format to power its compaction
- * pipeline (entries get a stable `firstKeptEntryId` that points at the
- * boundary of a summarized section). We piggy-back on that.
- *
- * Layout:
- *   userData/
- *     chats/
- *       <deckId>/                 ← one directory per deck
- *         <timestamp>_<sid>.jsonl ← one file per session (pi-managed)
+ * The per-deck *chat directory* lives at
+ *   `userData/chats/<deckId>/`
+ * and holds two kinds of files:
+ *   - `<timestamp>_<sid>.jsonl` — pi-coding-agent's own append-only
+ *     transcript. Created by `SessionManager.continueRecent` /
+ *     `SessionManager.open` (see ai/session/index.ts). One per
+ *     successful pi-agent deck-session.
+ *   - `meta/<deckSessionUuid>.json` — deck-level session metadata
+ *     (see ai/session-store.ts). The single source of truth for
+ *     "what conversations exist for this deck"; the .jsonl files
+ *     above are pointed to from each metadata record's
+ *     `providerSessionId`.
  *
  * `deckId` is a SHA-256 prefix of the deck's canonical *sourcePath* —
  * the `.deck` file or Source directory the user opened. NOT the
@@ -29,27 +30,11 @@ import { canonicalPath } from '#/main/util/path-identity.ts'
  * deck's history across opens. On macOS/Windows the path is case-folded
  * before hashing so symlink renames don't split the identity.
  *
- * Functions take an explicit `chatKey` (= the deck's `sourcePath`) plus
- * a `rootDir` cwd that pi's SessionManager records in its header.
- * Two parameters because the chat dir is identity-keyed but pi's cwd
- * has to point at the live extracted directory for tool-use traces.
- *
- * Opening a deck calls `openDeckSessionManager(chatKey, rootDir)` which
- * resumes the most recent session in that directory, or starts a new
- * one if none exists. `resetDeckSessionManager(mgr)` deletes the
- * current session file and rolls over to a fresh one.
- *
- * Why delete instead of keep old files as a recovery breadcrumb: pi's
- * `newSession` only writes the new file's header when the next message
- * is actually appended — and pi *additionally* defers the first disk
- * flush until an assistant message arrives. If the user hits reset and
- * then closes the app before sending anything, the new file never
- * exists on disk and `findMostRecentSession` resurrects the old one
- * next time. Deleting makes reset mean reset.
- *
- * Retention for other cases (compaction rollovers, e.g. when pi
- * eventually exposes that): `SessionManager.getSessionFile()` and
- * `getSessionDir()` expose paths for a future background sweep.
+ * Functions here are the small surface that ai/session/index.ts and
+ * ipc/ai.ts still need: deckChatId / deckChatDir for path derivation,
+ * openDeckChatSession to load a specific pi JSONL, deleteChatSession
+ * to clean one up, and the persist/restore helpers used inside the
+ * pi-agent backend's send loop.
  */
 
 /** Stable id derived from the deck's source path (the user-facing identity). */
@@ -57,81 +42,10 @@ export function deckChatId(chatKey: string): string {
   return createHash('sha256').update(canonicalPath(chatKey)).digest('hex').slice(0, 16)
 }
 
-function deckChatDir(chatKey: string): string {
+export function deckChatDir(chatKey: string): string {
   const dir = path.join(app.getPath('userData'), 'chats', deckChatId(chatKey))
   mkdirSync(dir, { recursive: true })
   return dir
-}
-
-/**
- * Open (or resume) the SessionManager for a deck. If the deck has a prior
- * session on disk, its messages are restored; otherwise a new session file
- * is started.
- *
- * `chatKey` selects the chat directory (the deck's stable identity).
- * `rootDir` is the live extraction passed to pi as cwd — it shows up in
- * pi's session header so traces are self-describing.
- */
-export function openDeckSessionManager(chatKey: string, rootDir: string): SessionManager {
-  const dir = deckChatDir(chatKey)
-  return SessionManager.continueRecent(rootDir, dir)
-}
-
-/**
- * Start a fresh session. Deletes the current session file first so
- * `continueRecent` can't resurrect the old transcript (see module doc).
- * Safe no-ops: missing file / in-memory manager.
- */
-export function resetDeckSessionManager(manager: SessionManager): void {
-  const current = manager.getSessionFile()
-  if (current) {
-    try {
-      rmSync(current, { force: true })
-    } catch {
-      // If we can't delete, the new session will still write alongside
-      // the old one — `findMostRecentSession` will prefer the newer by
-      // mtime once the new file is flushed. Not ideal but not fatal.
-    }
-  }
-  manager.newSession()
-}
-
-/**
- * Lightweight summary of one persisted chat session — the shape sent to
- * the renderer for the History popover. Derived from pi's `SessionInfo`
- * but trimmed to the fields the UI actually shows.
- */
-export interface DeckChatSummary {
-  /** Absolute path to the session's .jsonl file. Used as the stable id
-   *  for switch/delete IPCs (sessionId would also work but path is what
-   *  pi.SessionManager.open() takes directly). */
-  path: string
-  /** Short text from the first user message, '' if the session is empty.
-   *  Renderer treats '' as "skip / hide". */
-  firstMessage: string
-  /** Number of message-shaped entries — used as a "msgs" badge. */
-  messageCount: number
-  /** Last-modified timestamp in ms, for relative-time labels. */
-  modifiedMs: number
-}
-
-/**
- * List every chat session for a deck, newest first. Empty sessions
- * (no first message yet) are filtered out — they exist on disk for users
- * who hit "new chat" and then closed without typing, but they're not
- * useful in a switcher.
- */
-export async function listDeckChatSessions(chatKey: string, rootDir: string): Promise<DeckChatSummary[]> {
-  const dir = deckChatDir(chatKey)
-  const all = await SessionManager.list(rootDir, dir)
-  return all
-    .filter((s) => typeof s.firstMessage === 'string' && s.firstMessage.trim().length > 0)
-    .map((s) => ({
-      path: s.path,
-      firstMessage: s.firstMessage,
-      messageCount: s.messageCount,
-      modifiedMs: s.modified.getTime(),
-    }))
 }
 
 /**
@@ -152,13 +66,13 @@ function isPathInside(sessionPath: string, dir: string): boolean {
 }
 
 /**
- * Open a SessionManager pointing at a specific session file. Used when
- * the user picks a past session in the History popover.
- *
- * Mirrors `openDeckSessionManager` but bypasses `continueRecent`'s
- * "most-recent" selection. Throws if `sessionPath` escapes the deck's
- * chat directory (renderer-supplied input is not trusted — see
- * `isPathInside`).
+ * Open a SessionManager pointing at a specific session file. Used by
+ * the pi-agent backend when a deck-session record's
+ * `providerSessionId` points at an existing pi JSONL (history switch
+ * or resume across launches). Throws if `sessionPath` escapes the
+ * deck's chat directory — record fields originate on disk, but a
+ * compromised renderer could in principle plant one, so this stays
+ * as a defence-in-depth check.
  */
 export function openDeckChatSession(
   chatKey: string,

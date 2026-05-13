@@ -37,6 +37,7 @@ export const PROVIDER_LABEL: Record<ProviderId, string> = {
   'custom-openai': 'Custom (OpenAI-compatible)',
   'custom-anthropic': 'Custom (Anthropic-compatible)',
   'custom-responses': 'Custom (OpenAI Responses)',
+  'claude-cli': 'Claude Code',
 }
 
 /**
@@ -51,7 +52,7 @@ const CUSTOM_API: Record<CustomProviderId, Api> = {
 }
 
 export function isBuiltin(id: ProviderId): id is BuiltinProviderId {
-  return !isCustomProvider(id)
+  return id === 'anthropic' || id === 'openai' || id === 'google'
 }
 
 /**
@@ -120,8 +121,15 @@ export function buildModel(params: {
   if (isBuiltin(params.provider)) {
     return resolveBuiltin(params.provider, params.model)
   }
-  const config = params.custom[params.provider]
-  return buildCustomModel(params.provider, config)
+  if (!isCustomProvider(params.provider)) {
+    // CLI providers (claude-cli) don't route through pi-ai. The dispatcher
+    // in ai-session-manager picks a different session implementation
+    // before this point — reaching here means a bug upstream.
+    throw new Error(`Provider ${params.provider} does not use pi-ai's model registry`)
+  }
+  const customId = params.provider as CustomProviderId
+  const config = params.custom[customId]
+  return buildCustomModel(customId, config)
 }
 
 /**
@@ -149,6 +157,7 @@ export type AiUnreadyReason =
   | 'no-base-url' // custom endpoint, baseUrl blank
   | 'no-model-id' // custom endpoint, model id blank
   | 'unknown-builtin-model' // builtin model id no longer in pi-ai's registry
+  | 'no-cli' // CLI provider but the binary couldn't be located on PATH
 
 export interface AiReadiness {
   ready: boolean

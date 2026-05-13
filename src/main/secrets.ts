@@ -38,7 +38,14 @@ import { createSerialQueue } from '#/main/util/serial-queue.ts'
  * Keys are bucketed per id so switching between a builtin and a custom
  * flavor doesn't clobber the other's key.
  */
-export type ProviderId = 'anthropic' | 'openai' | 'google' | 'custom-openai' | 'custom-anthropic' | 'custom-responses'
+export type ProviderId =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'custom-openai'
+  | 'custom-anthropic'
+  | 'custom-responses'
+  | 'claude-cli'
 
 export const KNOWN_PROVIDERS: readonly ProviderId[] = [
   'anthropic',
@@ -47,10 +54,20 @@ export const KNOWN_PROVIDERS: readonly ProviderId[] = [
   'custom-openai',
   'custom-anthropic',
   'custom-responses',
+  'claude-cli',
 ] as const
 
 export function isCustomProvider(id: ProviderId): boolean {
   return id.startsWith('custom-')
+}
+
+/**
+ * Provider that delegates to a locally-installed CLI binary instead of
+ * calling a model API directly. These providers never store an API key
+ * (the CLI handles its own auth) and bypass the API-key readiness gate.
+ */
+export function isCliProvider(id: ProviderId): boolean {
+  return id === 'claude-cli'
 }
 
 /** Path to the on-disk secrets file. Lazy-computed because `app.getPath`

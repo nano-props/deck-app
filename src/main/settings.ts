@@ -147,6 +147,11 @@ export function resolveModel(settings: Settings): string {
   if (provider === 'anthropic' || provider === 'openai' || provider === 'google') {
     return builtinModel[provider] || DEFAULT_BUILTIN_MODELS[provider]
   }
+  // CLI providers manage their own model selection via their own config /
+  // CLI flags. We surface an empty string so callers that path through
+  // here for display purposes don't blow up; the CLI session adapter
+  // ignores this entirely.
+  if (provider === 'claude-cli') return ''
   return custom[provider].model
 }
 
@@ -205,7 +210,17 @@ async function doLoad(): Promise<Settings> {
       const val = parsed.ai?.builtinModel?.[key]
       if (typeof val === 'string' && val.length > 0) mergedBuiltin[key] = val
     }
-    const provider = (parsed.ai?.provider ?? DEFAULT_SETTINGS.ai.provider) as ProviderId
+    const rawProvider = parsed.ai?.provider as ProviderId | undefined
+    const provider: ProviderId =
+      rawProvider === 'anthropic' ||
+      rawProvider === 'openai' ||
+      rawProvider === 'google' ||
+      rawProvider === 'custom-openai' ||
+      rawProvider === 'custom-anthropic' ||
+      rawProvider === 'custom-responses' ||
+      rawProvider === 'claude-cli'
+        ? rawProvider
+        : DEFAULT_SETTINGS.ai.provider
     const uiLang =
       parsed.ui?.lang === 'en' || parsed.ui?.lang === 'zh' || parsed.ui?.lang === 'ko' || parsed.ui?.lang === 'auto'
         ? parsed.ui.lang

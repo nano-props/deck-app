@@ -33,6 +33,7 @@ export function Composer() {
   const unreadyReason = useAiStore((s) => s.unreadyReason)
   const setError = useAiStore((s) => s.setError)
   const canSend = useAiStore(canSendSelector)
+  const hasHistory = useAiStore((s) => s.hasHistory)
   const attachments = useAttachments()
   const hasNodes = useChatStore((s) => s.nodes.length > 0)
 
@@ -409,12 +410,12 @@ export function Composer() {
             </IconButton>
           </Tooltip>
           <ChatHistoryPopover
+            tooltipContent={t('composer.history.title')}
+            disabled={!hasHistory}
             trigger={
-              <Tooltip content={t('composer.history.title')}>
-                <IconButton size="lg" aria-label={t('composer.history.aria')}>
-                  <Clock />
-                </IconButton>
-              </Tooltip>
+              <IconButton size="lg" aria-label={t('composer.history.aria')} disabled={!hasHistory}>
+                <Clock />
+              </IconButton>
             }
           />
           <Tooltip content={t('composer.attach.title')}>

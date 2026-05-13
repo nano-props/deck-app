@@ -2,11 +2,13 @@ import type { ProviderId } from '#/main/secrets.ts'
 
 export const BUILTIN_IDS: ProviderId[] = ['anthropic', 'openai', 'google']
 export const CUSTOM_IDS: ProviderId[] = ['custom-openai', 'custom-anthropic', 'custom-responses']
+export const CLI_IDS: ProviderId[] = ['claude-cli']
 
 export const BUILTIN_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   google: 'Google',
+  'claude-cli': 'Claude Code',
 }
 
 export const CUSTOM_LABEL_KEY: Record<string, string> = {

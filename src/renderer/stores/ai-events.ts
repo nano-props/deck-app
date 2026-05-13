@@ -132,6 +132,11 @@ window.deck.onAiEvent((ev: AiEvent) => {
       break
     case 'agent_end':
       ai.setStreaming(false)
+      // A successful first turn promotes the active session from "empty
+      // draft in memory" to "persisted on disk", which the History
+      // popover should now offer. Cheap to re-list — the chats:list IPC
+      // is a single readdir.
+      void ai.refreshHasHistory()
       // Surface failures from pi's `handleRunFailure` path — that path
       // synthesizes an `agent_end` with a stub assistant message but
       // skips `message_end` (where we'd normally pick up errorMessage).

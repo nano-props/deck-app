@@ -208,6 +208,13 @@ export class AppWindow {
     return this.aiManager.get()
   }
 
+  /** Discard the active deck session in memory and start a fresh one
+   *  bound to the user's currently-selected provider. Called by the
+   *  ai:reset IPC and the "New Chat" affordance. */
+  newAiChat(): Promise<void> {
+    return this.aiManager.newChat()
+  }
+
   getState(): AppState {
     const deck = this.deckSession.getDeck()
     return {
@@ -439,15 +446,16 @@ export class AppWindow {
   }
 
   /**
-   * Replace the current AI session with one pointing at `sessionPath`.
-   * Used by the History popover. Aborts any in-flight turn first, tears
-   * down the existing session (the JSONL file stays — we only own the
-   * runtime), and creates a fresh `DeckAiSession` seeded from the
-   * picked file. The new session emits `deck:history_replay` which the
-   * renderer uses to repaint the chat list.
+   * Switch to the deck-level session with id `deckSessionId`. Used by
+   * the History popover. Aborts any in-flight turn, disposes the
+   * existing backend (its on-disk transcript stays — we only own the
+   * runtime), then builds a fresh backend bound to that session's
+   * recorded provider. pi-agent backends emit `deck:history_replay`
+   * to repaint the chat list; CLI backends come up empty (Claude's
+   * own transcript is opaque to us — see ai/cli/session.ts header).
    */
-  async switchAiSession(sessionPath: string): Promise<void> {
-    return this.aiManager.switch(sessionPath)
+  async switchAiSession(deckSessionId: string): Promise<void> {
+    return this.aiManager.switchToSession(deckSessionId)
   }
 
   // ---- Internals ----------------------------------------------------------

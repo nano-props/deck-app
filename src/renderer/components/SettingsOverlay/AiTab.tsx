@@ -12,6 +12,7 @@ import {
   BASEURL_HINT_KEY,
   BUILTIN_IDS,
   BUILTIN_LABELS,
+  CLI_IDS,
   CUSTOM_IDS,
   CUSTOM_LABEL_KEY,
   RECOMMENDED_MODEL,
@@ -315,7 +316,8 @@ function AiGroup() {
   // hook calls — see history of React error #310 for context.)
   if (!settings) return null
 
-  const isCustom = provider.startsWith('custom-')
+  const isCli = provider === 'claude-cli'
+  const isCustom = !isCli && provider.startsWith('custom-')
   function providerLabel(p: ProviderId) {
     return BUILTIN_LABELS[p] ?? t(CUSTOM_LABEL_KEY[p] as any)
   }
@@ -340,6 +342,10 @@ function AiGroup() {
             ariaLabel={t('settings.provider')}
             groups={[
               {
+                label: t('settings.provider.local'),
+                items: CLI_IDS.map((p) => ({ value: p, label: providerLabel(p) })),
+              },
+              {
                 label: t('settings.provider.builtin'),
                 items: BUILTIN_IDS.map((p) => ({ value: p, label: providerLabel(p) })),
               },
@@ -351,7 +357,9 @@ function AiGroup() {
           />
         </Field>
 
-        {isCustom && (
+        {isCli && <ClaudeCliStatusCard />}
+
+        {!isCli && isCustom && (
           <Field label={t('settings.baseUrl')} hint={baseUrlHint}>
             <TextInput
               value={baseUrlValue}
@@ -366,19 +374,22 @@ function AiGroup() {
           </Field>
         )}
 
-        <Field label={t('settings.model')} hint={modelHint}>
-          <TextInput
-            value={modelValue}
-            onChange={(e) => {
-              const v = e.target.value
-              if (isCustom) setCustom((c) => ({ ...c, [provider]: { ...c[provider], model: v } }))
-              else setBuiltinModel((m) => ({ ...m, [provider]: v }))
-            }}
-            placeholder={isCustom ? t('settings.model.placeholder.custom') : recommended}
-          />
-        </Field>
+        {!isCli && (
+          <Field label={t('settings.model')} hint={modelHint}>
+            <TextInput
+              value={modelValue}
+              onChange={(e) => {
+                const v = e.target.value
+                if (isCustom) setCustom((c) => ({ ...c, [provider]: { ...c[provider], model: v } }))
+                else setBuiltinModel((m) => ({ ...m, [provider]: v }))
+              }}
+              placeholder={isCustom ? t('settings.model.placeholder.custom') : recommended}
+            />
+          </Field>
+        )}
       </Section>
 
+      {!isCli && (
       <Section title={t('settings.ai.section.credentials')}>
         {/*
           Credentials live in a tinted card so the API key + its status
@@ -421,7 +432,9 @@ function AiGroup() {
           <AiStatusMessage status={status} />
         </div>
       </Section>
+      )}
 
+      {!isCli && (
       <Section title={t('settings.ai.section.behavior')}>
         <Field label={t('settings.thinking')} hint={t('settings.thinking.hint')}>
           <Segmented
@@ -439,6 +452,67 @@ function AiGroup() {
           />
         </Field>
       </Section>
+      )}
+    </div>
+  )
+}
+
+/**
+ * CLI provider status panel. Runs detection on mount and lets the user
+ * re-check after they install the binary. We deliberately don't make
+ * this look like the API-key card — the affordance is different (no
+ * input, no save), and conflating them would imply Claude Code needs
+ * an API key, which it doesn't.
+ */
+function ClaudeCliStatusCard() {
+  const t = useI18n((s) => s.t)
+  const [state, setState] = useState<{ phase: 'checking' } | { phase: 'done'; found: boolean; version?: string; error?: string }>(
+    { phase: 'checking' },
+  )
+
+  const detect = useCallback(async (refresh: boolean) => {
+    setState({ phase: 'checking' })
+    const r = await window.deck.settings.detectClaudeCli(refresh)
+    setState({ phase: 'done', found: !!r.found, version: r.version, error: r.error })
+  }, [])
+
+  useEffect(() => {
+    void detect(false)
+  }, [detect])
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-bg-deep p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] font-semibold text-ink-2">{t('settings.cli.binaryStatus')}</span>
+        <button
+          type="button"
+          className="text-[11px] text-ink-2 underline-offset-2 hover:underline"
+          onClick={() => void detect(true)}
+        >
+          {t('settings.cli.recheck')}
+        </button>
+      </div>
+      {state.phase === 'checking' && (
+        <div className="text-[12px] text-ink-2">{t('settings.cli.checking')}</div>
+      )}
+      {state.phase === 'done' && state.found && (
+        <div className="text-[12px] text-ink">
+          {t('settings.cli.found', { version: state.version ?? '' })}
+        </div>
+      )}
+      {state.phase === 'done' && !state.found && (
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[12px] text-warning">
+            {state.error || t('settings.cli.notFound')}
+          </div>
+          <div className="text-[11px] text-ink-2">
+            {t('settings.cli.installHint')}
+          </div>
+        </div>
+      )}
+      <div className="whitespace-pre-line text-[11px] leading-snug text-ink-2">
+        {t('settings.cli.description')}
+      </div>
     </div>
   )
 }

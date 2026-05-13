@@ -24,11 +24,11 @@ One Electron binary, three views, **one window** (see §4.1):
 
 ### Entry points
 
-- Double-click a `.deck` → opens in Player mode. `⌘E` flips to Editor; the deck server and AI session stay live across the flip.
+- Double-click a `.deck` → opens in Player mode. `⌘E` toggles between Player and Editor; the deck server and AI session stay live across the flip.
 - `File → Open Folder…` (`⌘⇧O`) on a directory containing `deck.json` → opens in Editor mode (developer-friendly path; UI doesn't surface "Source" as a user concept).
 - `File → New Deck…` (`⌘N`) → scaffolds a directory from the minimal template and opens it in Editor mode.
 - Launch from Dock / menu / CLI with no arguments → Launcher.
-- Inside a window hosting a Deck, `⌘E` (Edit Deck) and `⌘⌥P` (Play Deck) flip between the two sub-views. Packs and directories are both editable; the difference is the save model — a Pack rezips back to its `.deck` on `⌘S` / close, a directory writes through.
+- Inside a window hosting a Deck, `⌘E` toggles between Editor and Player; `⌘⌥P` always goes to Player. Packs and directories are both editable; the difference is the save model — a Pack rezips back to its `.deck` on `⌘S` / close, a directory writes through.
 
 ---
 
@@ -46,7 +46,7 @@ One Electron binary, three views, **one window** (see §4.1):
 | Zip                       | `adm-zip`                                                                                                         | `yauzl` / `yazl`              |
 | File watcher              | `chokidar` (Editor auto-reload)                                                                                   | —                             |
 | AI SDK                    | `@earendil-works/pi-ai` + `pi-agent-core` + `pi-coding-agent`                                                       | —                             |
-| Persistence               | JSON + JSONL under `app.getPath('userData')`; API keys via `safeStorage`                                          | —                             |
+| Persistence               | JSON + JSONL under `app.getPath('userData')`; API keys via `safeStorage`; local-CLI providers handle their own auth (no key stored) | —                             |
 
 ### Local server lifecycle
 
@@ -64,13 +64,16 @@ userData/
 ├── settings.json             # AI provider choice, per-provider model, custom-endpoint configs, thinking level, compaction thresholds, UI language
 ├── secrets.json              # API keys, encrypted via Electron safeStorage (OS keychain / DPAPI / secret-service)
 ├── recents.json              # MRU list of recently opened Decks (max 10)
-└── chats/                    # AI session transcripts
+└── chats/                    # AI sessions, scoped per deck
     └── <deckId>/             #   deckId = 16-char SHA-256 prefix of canonical sourcePath
-        └── <timestamp>_<sid>.jsonl
+        ├── meta/<sessionUuid>.json   # deck-level session metadata (one per conversation)
+        └── <timestamp>_<sid>.jsonl   # pi-agent transcript, when the conversation uses an API provider
 ```
 
 - `settings.json`, `secrets.json`, `recents.json`: plain JSON, rewritten on change. API keys in `secrets.json` are base64 ciphertext produced by `safeStorage.encryptString` — the app refuses to store plaintext when the OS keychain is unavailable. **Theme is intentionally NOT in `settings.json`**: it lives in the renderer's `localStorage` under `deck:theme`, because an inline boot script in `index.html` has to resolve it before any IPC round-trip to avoid a white→dark flash on app launch.
-- `chats/<deckId>/<…>.jsonl`: append-only session log managed by `@earendil-works/pi-coding-agent`'s `SessionManager`. The `deckId` hashes the deck's user-facing identity (the `.deck` file path or the directory the user opened), NOT the temp-extraction `rootDir` — a Pack's rootDir is a fresh tmpdir on every open and would split the chat history across opens otherwise. Resuming the most recent session for a deck continues it; starting fresh creates a new file.
+- `chats/<deckId>/` is keyed by the deck's user-facing identity (the `.deck` path or opened directory), not the temp-extraction `rootDir` — a Pack's rootDir is a fresh tmpdir on every open and would split history otherwise. Two layers underneath:
+  - **`meta/<sessionUuid>.json`** — one file per *deck session*, the unit shown in the History popover. Shape: `{ id, provider, providerSessionId, summary, createdMs, lastUsedMs }`. The provider is locked at creation (see §5.4); `providerSessionId` is the resume hint into whichever backend ran the conversation.
+  - **`<timestamp>_<sid>.jsonl`** — pi-coding-agent's append-only transcript, one per deck session that uses an API provider. Pi mints the file; we record its absolute path in the matching record's `providerSessionId`. Local-CLI providers (Claude Code) keep their transcript under `~/.claude/projects/...` instead — we don't mirror it, and `providerSessionId` for those records holds the CLI's own `--session-id` uuid.
 - There is no longer a `workspaces/` directory. Pack edits live in `os.tmpdir()/deck-app/<uuid>/` for the lifetime of the open and are removed after the close-time rezip.
 
 ---
@@ -96,7 +99,7 @@ See [`deck-spec.md` §3](./deck-spec.md). The Player supports both Deck Pack (ex
 
 Platform-appropriate chrome backs a single topbar shared by all three modes. Full per-platform rationale — macOS `hiddenInset` with centered traffic lights, Windows / Linux `titleBarOverlay` — lives in [`window-chrome.md`](./window-chrome.md). For the author-facing contract (the deck owns the whole viewport; the topbar handles window dragging), see [`deck-spec.md` §6](./deck-spec.md).
 
-**Container-level shortcuts** (handled by the Deck App; never forwarded to the deck page): `Esc` exits fullscreen · `F11` / `Cmd+Ctrl+F` toggles fullscreen · `Cmd+W` / `Ctrl+W` closes the window · `Cmd+Shift+W` / `Ctrl+Shift+W` closes just the Deck and returns to the Launcher · `Cmd+R` / `Ctrl+R` reloads the deck preview (never the chrome — would lose in-flight AI state) · `Cmd+E` / `Ctrl+E` switches to Editor, `Cmd+Alt+P` / `Ctrl+Alt+P` switches to Player. `Cmd+,` / `Ctrl+,` opens the in-window Settings overlay.
+**Container-level shortcuts** (handled by the Deck App; never forwarded to the deck page): `Esc` exits fullscreen · `F11` / `Cmd+Ctrl+F` toggles fullscreen · `Cmd+W` / `Ctrl+W` closes the window · `Cmd+Shift+W` / `Ctrl+Shift+W` closes just the Deck and returns to the Launcher · `Cmd+R` / `Ctrl+R` reloads the deck preview (never the chrome — would lose in-flight AI state) · `Cmd+E` / `Ctrl+E` toggles between Editor and Player; `Cmd+Alt+P` / `Ctrl+Alt+P` always goes to Player (no toggle). `Cmd+,` / `Ctrl+,` opens the in-window Settings overlay.
 
 **Presentation mode** _(planned)_: hide the topbar and let `deckView` take the full window.
 
@@ -161,28 +164,43 @@ The left/right split is driven by real geometry. `TOPBAR_PX = 32` lives in `src/
   `bash` and `list_skills` / `read_skill` are **intentionally absent**. No shell access in a desktop app (the prior `sandbox-exec`-based bash tool was removed in favor of the fine-grained read/write/edit/ls/grep/find surface). pi's defaults for `grep` / `find` shell out to `rg` / `fd` and silently download those binaries on first use — we override the operations with Node-native implementations so there are no surprise external binaries at runtime. Skills are surfaced via absolute paths in the system prompt and read with the standard `read` tool. See the comment block at the top of `src/main/ai/tools.ts` for the full rationale.
 
 - **Context**: the system prompt includes a two-level listing of the Deck Source plus the `deck.json` summary, so the model can orient without a preliminary `ls` call.
-- **Models**: provider-agnostic. Built-in choices (`src/main/ai/provider.ts`):
-  - Anthropic — `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5`.
-  - OpenAI — `gpt-5.1`, `gpt-5`, `gpt-5-mini`.
-  - Google — `gemini-3-pro-preview`, `gemini-3-flash`, `gemini-2.5-pro`.
+- **Providers**: three families, selectable from Settings → AI:
+  - **Local CLI** — Claude Code (`claude-cli`). Spawns the user's locally-installed [`claude` CLI](https://claude.com/claude-code) per turn with `--output-format stream-json` and `--resume <uuid>`. The CLI owns its auth, model, and reasoning settings; no API key is stored. Deck-specific tools (`add_asset`, `screenshot_preview`, `validate_deck`, `fetch_url`) are unavailable here — the CLI runs out of process and can't reach our IPC.
+  - **Cloud API** — built-in lineup (`src/main/ai/provider.ts`):
+    - Anthropic — `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5`.
+    - OpenAI — `gpt-5.1`, `gpt-5`, `gpt-5-mini`.
+    - Google — `gemini-3-pro-preview`, `gemini-3-flash`, `gemini-2.5-pro`.
+  - **Custom endpoint** — three slots (`custom-openai`, `custom-anthropic`, `custom-responses`) pointing at any OpenAI-compatible, Anthropic-compatible, or OpenAI-Responses endpoint via a base URL and model id.
 
-  Plus three "custom" provider slots (`custom-openai`, `custom-anthropic`, `custom-responses`) that let the user point at any OpenAI-compatible, Anthropic-compatible, or OpenAI-Responses endpoint by entering a base URL and model id.
+- **API key resolution**: for Cloud-API and Custom-endpoint providers, keys come **only** from the Settings UI (stored encrypted in `secrets.json` via `safeStorage`). Deck deliberately ignores pi-ai's built-in environment-variable fallback (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, …). Rationale: Deck is a desktop product whose users don't necessarily understand environment variables. Honoring an env-var-only key would put the composer in a state where Settings says "no key set" but Send still works — confusing for non-technical users, and inconsistent with the readiness gate (see `src/main/ai/readiness.ts`). Trade-off: developers running from a shell with exported keys still need to copy the key into Settings once. Local-CLI providers don't apply here — the CLI handles auth itself, and readiness instead gates on the binary being on `PATH`.
 
-- **API key resolution**: keys come **only** from the Settings UI (stored encrypted in `secrets.json` via `safeStorage`). Deck deliberately ignores pi-ai's built-in environment-variable fallback (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, …). Rationale: Deck is a desktop product whose users don't necessarily understand environment variables. Honoring an env-var-only key would put the composer in a state where Settings says "no key set" but Send still works — confusing for non-technical users, and inconsistent with the readiness gate (see `src/main/ai/readiness.ts`). Trade-off: developers running from a shell with exported keys still need to copy the key into Settings once.
+> The AI writes HTML / CSS / JS directly — it does not manipulate a structured slide model. Freedom equals plain web development. The _"works out of the box"_ responsibility lives in **templates** (see 5.5), not in the spec or runtime.
 
-> The AI writes HTML / CSS / JS directly — it does not manipulate a structured slide model. Freedom equals plain web development. The _"works out of the box"_ responsibility lives in **templates** (see 5.4), not in the spec or runtime.
+### 5.4 Deck-session lifecycle
 
-### 5.4 Templates
+The unit of conversation is the **deck session**, surfaced in the History popover and persisted as `chats/<deckId>/meta/<sessionUuid>.json`. The choice of AI backend (pi-agent vs. local CLI) is a property of the session, not of the user's current Settings.
+
+**Provider lock.** A deck session captures `settings.ai.provider` at creation and stays bound to it for life. Changing the provider in Settings only affects the **next** New Chat — in-flight and historical sessions keep their original backend.
+
+- The session manager picks a backend from `record.provider`, not `settings.ai.provider`. The pi-agent backend passes `record.provider` to `buildModel`; the CLI backend just spawns `claude`.
+- The History popover honors the recorded provider — switching to an old Anthropic session runs pi-agent even if Settings is now on Claude Code.
+- New Chat (the pencil button, or `ai:reset` IPC) discards the active backend and mints a fresh record with the current `settings.ai.provider`.
+
+**Resume on deck open.** The manager calls `mostRecentSession(chatKey)` and binds the most-recently-used record. If that fails — stale `providerSessionId` after a `userData` move, deleted CLI session — it falls back to a fresh record so the deck never opens session-less. Draft records (a session minted but never successfully sent) stay in memory only; closing the window without sending leaves no on-disk trace.
+
+**CLI continuity across launches.** The CLI keeps its transcript under `~/.claude/projects/...`. We persist the `--session-id` uuid in `record.providerSessionId` and pass it back as `--resume <uuid>` next launch — Claude restores its own context, but our chat panel comes up empty because we don't replay Claude's transcript into our UI. A v1 trade-off; closing it would mean parsing Claude's stream-json JSONL ourselves.
+
+### 5.5 Templates
 
 A starter template is itself a minimal Deck; the AI edits on top. Each template contains a `deck.json` (with `name` only), an `index.html` (with arrow-key pagination and a `.slide` layout preset), and baseline CSS.
 
 Today the app ships a single minimal template (`skills/create-deck/templates/`). A richer lineup — Minimal White / Tech Dark / Academic Paper / Keynote / Scrolling Longform — is _(planned)_.
 
-### 5.5 Asset management
+### 5.6 Asset management
 
 Drag an image / video / font into the chat composer, or paste with `⌘V` / `Ctrl+V`, to stage it as an attachment chip. When the AI receives the next message it invokes `add_asset` to write the payload into the Deck Source (default location: `assets/<filename>`) and references the file by relative path in its code.
 
-### 5.6 Save / Export
+### 5.7 Save / Export
 
 - **Save** (`⌘S`) — for a Pack, rezips the live extraction back into the original `.deck` file. For a Source, no-op (writes already persist). Also runs automatically (best-effort, dirty only) on close. The Editor topbar shows a Save icon for Pack-kind decks with a small dot indicator when dirty.
 - **Save As .deck…** (`⇧⌘S`) — packs the current rootDir into a user-chosen `.deck` path. Works on Pack and Source alike. Doesn't change which file the window is editing — the user can reopen the new `.deck` if they want to switch.
@@ -198,7 +216,7 @@ Menu items are declared once in `src/main/menu/` as a tree, and both the native 
 
 **Currently shipped:**
 
-- **File** — New Deck… (`⌘N`) · New Window (`⌘⌥N`) · Open .deck… (`⌘O`) · Open Folder… (`⌘⇧O`) · Edit Deck (`⌘E`) · Play Deck (`⌘⌥P`) · Save (`⌘S`, Pack-only) · Save As .deck… (`⇧⌘S`) · Reveal in Finder / Explorer · Open Chats Folder · Close Window (`⌘W`) · Close Deck and Return to Launcher (`⌘⇧W`) · Quit.
+- **File** — New Deck… (`⌘N`) · New Window (`⌘⌥N`) · Open .deck… (`⌘O`) · Open Folder… (`⌘⇧O`) · Edit Deck (`⌘E`, label flips to "Exit Editor" while editing) · Play Deck (`⌘⌥P`) · Save (`⌘S`, Pack-only) · Save As .deck… (`⇧⌘S`) · Reveal in Finder / Explorer · Open Chats Folder · Close Window (`⌘W`) · Close Deck and Return to Launcher (`⌘⇧W`) · Quit.
 - **Edit** — Undo · Redo · Cut · Copy · Paste · Select All. Routed to the focused chrome `WebContents` — the deck page runs untrusted content and is deliberately not a valid Edit target.
 - **View** — Reload Preview (`⌘R`) · Force Reload Preview (`⌘⇧R`) · Actual Size · Zoom In · Zoom Out · Toggle Full Screen · Toggle Developer Tools. Reload only touches the deck preview; it never reloads the chrome view (would blow away in-flight AI state).
 

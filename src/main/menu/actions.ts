@@ -118,9 +118,18 @@ async function newDeckMenuAction(): Promise<void> {
   await createNewDeckInWindow(target)
 }
 
+/**
+ * cmd/ctrl+E acts as a toggle: from Play mode it enters the Editor;
+ * from Edit mode it returns to Play. A single shortcut flipping both
+ * directions matches how users intuit the keybinding ("E for edit on /
+ * edit off"). Cmd+Alt+P stays as the unambiguous "go to play" entry
+ * from menus regardless of current mode.
+ */
 function editCurrentDeck(): void {
   const w = focusedAppWindow()
-  if (w?.getDeck()) w.enterEditor()
+  if (!w?.getDeck()) return
+  if (w.getSubView() === 'edit') w.enterPlayer()
+  else w.enterEditor()
 }
 
 function playCurrentDeck(): void {

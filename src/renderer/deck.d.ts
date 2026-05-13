@@ -7,7 +7,6 @@ import type { AiSettings, Settings } from '#/main/settings.ts'
 import type { ProviderId } from '#/main/secrets.ts'
 import type { Lang, LangPref } from '#/main/i18n/index.ts'
 import type { AiReadiness } from '#/main/ai/provider.ts'
-import type { DeckChatSummary } from '#/main/chats.ts'
 import type { MenuActionId, MenuNode } from '#/main/menu/index.ts'
 import type { AppState } from '#/main/app-window/index.ts'
 import type { ChatUiContext } from '#/main/ai/session/types.ts'
@@ -71,18 +70,31 @@ interface DeckBridge {
   aiSend: (
     text: string,
     uiContext?: ChatUiContext,
-  ) => Promise<{ ok: true } | { ok: false; reason: 'busy' | 'not-ready' | 'error' | 'no-session'; error: string }>
+  ) => Promise<
+    | { ok: true }
+    | { ok: false; reason: 'busy' | 'not-ready' | 'error' | 'no-session'; error: string }
+  >
   aiAbort: () => Promise<void>
   aiReset: () => Promise<void>
 
   // ---- Chat history switcher --------
   chats: {
-    /** `activePath` is the session file path the AI session currently
-     *  writes to (or `null` when pi hasn't flushed yet). The popover uses
-     *  it to mark the active row without round-tripping a separate IPC. */
-    list: () => Promise<{ sessions: DeckChatSummary[]; activePath: string | null }>
-    switch: (sessionPath: string) => Promise<{ ok: boolean }>
-    delete: (sessionPath: string) => Promise<{ ok: boolean }>
+    /** `activeId` is the deck-session id the manager is currently bound
+     *  to (or `null` when no session is bound — e.g. the deck just
+     *  opened and ensure() hasn't run). The popover uses it to mark the
+     *  active row without round-tripping a separate IPC. */
+    list: () => Promise<{
+      sessions: Array<{
+        id: string
+        provider: ProviderId
+        summary: string
+        createdMs: number
+        lastUsedMs: number
+      }>
+      activeId: string | null
+    }>
+    switch: (sessionId: string) => Promise<{ ok: boolean }>
+    delete: (sessionId: string) => Promise<{ ok: boolean }>
   }
 
   // ---- Attachments --------
@@ -165,6 +177,12 @@ interface DeckBridge {
       >
     }) => Promise<{ ok: boolean; text?: string; error?: string; provider?: ProviderId; model?: string }>
     aiReadiness: () => Promise<AiReadiness>
+    detectClaudeCli: (refresh?: boolean) => Promise<{
+      found: boolean
+      bin?: string
+      version?: string
+      error?: string
+    }>
   }
 }
 

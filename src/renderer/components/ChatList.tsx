@@ -13,6 +13,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as RC from '@radix-ui/react-collapsible'
 import { ChevronRight } from 'lucide-react'
+import { useAiStore } from '#/renderer/stores/ai.ts'
 import { useChatStore, type ChatNode } from '#/renderer/stores/chat.ts'
 import { useI18n } from '#/renderer/stores/i18n.ts'
 import { Scroller } from '#/renderer/components/Scroller.tsx'
@@ -93,8 +94,57 @@ export function ChatList() {
         {nodes.map((n) => (
           <ChatNodeView key={n.id} node={n} />
         ))}
+        <PendingBubble />
       </div>
     </Scroller>
+  )
+}
+
+/**
+ * "Thinking…" indicator rendered as a chat bubble, shown while a turn
+ * is streaming but no assistant content has appeared yet (the model is
+ * either picking a tool, waiting for the first token, or running a tool
+ * with no surrounding prose). It hides as soon as a streaming assistant
+ * bubble exists with text — at that point the bubble's own pulsing
+ * cursor (`▍`) carries the "still going" signal.
+ *
+ * Lives at the tail of the list so the auto-scroll keeps it pinned to
+ * the bottom along with everything else. Reads from both stores
+ * directly so a parent re-render (e.g. on every message_update tick)
+ * doesn't have to thread props through ChatList.
+ */
+function PendingBubble() {
+  const t = useI18n((s) => s.t)
+  const streaming = useAiStore((s) => s.streaming)
+  const showPending = useChatStore((s) => {
+    if (!streaming) return false
+    // Hide once a streaming assistant node has actual visible text —
+    // its trailing-cursor animation supersedes the bubble. We keep the
+    // bubble visible while the last node is a tool (the model is still
+    // mid-turn between tool calls) or an empty streaming assistant
+    // (waiting for the first token).
+    const last = s.nodes[s.nodes.length - 1]
+    if (!last) return true
+    if (last.kind === 'assistant' && last.streaming && last.text.length > 0) return false
+    return true
+  })
+  if (!showPending) return null
+  return (
+    <div className="flex items-center" aria-live="polite" aria-label={t('chat.status.thinking')}>
+      <div className="rounded-xl border border-line bg-bg-deep px-3 py-2 text-[13px] text-ink-3">
+        <PendingDots />
+      </div>
+    </div>
+  )
+}
+
+function PendingDots() {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="size-1.5 rounded-full bg-ink-4 animate-pulse [animation-delay:0ms]" />
+      <span className="size-1.5 rounded-full bg-ink-4 animate-pulse [animation-delay:200ms]" />
+      <span className="size-1.5 rounded-full bg-ink-4 animate-pulse [animation-delay:400ms]" />
+    </span>
   )
 }
 
