@@ -211,6 +211,23 @@ window.deck.onAiEvent((ev: AiEvent) => {
       ai.setError(null)
       ai.setContextUsage(null)
       ai.setStreaming(false)
+      ai.setBoundSession(null)
+      break
+    case 'deck:session_bound':
+      ai.setBoundSession({
+        provider: ev.provider,
+        resumed: ev.resumed,
+        // Forward-compat: if main predates the resumeSurvivesReopen
+        // field (devtools-injected event, IPC during rolling upgrade,
+        // future schema drift), fall back to false. False keeps the
+        // History button hidden — the conservative default; pre-fix
+        // installs that don't know about pack+CLI limitations would
+        // rather under-show than show a button that goes nowhere.
+        resumeSurvivesReopen: ev.resumeSurvivesReopen ?? false,
+        // `degraded` defaults to false so a healthy bind (which
+        // doesn't emit the field) is treated as not-degraded.
+        degraded: ev.degraded ?? false,
+      })
       break
     case 'deck:context_usage':
       ai.setContextUsage({ tokens: ev.tokens, contextWindow: ev.contextWindow, warn: false })

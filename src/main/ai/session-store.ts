@@ -4,7 +4,9 @@ import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/pro
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { deckChatId } from '#/main/chats.ts'
-import { KNOWN_PROVIDERS, type ProviderId } from '#/main/secrets.ts'
+import type { DeckKind } from '#/main/deck-types.ts'
+import { decideResumeStrategy } from '#/main/ai/resume-strategy.ts'
+import { isCliProvider, KNOWN_PROVIDERS, type ProviderId } from '#/main/secrets.ts'
 
 /**
  * Deck-level session store.
@@ -40,9 +42,8 @@ import { KNOWN_PROVIDERS, type ProviderId } from '#/main/secrets.ts'
  * upward — session creation must not break because of a flaky write.
  */
 
-/** What we store per deck session. The shape is forward-compatible —
- *  unknown fields are preserved on disk via JSON round-trip. */
-export interface DeckSessionRecord {
+/** Fields shared by every deck session record, regardless of state. */
+interface DeckSessionRecordBase {
   /** Stable uuid for the deck session. Doubles as the metadata
    *  filename (`<id>.json`). Survives provider migrations / file
    *  renames — used as the popover row key on the renderer side. */
@@ -55,17 +56,39 @@ export interface DeckSessionRecord {
    *  popover ordering ("most recent first") and "open the deck →
    *  resume the most recent" behavior. */
   lastUsedMs: number
+}
+
+/** A session that has never persisted a successful turn. Lives only in
+ *  memory until the first turn lands; the popover hides it because it
+ *  has no `summary` to display. */
+export interface DraftSessionRecord extends DeckSessionRecordBase {
+  kind: 'draft'
+}
+
+/** A session that has produced at least one successful turn. Carries
+ *  the backend's resume hint and a cached first-message summary so the
+ *  history popover can render the row without reading the transcript. */
+export interface ActiveSessionRecord extends DeckSessionRecordBase {
+  kind: 'active'
   /** Backend-specific pointer the adapter uses to resume:
    *   - pi-agent: absolute path to its .jsonl file (under deckChatDir)
    *   - claude-cli: the CLI's --session-id uuid
-   *  Null when the session has no successful turns yet. */
-  providerSessionId: string | null
-  /** Cached preview of the first user message. Updated when a session
-   *  gets its first turn so the popover has something to show without
-   *  having to read the backend's transcript. Empty string for empty
-   *  sessions (we hide those from the popover). */
+   *  Always non-null on `kind:'active'` — the type system enforces the
+   *  invariant that "active means resumable" (which used to be an
+   *  implicit relationship between `summary` and `providerSessionId`). */
+  providerSessionId: string
+  /** Cached preview of the first user message. Non-empty by
+   *  construction on `kind:'active'`. */
   summary: string
 }
+
+/** What we store per deck session. The shape is forward-compatible —
+ *  unknown fields are preserved on disk via JSON round-trip. The
+ *  discriminated union over `kind` makes the draft → active transition
+ *  type-safe: callers can't accidentally read `providerSessionId` /
+ *  `summary` from a draft, and the persistence layer knows it should
+ *  only write to disk once `kind === 'active'`. */
+export type DeckSessionRecord = DraftSessionRecord | ActiveSessionRecord
 
 function metaDir(chatKey: string): string {
   return path.join(app.getPath('userData'), 'chats', deckChatId(chatKey), 'meta')
@@ -79,6 +102,27 @@ const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 function isValidSessionId(id: string): boolean {
   return SESSION_ID_RE.test(id)
+}
+
+/** Validate `providerSessionId` against what the bound backend expects.
+ *  Returns null for missing/invalid values so the caller treats the
+ *  record as "no resume hint" rather than passing tampered content
+ *  into a CLI flag or file path. */
+function validProviderSessionId(provider: ProviderId, raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null
+  if (isCliProvider(provider)) {
+    return SESSION_ID_RE.test(raw) ? raw : null
+  }
+  // pi-agent stores an absolute path. chats.ts is the real safety
+  // boundary (deleteChatSession does an `isPathInside(deckChatDir)`
+  // check before unlink), but reject obvious garbage here so a
+  // tampered metadata file with `"../../etc/passwd"` style content
+  // never even reaches that gate. Require absolute + no control
+  // chars; canonicalization stays at the use site.
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(raw)) return null
+  if (!path.isAbsolute(raw)) return null
+  return raw
 }
 
 function metaFile(chatKey: string, sessionId: string): string {
@@ -113,15 +157,32 @@ export function deriveSummary(text: string): string {
  *  has produced a `providerSessionId` worth persisting. Empty sessions
  *  are deliberately not stored: a user who hits New Chat then closes
  *  without typing should not leave debris. */
-export function newSessionRecord(provider: ProviderId): DeckSessionRecord {
+export function newSessionRecord(provider: ProviderId): DraftSessionRecord {
   const now = Date.now()
   return {
+    kind: 'draft',
     id: randomUUID(),
     provider,
     createdMs: now,
     lastUsedMs: now,
-    providerSessionId: null,
-    summary: '',
+  }
+}
+
+/** Promote a draft to active in place. Returns a new object — never
+ *  mutates the draft (callers may still hold the draft reference). */
+export function promoteToActive(
+  draft: DraftSessionRecord,
+  providerSessionId: string,
+  summary: string,
+): ActiveSessionRecord {
+  return {
+    kind: 'active',
+    id: draft.id,
+    provider: draft.provider,
+    createdMs: draft.createdMs,
+    lastUsedMs: Date.now(),
+    providerSessionId,
+    summary,
   }
 }
 
@@ -148,10 +209,25 @@ export async function listSessions(chatKey: string): Promise<DeckSessionRecord[]
 }
 
 /** Pick the session to resume on deck open: the most-recently-used
- *  one. Returns null when the deck has never had a chat. */
-export async function mostRecentSession(chatKey: string): Promise<DeckSessionRecord | null> {
+ *  one whose resume key still survives a reopen. Returns null when
+ *  the deck has never had a chat or the only chats it has are stale
+ *  (Pack+CLI records carried over from an older app version that
+ *  point to unreachable tmpdir-keyed transcripts).
+ *
+ *  Skipping unrecoverable records here matters because otherwise
+ *  `ensure()` would resume an old Pack+CLI row, mint a fresh uuid
+ *  internally, and leave the user staring at a session that looks
+ *  like it should have history but actually has none. Better to
+ *  start a brand-new chat. */
+export async function mostRecentSession(
+  chatKey: string,
+  deckKind: DeckKind,
+): Promise<DeckSessionRecord | null> {
   const all = await listSessions(chatKey)
-  return all[0] ?? null
+  for (const r of all) {
+    if (decideResumeStrategy(r, deckKind).resumeSurvivesReopen) return r
+  }
+  return null
 }
 
 export async function readSession(chatKey: string, sessionId: string): Promise<DeckSessionRecord | null> {
@@ -164,7 +240,12 @@ export async function readSession(chatKey: string, sessionId: string): Promise<D
   if (!existsSync(file)) return null
   try {
     const raw = await readFile(file, 'utf8')
-    const parsed = JSON.parse(raw) as Partial<DeckSessionRecord>
+    // On-disk format pre-discriminated-union didn't have a `kind`
+    // field — we infer it from the presence/validity of the resume
+    // hint + summary. New writes always include `kind` (see
+    // `saveSession`), so going forward this is just a forward-compat
+    // path for older record files.
+    const parsed = JSON.parse(raw) as Record<string, unknown>
     if (
       typeof parsed.id !== 'string' ||
       typeof parsed.provider !== 'string' ||
@@ -174,17 +255,33 @@ export async function readSession(chatKey: string, sessionId: string): Promise<D
     ) {
       return null
     }
-    return {
+    const provider = parsed.provider as ProviderId
+    const base: DeckSessionRecordBase = {
       id: parsed.id,
-      provider: parsed.provider as ProviderId,
+      provider,
       createdMs: parsed.createdMs,
       lastUsedMs: parsed.lastUsedMs,
-      providerSessionId:
-        typeof parsed.providerSessionId === 'string' && parsed.providerSessionId.length > 0
-          ? parsed.providerSessionId
-          : null,
-      summary: typeof parsed.summary === 'string' ? parsed.summary : '',
     }
+    // Defense-in-depth: providerSessionId gets pushed straight into a
+    // `--session-id` / `--resume` argv slot (CLI) or used as a file
+    // path (pi-agent). spawn() with array form already blocks shell
+    // injection, but a tampered metadata file could still sneak
+    // unexpected content into a flag value. Validate per provider:
+    //   - claude-cli: must be a UUID v4 (the CLI's own format).
+    //   - pi-agent: must be an absolute path inside the deck's chat
+    //     dir; chats.ts already validates the path on use, here we
+    //     just reject obvious garbage.
+    const providerSessionId = validProviderSessionId(provider, parsed.providerSessionId)
+    const summary = typeof parsed.summary === 'string' ? parsed.summary : ''
+    // The active-record invariant: needs both a valid resume hint AND
+    // a non-empty summary. If either is missing we treat the record
+    // as a draft — the disk persisted it, but we can't reconstruct an
+    // active state from it (typically a malformed legacy row that
+    // should be ignored / cleaned up by chats:list).
+    if (providerSessionId !== null && summary.length > 0) {
+      return { ...base, kind: 'active', providerSessionId, summary }
+    }
+    return { ...base, kind: 'draft' }
   } catch (e) {
     console.warn('[session-store] failed to read', file, e)
     return null
@@ -192,8 +289,14 @@ export async function readSession(chatKey: string, sessionId: string): Promise<D
 }
 
 /** Atomic write via tmp + rename. Best-effort — a failed write only
- *  loses the on-disk hint for this session. */
-export async function saveSession(chatKey: string, record: DeckSessionRecord): Promise<void> {
+ *  loses the on-disk hint for this session.
+ *
+ *  Only `ActiveSessionRecord` is persistable: the type system forbids
+ *  passing a draft (drafts have no resume hint to preserve and no
+ *  summary to display, so writing them just leaves debris). The
+ *  promotion happens at the backend's first-success path via
+ *  `promoteToActive`. */
+export async function saveSession(chatKey: string, record: ActiveSessionRecord): Promise<void> {
   try {
     await ensureMetaDir(chatKey)
     const file = metaFile(chatKey, record.id)

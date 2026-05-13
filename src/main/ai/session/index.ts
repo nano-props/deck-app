@@ -13,7 +13,8 @@ import {
 } from '#/main/chats.ts'
 import { getSecret, type ProviderId } from '#/main/secrets.ts'
 import { getSettings, resolveModel, type Settings } from '#/main/settings.ts'
-import { deriveSummary, saveSession } from '#/main/ai/session-store.ts'
+import { deriveSummary, promoteToActive, saveSession } from '#/main/ai/session-store.ts'
+import type { DeckSessionRecord } from '#/main/ai/session-store.ts'
 import { contextTokensFromBranch } from '#/main/ai/session/context-usage.ts'
 import { buildSystemPrompt } from '#/main/ai/session/system-prompt.ts'
 import type { ChatUiContext, DeckAiSession, SendResult, SessionParams } from '#/main/ai/session/types.ts'
@@ -78,10 +79,10 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   const { sender, rootDir, chatKey, record } = params
 
   // The deck session record is the source of truth for "which provider /
-  // which transcript". Live mutable copy so the adapter can update
-  // lastUsedMs / providerSessionId / summary on each turn without
-  // forcing the manager to re-pass a refreshed record on every send.
-  const liveRecord = { ...record }
+  // which transcript". Held in a mutable holder because the
+  // discriminated union forbids in-place mutation: a draft can only
+  // become active by replacing the whole object via `promoteToActive`.
+  const liveRecord: { current: DeckSessionRecord } = { current: record }
 
   const systemPrompt = await buildSystemPrompt(params)
   let systemPromptUiContextKey = ''
@@ -110,9 +111,12 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   let initialThinking: ThinkingLevel | undefined
   try {
     const settings = await getSettings()
-    const synthetic: Settings = { ...settings, ai: { ...settings.ai, provider: liveRecord.provider } }
+    const synthetic: Settings = {
+      ...settings,
+      ai: { ...settings.ai, provider: liveRecord.current.provider },
+    }
     initialModel = buildModel({
-      provider: liveRecord.provider,
+      provider: liveRecord.current.provider,
       model: resolveModel(synthetic),
       custom: settings.ai.custom,
     })
@@ -130,8 +134,8 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
   // we also write the resulting file path back into the record's
   // `providerSessionId` for future resumes.
   let sessionManager: SessionManager
-  if (liveRecord.providerSessionId) {
-    sessionManager = openDeckChatSession(chatKey, rootDir, liveRecord.providerSessionId)
+  if (liveRecord.current.kind === 'active') {
+    sessionManager = openDeckChatSession(chatKey, rootDir, liveRecord.current.providerSessionId)
   } else {
     const piDir = deckChatDir(chatKey)
     sessionManager = SessionManager.continueRecent(rootDir, piDir)
@@ -225,22 +229,41 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
         // resumes the right pi JSONL and the history popover shows
         // accurate fields. pi defers its first disk flush until an
         // assistant message lands, so we only trust getSessionFile()
-        // after persistAgentMessages has run.
+        // after persistAgentMessages has run. Skip when there's no
+        // file yet (pi hasn't flushed) — without a path we can't
+        // promote a draft.
         const piFile = sessionManager.getSessionFile() ?? null
-        if (piFile) liveRecord.providerSessionId = piFile
-        if (!liveRecord.summary) {
-          for (const m of persistable) {
-            if (m.role === 'user') {
-              const text = stringifyUserContent(m.content)
-              if (text) {
-                liveRecord.summary = deriveSummary(text)
-                break
+        if (piFile) {
+          const prior = liveRecord.current
+          if (prior.kind === 'draft') {
+            // Find the first user-message text for summary.
+            let summary = ''
+            for (const m of persistable) {
+              if (m.role === 'user') {
+                const text = stringifyUserContent(m.content)
+                if (text) {
+                  summary = deriveSummary(text)
+                  break
+                }
               }
             }
+            liveRecord.current = promoteToActive(prior, piFile, summary)
+          } else {
+            // Already active — the providerSessionId may have
+            // changed if pi rotated to a new transcript file mid-
+            // session. Refresh + bump lastUsedMs.
+            liveRecord.current = {
+              ...prior,
+              providerSessionId: piFile,
+              lastUsedMs: Date.now(),
+            }
+          }
+          // Only persist active records (saveSession's signature
+          // enforces this; the kind check above keeps TS happy).
+          if (liveRecord.current.kind === 'active') {
+            void saveSession(chatKey, liveRecord.current)
           }
         }
-        liveRecord.lastUsedMs = Date.now()
-        void saveSession(chatKey, liveRecord)
       }
       const usage = emitContextUsage()
 
@@ -288,7 +311,7 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     // provider with an opaque error string. Surface as `not-ready` so
     // the renderer can produce an actionable hint instead of treating
     // the run as fatal.
-    const readiness = await checkAiReadiness(liveRecord.provider)
+    const readiness = await checkAiReadiness(liveRecord.current.provider)
     if (!readiness.ready) {
       return { ok: false, reason: 'not-ready', message: `AI not configured: ${readiness.reason}` }
     }
@@ -301,7 +324,7 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     try {
       const settings = await getSettings()
       runtimeSettingsSnapshot = settings
-      const provider = liveRecord.provider
+      const provider = liveRecord.current.provider
       const synthetic: Settings = { ...settings, ai: { ...settings.ai, provider } }
       const model = buildModel({
         provider,
@@ -373,7 +396,7 @@ export async function createDeckAiSession(params: SessionParams): Promise<DeckAi
     send,
     abort,
     dispose,
-    getRecord: () => liveRecord,
+    getRecord: () => liveRecord.current,
   }
 }
 

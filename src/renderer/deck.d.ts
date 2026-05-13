@@ -195,11 +195,37 @@ export type AiEvent =
   | { type: 'message_update'; message: AssistantMessageRef }
   | { type: 'message_end'; message: AssistantMessageRef }
   | { type: 'tool_execution_start'; toolCallId: string; toolName: string; args: unknown }
-  | { type: 'tool_execution_end'; toolCallId: string; result: unknown; isError?: boolean }
+  | { type: 'tool_execution_end'; toolCallId: string; toolName: string; result: unknown; isError?: boolean }
   | { type: 'deck:file_change'; path: string }
   | { type: 'deck:fatal'; error: string }
   | { type: 'deck:history_replay'; messages: HistoryMessage[] }
   | { type: 'deck:session_reset' }
+  | {
+      type: 'deck:session_bound'
+      provider: ProviderId
+      resumed: boolean
+      /** True when the session's resume key still refers to a reachable
+       *  transcript across deck reopens (always for pi-agent backends;
+       *  only for Source decks with the Claude CLI). Drives the History
+       *  button visibility in the Composer — main owns the capability
+       *  decision so the UI doesn't have to know which providers are
+       *  cwd-keyed.
+       *
+       *  Optional for forward-compat: pre-N.M.M main builds didn't
+       *  emit this field. The renderer's ai-events router defaults to
+       *  `false` (conservative — hides the History button rather than
+       *  showing an unreachable one). When the field is removed in a
+       *  future major, switching this to `boolean` (required) will
+       *  trigger a TS error at the `?? false` site so the fallback can
+       *  be deleted without leaving dead code behind. */
+      resumeSurvivesReopen?: boolean
+      /** True when this `session_bound` is a placeholder emitted
+       *  alongside `deck:fatal` because the actual bind failed. The
+       *  renderer can use this to show a recovery affordance (Retry
+       *  / Open Settings) instead of treating the bound session as
+       *  healthy. Not set on healthy binds. */
+      degraded?: boolean
+    }
   | { type: 'deck:context_usage'; tokens: number; contextWindow: number }
   | { type: 'deck:context_warning'; tokens: number; contextWindow: number }
 

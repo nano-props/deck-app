@@ -6,12 +6,31 @@
 
 import { create } from 'zustand'
 import type { AiUnreadyReason } from '#/main/ai/provider.ts'
+import type { ProviderId } from '#/main/secrets.ts'
 import { useAppStore } from '#/renderer/stores/app.ts'
 
 export interface ContextUsage {
   tokens: number
   contextWindow: number
   warn: boolean
+}
+
+/** Identity of the currently-bound deck session (provider + whether it
+ *  was resumed from disk vs. freshly minted this run + whether its
+ *  resume key survives a deck reopen + whether the bind itself
+ *  succeeded or this is a degraded placeholder after fatal). Mirrors
+ *  the `deck:session_bound` ai-event. UI uses this to render
+ *  provider-aware affordances (e.g. the resumed-CLI empty state,
+ *  History button visibility). */
+export interface BoundSession {
+  provider: ProviderId
+  resumed: boolean
+  resumeSurvivesReopen: boolean
+  /** True only when this is a placeholder emitted alongside
+   *  `deck:fatal` because the bind failed. UI should treat the
+   *  session as unusable — capability flags above are zero by
+   *  convention but `degraded` makes the intent explicit. */
+  degraded: boolean
 }
 
 interface AiStore {
@@ -27,12 +46,17 @@ interface AiStore {
    *  here; the popover does). Drives the History button's disabled
    *  state so it doesn't open onto an empty list. */
   hasHistory: boolean
+  /** Identity of the currently-bound deck session, or null when no
+   *  session is bound (initial load, between switches). Set by the
+   *  `deck:session_bound` event from main; cleared on session reset. */
+  boundSession: BoundSession | null
 
   setStreaming: (v: boolean) => void
   setUnreadyReason: (r: AiUnreadyReason | null) => void
   setContextUsage: (u: ContextUsage | null) => void
   setError: (msg: string | null) => void
   setHasHistory: (v: boolean) => void
+  setBoundSession: (s: BoundSession | null) => void
 
   /** Re-probe `settings:ai-readiness`. Called on boot and after the
    *  Settings overlay closes (the user may have added a key / fixed
@@ -51,11 +75,13 @@ export const useAiStore = create<AiStore>((set) => ({
   contextUsage: null,
   error: null,
   hasHistory: false,
+  boundSession: null,
   setStreaming: (v) => set({ streaming: v }),
   setUnreadyReason: (r) => set({ unreadyReason: r }),
   setContextUsage: (u) => set({ contextUsage: u }),
   setError: (msg) => set({ error: msg }),
   setHasHistory: (v) => set({ hasHistory: v }),
+  setBoundSession: (s) => set({ boundSession: s }),
   refreshReadiness: async () => {
     try {
       const r = await window.deck.settings.aiReadiness()
