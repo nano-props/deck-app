@@ -12,7 +12,7 @@
 // reconciliation — they're effects on `document` / `history`.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Sparkles, Upload } from 'lucide-react'
+import { Command, Upload } from 'lucide-react'
 import { useI18n, asHtml } from '#/web/lib/i18n.ts'
 import { Loader } from '#/web/player/loader.ts'
 import { createRouter, type Router } from '#/web/player/router.ts'
@@ -198,17 +198,17 @@ export function PlayerPage() {
           onClick={() => setPaletteOpen((v) => !v)}
           aria-label={t('paletteOpenButton')}
           title={t('paletteOpenButton')}
-          // Top-right, offset 64px down so it clears any deck-side
-          // page numbers / chapter labels that anchor near the top
-          // edge. mix-blend-difference is on the icon (not the
-          // button) so the focus outline stays its true accent color.
-          className="group fixed right-6 top-16 z-[60] w-9 h-9 flex items-center justify-center bg-transparent border-0 p-0 cursor-pointer text-white opacity-40 hover:opacity-90 transition-opacity duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+          // text-white is intentional — the deck iframe's backdrop is
+          // not theme-aware, so a white glyph + dark drop-shadow halo
+          // is the only combo that stays legible on both light and
+          // dark deck backgrounds. top-16 leaves room for chapter
+          // labels that anchor near the top of the deck.
+          className="group fixed right-6 top-16 z-[60] w-9 h-9 flex items-center justify-center bg-transparent border-0 p-0 cursor-pointer text-white opacity-70 hover:opacity-100 drop-shadow-[0_1px_2px_rgb(0_0_0/0.55)] transition-opacity duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
-          <Sparkles
+          <Command
             size={18}
             strokeWidth={1.8}
-            className="transition-transform duration-200 ease-out group-hover:scale-110"
-            style={{ mixBlendMode: 'difference' }}
+            className="transition-transform duration-150 ease-out group-hover:scale-110"
           />
         </button>
       )}
