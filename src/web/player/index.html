@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deck Player</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='12' y='20' width='76' height='60' rx='6' fill='none' stroke='%232f6bff' stroke-width='6'/%3E%3Crect x='24' y='34' width='52' height='6' rx='2' fill='%232f6bff'/%3E%3Crect x='24' y='48' width='36' height='4' rx='2' fill='%23c9cbce'/%3E%3Crect x='24' y='58' width='44' height='4' rx='2' fill='%23c9cbce'/%3E%3C/svg%3E"
+    />
+    <!--
+      Inline boot script: decides theme + restoring cloak BEFORE any
+      stylesheet evaluates. Without these, refreshing a deck URL would
+      flash the upload screen for ~50-100ms while the module bundle
+      runs, and theme=dark users would see one frame of light theme.
+
+      Theme: localStorage 'theme' is 'light'|'dark'|'auto'|null.
+      'auto' / null defers to prefers-color-scheme.
+
+      Restoring cloak: if location.hash is set we're about to restore
+      a deck from cache — tag <html> so CSS can hide the upload UI
+      until <Stage> takes over. PlayerPage removes the class once the
+      stage is shown, or when an error surfaces.
+    -->
+    <script>
+      ;(function () {
+        try {
+          var pref = localStorage.getItem('theme')
+          var dark =
+            pref === 'dark' ||
+            (pref !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+        } catch (_e) {}
+        if (location.hash) document.documentElement.classList.add('restoring')
+      })()
+    </script>
+    <style>
+      /* Full-height layout so the upload screen's <main> (flex-1) can
+         actually stretch and vertically center its hero. With
+         min-h-screen the body collapses to content height, leaving
+         flex-1 nothing to grow into — the hero would stick to the top
+         of the viewport instead of centering. */
+      html, body { height: 100%; }
+
+      /* `<kbd>` chips in the hero tip and palette hint. Player-scoped
+         here; the homepage has its own kbd treatment in home.css under
+         `body.home .key-row kbd`. */
+      kbd {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-line);
+        font: 12px/1 ui-monospace, Menlo, Consolas, monospace;
+        color: var(--color-ink-2);
+      }
+
+      /* While restoring a deck from a URL hash on first load, suppress
+         the upload screen so it doesn't flash before the stage takes
+         over. The class is set inline above and removed by
+         PlayerPage's onStageShown / onLoadFailed. We hide the entire
+         #root subtree (other than the stage, which is positioned
+         fixed) by zero-ing opacity until the stage class wires up its
+         own visibility. */
+      html.restoring body { background: transparent; }
+      html.restoring header,
+      html.restoring main { visibility: hidden; }
+    </style>
+    <noscript>
+      <style>
+        body::after {
+          content: 'This player requires JavaScript.';
+          display: block;
+          margin: 24px;
+          color: #dc2626;
+        }
+      </style>
+    </noscript>
+  </head>
+  <body>
+    <!--
+      `#root` (not body) is the flex container: React mounts header +
+      main as siblings inside this div, so the flex layout has to live
+      one level deeper than vanilla had it. h-full + the html/body
+      height:100% above gives main a definite parent height to grow
+      into via flex-1, which is what vertically centers the hero.
+    -->
+    <div id="root" class="flex flex-col h-full"></div>
+    <script type="module" src="../main-player.tsx"></script>
+  </body>
+</html>

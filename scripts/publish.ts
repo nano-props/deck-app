@@ -3,9 +3,10 @@
 // and Windows (portable .exe x64), tags the current commit with the
 // package.json version, and uploads every artifact via `gh release create`.
 //
-// Usage: ./scripts/publish.ts [dryrun|--dryrun|--dry-run] [--proxy http://127.0.0.1:7890]
+// Usage: ./scripts/publish.ts [--dry-run] [--proxy http://127.0.0.1:7890]
 import { $ } from 'bun'
-import { mkdirSync, renameSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -15,19 +16,14 @@ $.cwd(repoRoot)
 
 const APP_NAME = 'Deck'
 
-const { values, positionals } = parseArgs({
-  allowPositionals: true,
+const { values } = parseArgs({
   options: {
     proxy: { type: 'string' },
     dryrun: { type: 'boolean' },
     'dry-run': { type: 'boolean' },
   },
 })
-const isDryRun =
-  values.dryrun === true ||
-  values['dry-run'] === true ||
-  positionals.includes('dryrun') ||
-  positionals.includes('dry-run')
+const isDryRun = values.dryrun === true || values['dry-run'] === true
 
 if (values.proxy) {
   for (const k of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']) {
@@ -83,10 +79,9 @@ async function findAll(pattern: string, what: string, expected: number): Promise
 
 // Stash artifacts outside `release/` between builds — `scripts/build.ts`
 // wipes `release/` on every invocation, so the mac products would not
-// survive the windows build otherwise.
-const stash = path.join(repoRoot, 'release-publish')
-await $`rm -rf ${stash}`
-mkdirSync(stash, { recursive: true })
+// survive the windows build otherwise. Use the OS temp dir so the stash
+// never appears in `git status` and can't be accidentally committed.
+const stash = mkdtempSync(path.join(os.tmpdir(), 'deck-publish-'))
 
 try {
   console.log(`Building ${tag} (macOS) ...`)
@@ -155,8 +150,8 @@ try {
     console.log(`Published ${tag}`)
   }
 } finally {
-  // Always clean the stash, even on failure — a leftover `release-publish/`
-  // would not block the next attempt, but it would silently mix prior-run
-  // artifacts into the next publish if anything ever read from it.
-  await $`rm -rf ${stash}`
+  // Always clean the stash, even on failure — a leftover temp dir wouldn't
+  // block the next attempt (each run mints a fresh `mkdtemp` path), but
+  // leaving them around accumulates cruft in /tmp.
+  rmSync(stash, { recursive: true, force: true })
 }

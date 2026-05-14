@@ -8,87 +8,92 @@
 // Also handles the SW restart recovery flow — if the SW evicts its
 // in-memory file table, this is the module that re-registers from the
 // blob cache and reloads the iframe.
-//
-// Talks to:
-//   - cache.js   for the persistent .deck blob
-//   - sw-client.js for the actual SW handoff
-//   - hooks supplied by the player to update visible state (status,
-//     stage, history)
 
-import { cachePut, cacheGet, rememberName } from './cache.js'
+import { cachePut, cacheGet, rememberName } from './cache.ts'
 import {
   hashBlob,
   unpackAndRegister,
   unregisterDeck,
   onDeckMissing,
   LoadCancelled,
-} from './sw-client.js'
+} from './sw-client.ts'
+import { getT } from '#/web/lib/i18n.ts'
 
 const DECK_PREFIX = 'deck'
 const DECK_URL_PREFIX = './' + DECK_PREFIX + '/'
 
 // Identify storage-full errors across browsers. Chrome/Safari throw
 // DOMException with name "QuotaExceededError"; Firefox uses code 22.
-function isQuotaError(err) {
-  if (!err) return false
-  if (err.name === 'QuotaExceededError') return true
-  if (err.code === 22) return true
-  return /quota/i.test(err.message || '')
+function isQuotaError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { name?: string; code?: number; message?: string }
+  if (e.name === 'QuotaExceededError') return true
+  if (e.code === 22) return true
+  return /quota/i.test(e.message || '')
 }
 
+export interface LoaderHooks {
+  frameEl: HTMLIFrameElement
+  setStatus: (msg: string) => void
+  setError: (msg: string) => void
+  onStageShown: (deckId: string, manifestName: string) => void
+  /** close() finished tearing down. */
+  onClosed: () => void
+  /** A load aborted with a real error (not LoadCancelled). */
+  onLoadFailed?: () => void
+}
+
+export type LoadResult = 'restored' | 'missing' | 'error' | undefined
+
 export class Loader {
-  /**
-   * @param {{
-   *   frameEl: HTMLIFrameElement,
-   *   stageEl: HTMLElement,
-   *   setStatus: (msg: string) => void,
-   *   setError: (msg: string) => void,
-   *   onStageShown: (deckId: string, name: string) => void,
-   *   onClosed: () => void,        // close() finished tearing down
-   *   onLoadFailed?: () => void,   // a load aborted with a real error
-   * }} hooks
-   */
-  constructor(hooks) {
+  private frameEl: HTMLIFrameElement
+  private setStatus: (msg: string) => void
+  private setError: (msg: string) => void
+  private onStageShown: (deckId: string, manifestName: string) => void
+  private onClosed: () => void
+  private onLoadFailed: () => void
+
+  currentDeckId: string | null = null
+  /** Bumped whenever user intent changes (close, new load). Each load
+   *  captures the generation at start and verifies it before any state
+   *  mutation. See the "IMPORTANT" note in doLoadFromFile. */
+  private loadGeneration = 0
+  /** One operation at a time. Subsequent attempts are dropped silently
+   *  rather than queued; the user can retry after the current load. */
+  private isLoading = false
+  /** Re-entry guard for the SW recovery handler — burst of 404s after
+   *  a SW restart shouldn't fan out into multiple parallel
+   *  re-registers. */
+  private recoveryInFlight = false
+
+  constructor(hooks: LoaderHooks) {
     this.frameEl = hooks.frameEl
-    this.stageEl = hooks.stageEl
     this.setStatus = hooks.setStatus
     this.setError = hooks.setError
     this.onStageShown = hooks.onStageShown
     this.onClosed = hooks.onClosed
     this.onLoadFailed = hooks.onLoadFailed || (() => {})
 
-    this.currentDeckId = null
-    // Bumped whenever user intent changes (close, new load). Each load
-    // captures the generation at start and verifies it before any state
-    // mutation. See the "IMPORTANT" note in loadFromFile.
-    this.loadGeneration = 0
-    // One operation at a time. Subsequent attempts are dropped silently
-    // rather than queued; the user can retry after the current load.
-    this.isLoading = false
-    // Re-entry guard for the SW recovery handler — burst of 404s after
-    // a SW restart shouldn't fan out into multiple parallel re-registers.
-    this.recoveryInFlight = false
-
-    onDeckMissing((deckId) => this.recover(deckId))
+    onDeckMissing((deckId) => {
+      void this.recover(deckId)
+    })
   }
 
-  get hasActiveDeck() { return this.currentDeckId !== null }
-
-  // --- Public load entry points -----------------------------------
+  get hasActiveDeck(): boolean {
+    return this.currentDeckId !== null
+  }
 
   /** User dropped a file or picked one. Hash, unpack, cache, show. */
-  loadFromFile(file) {
-    if (!file) return
+  loadFromFile(file: File | null | undefined): Promise<LoadResult> {
+    if (!file) return Promise.resolve(undefined)
     return this.withGuard(() => this.doLoadFromFile(file))
   }
 
   /**
    * Restore from a URL hash. The hash is the deckId; cache must have
-   * the corresponding blob.
-   * @returns {Promise<'restored' | 'missing'>} indicates whether the
-   *   restore succeeded or fell back to a clean upload state.
+   * the corresponding blob. Returns `'restored'` or `'missing'`.
    */
-  loadFromHash(deckId) {
+  loadFromHash(deckId: string): Promise<LoadResult> {
     return this.withGuard(() => this.doLoadFromHash(deckId))
   }
 
@@ -97,13 +102,12 @@ export class Loader {
    * Idempotent. Bumps the load generation so any in-flight load that
    * resolves after this point is silently discarded.
    */
-  close() {
+  close(): void {
     this.loadGeneration++
     if (this.currentDeckId) {
       unregisterDeck(this.currentDeckId)
       this.currentDeckId = null
     }
-    this.stageEl.classList.remove('active')
     this.frameEl.src = 'about:blank'
     this.onClosed()
   }
@@ -113,22 +117,23 @@ export class Loader {
   // All load entry points share the same "one operation at a time"
   // guard. LoadCancelled is the in-band signal for "user navigated
   // away mid-load" and is silently absorbed.
-  async withGuard(fn) {
-    if (this.isLoading) return
+  private async withGuard(fn: () => Promise<LoadResult>): Promise<LoadResult> {
+    if (this.isLoading) return undefined
     this.isLoading = true
     try {
       return await fn()
     } catch (err) {
-      if (err instanceof LoadCancelled) return
+      if (err instanceof LoadCancelled) return undefined
       console.error(err)
-      this.setError(err.message || String(err))
+      const message =
+        err instanceof Error ? err.message : String(err)
+      this.setError(message)
       this.onLoadFailed()
       return 'error'
     } finally {
       this.isLoading = false
     }
   }
-
 
   // Each load captures its own generation. After every async hop we
   // check it against the live `loadGeneration` to decide whether to
@@ -138,37 +143,40 @@ export class Loader {
   // isCurrent() check and the state-mutating commit (history.pushState,
   // currentDeckId, showStage). The commit must run synchronously from
   // the last check on, or a stale load could race with close().
-  async doLoadFromFile(file) {
+  private async doLoadFromFile(file: File): Promise<LoadResult> {
+    const t = getT()
     const gen = ++this.loadGeneration
     const isCurrent = () => gen === this.loadGeneration
 
-    this.setStatus('Hashing…')
+    this.setStatus(t('statusHashing'))
     const deckId = await hashBlob(file)
     if (!isCurrent()) throw new LoadCancelled()
 
-    this.setStatus('Unpacking…')
+    this.setStatus(t('statusUnpacking'))
     const manifest = await unpackAndRegister(file, deckId, this.setStatus, isCurrent)
     if (!isCurrent()) {
       unregisterDeck(deckId)
       throw new LoadCancelled()
     }
 
-    this.setStatus('Caching…')
+    this.setStatus(t('statusCaching'))
     // Cache only after we've validated the zip is a real deck — avoids
     // polluting the cache with broken inputs.
     //
     // Quota failures are non-fatal: the deck is already registered
-    // with the SW, so we can still show it this session. We just
-    // won't be able to restore it on refresh, and we skip the URL
-    // hash to make that visible (no hash → no false promise of
-    // refresh-restore).
+    // with the SW, so we can still show it this session. We just won't
+    // be able to restore it on refresh, and we skip the URL hash to
+    // make that visible (no hash → no false promise of refresh-restore).
     let cached = true
     try {
       await cachePut(deckId, file, manifest.name)
     } catch (err) {
       if (isQuotaError(err)) {
         cached = false
-        console.warn('Cache write failed (quota?). Deck will not survive a refresh:', err)
+        console.warn(
+          'Cache write failed (quota?). Deck will not survive a refresh:',
+          err,
+        )
       } else {
         throw err
       }
@@ -178,14 +186,16 @@ export class Loader {
       throw new LoadCancelled()
     }
 
-    return this.commit(deckId, manifest.name, { pushHash: cached })
+    this.commit(deckId, manifest.name, { pushHash: cached })
+    return undefined
   }
 
-  async doLoadFromHash(deckId) {
+  private async doLoadFromHash(deckId: string): Promise<LoadResult> {
+    const t = getT()
     const gen = ++this.loadGeneration
     const isCurrent = () => gen === this.loadGeneration
 
-    this.setStatus('Restoring from cache…')
+    this.setStatus(t('statusRestoring'))
     const blob = await cacheGet(deckId)
     if (!isCurrent()) throw new LoadCancelled()
     if (!blob) return 'missing'
@@ -196,7 +206,7 @@ export class Loader {
       unregisterDeck(this.currentDeckId)
     }
 
-    this.setStatus('Unpacking…')
+    this.setStatus(t('statusUnpacking'))
     const manifest = await unpackAndRegister(blob, deckId, this.setStatus, isCurrent)
     if (!isCurrent()) {
       unregisterDeck(deckId)
@@ -210,8 +220,8 @@ export class Loader {
   }
 
   // Synchronous commit step — see the "IMPORTANT" note above.
-  commit(deckId, manifestName, { pushHash }) {
-    if (pushHash) {
+  private commit(deckId: string, manifestName: string, opts: { pushHash: boolean }): void {
+    if (opts.pushHash) {
       // Push a new history entry so the browser back button can also
       // return to upload. The in-app palette doesn't rely on this
       // (decks may mutate history themselves).
@@ -219,7 +229,6 @@ export class Loader {
     }
     this.currentDeckId = deckId
     this.frameEl.src = DECK_URL_PREFIX + deckId + '/index.html'
-    this.stageEl.classList.add('active')
     this.setStatus('')
     this.onStageShown(deckId, manifestName)
   }
@@ -228,14 +237,15 @@ export class Loader {
   // after its in-memory registry was wiped (idle eviction etc). We
   // re-register from the cached blob, then reload the iframe so the
   // resources that 404'd in the meantime are re-fetched.
-  async recover(deckId) {
+  private async recover(deckId: string): Promise<void> {
     if (deckId !== this.currentDeckId || this.recoveryInFlight) return
     this.recoveryInFlight = true
     try {
       const blob = await cacheGet(deckId)
       if (!blob || deckId !== this.currentDeckId) return
       await unpackAndRegister(
-        blob, deckId,
+        blob,
+        deckId,
         () => {},
         () => deckId === this.currentDeckId,
       )

@@ -49,11 +49,9 @@ await $`bun run typecheck`
 // Renderer bundle MUST exist before electron-builder packs it (the
 // `files` glob in electron-builder.ts expects `dist/renderer/`).
 await $`bun run build:renderer`
-if (shouldInstall && target === 'mac') {
-  await $`bun run build:electron -- --mac dir`
-} else {
-  await $`bun run build:electron -- --${target}`
-}
+// `dir` target skips dmg packaging — faster, and `install` only needs the .app.
+const builderArgs = shouldInstall && target === 'mac' ? ['--mac', 'dir'] : [`--${target}`]
+await $`bun run build:electron -- ${builderArgs}`
 
 const srcApp = await findBuiltArtifact()
 if (!srcApp) {

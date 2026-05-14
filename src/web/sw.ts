@@ -1,17 +1,43 @@
+/// <reference lib="WebWorker" />
+
 // Service Worker: serves files for registered decks from in-memory zips.
 // URL shape: <scope>/deck/<deckId>/<path-inside-deck>
 //
 // Decks are registered via postMessage from the page. Files are stored
 // as Uint8Array; responses set Content-Type from the file extension.
+//
+// Built as a CLASSIC worker (no `{type: 'module'}`) — see
+// vite.web.config.ts for the entry pinning. Rollup emits one file at
+// `dist/web/sw.js` so the registration URL stays a literal in
+// player/sw-client.ts.
 
-const decks = new Map() // deckId -> { [path]: Uint8Array }
+export {}
+
+declare const self: ServiceWorkerGlobalScope
+
+interface RegisterMessage {
+  type: 'register-deck'
+  deckId: string
+  files: Record<string, Uint8Array>
+}
+interface UnregisterMessage {
+  type: 'unregister-deck'
+  deckId: string
+}
+type IncomingMessage = RegisterMessage | UnregisterMessage
+
+const decks = new Map<string, Record<string, Uint8Array>>()
 
 // decodeURIComponent throws URIError on malformed input (e.g. a path
 // segment containing a stray "%"). Treat undecodable paths as opaque —
 // returning the original string lets the file table lookup just miss
 // and produce a clean 404 instead of a broken fetch handler.
-function safeDecode(s) {
-  try { return decodeURIComponent(s) } catch (_err) { return s }
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
 }
 
 self.addEventListener('install', (event) => {
@@ -25,10 +51,12 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('message', (event) => {
-  const { data, ports } = event
+  const data = event.data as IncomingMessage | undefined
+  const ports = event.ports
   const reply = ports && ports[0]
-  const ok = (extra) => reply && reply.postMessage({ ok: true, ...(extra || {}) })
-  const fail = (error) => reply && reply.postMessage({ ok: false, error })
+  const ok = (extra?: Record<string, unknown>) =>
+    reply && reply.postMessage({ ok: true, ...(extra || {}) })
+  const fail = (error: string) => reply && reply.postMessage({ ok: false, error })
 
   if (!data || typeof data !== 'object') return fail('Bad message')
 
@@ -41,7 +69,7 @@ self.addEventListener('message', (event) => {
     decks.delete(data.deckId)
     return ok()
   }
-  return fail('Unknown message type: ' + data.type)
+  return fail('Unknown message type: ' + (data as { type: string }).type)
 })
 
 self.addEventListener('fetch', (event) => {
@@ -64,16 +92,16 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Case 2: a deck page made a same-origin request with an absolute path
-  // (e.g. <link href="/_next/foo.css"> from a Next.js export). Resolve
-  // the deck via the requesting client's URL — that client is the iframe
-  // located at /deck/<id>/index.html, so we can extract <id> and treat
-  // the absolute path as deck-relative.
+  // Case 2: a deck page made a same-origin request with an absolute
+  // path (e.g. <link href="/_next/foo.css"> from a Next.js export).
+  // Resolve the deck via the requesting client's URL — that client is
+  // the iframe located at /deck/<id>/index.html, so we can extract <id>
+  // and treat the absolute path as deck-relative.
   event.respondWith(handleAbsoluteFromDeck(event, deckRoot))
 })
 
-async function handleAbsoluteFromDeck(event, deckRoot) {
-  let clientUrl = null
+async function handleAbsoluteFromDeck(event: FetchEvent, deckRoot: string): Promise<Response> {
+  let clientUrl: string | null = null
   if (event.clientId) {
     const client = await self.clients.get(event.clientId)
     if (client) clientUrl = client.url
@@ -98,17 +126,17 @@ async function handleAbsoluteFromDeck(event, deckRoot) {
   const url = new URL(event.request.url)
   // Strip the leading slash so the path is relative to the deck root.
   let filePath = url.pathname.replace(/^\/+/, '')
-  filePath = decodeURIComponent(filePath)
+  filePath = safeDecode(filePath)
   if (!filePath || filePath.endsWith('/')) filePath += 'index.html'
 
   return serveDeckFile(event, deckId, filePath)
 }
 
-async function serveDeckFile(event, deckId, filePath) {
+async function serveDeckFile(event: FetchEvent, deckId: string, filePath: string): Promise<Response> {
   const files = decks.get(deckId)
   if (!files) {
-    // The SW may have been restarted by the browser since the deck
-    // was registered (idle timeout, app refresh, etc.). Notify all
+    // The SW may have been restarted by the browser since the deck was
+    // registered (idle timeout, app refresh, etc.). Notify all
     // controlled clients so they can re-register the deck on demand.
     // waitUntil keeps the SW alive long enough for the postMessage to
     // actually leave — without it the SW could be evicted right after
@@ -121,7 +149,14 @@ async function serveDeckFile(event, deckId, filePath) {
   if (!bytes) return new Response('Not found: ' + filePath, { status: 404 })
 
   const total = bytes.byteLength
-  const fullBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + total)
+  // Files arrive over postMessage from the page, where they were freshly
+  // allocated as plain Uint8Array — so the underlying buffer is always
+  // an ArrayBuffer, never a SharedArrayBuffer. Slice into a fresh
+  // ArrayBuffer to satisfy Response's BodyInit constraint.
+  const fullBuffer: ArrayBuffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + total,
+  ) as ArrayBuffer
   const contentType = contentTypeFor(filePath)
   // Most deck files are addressed by a content-hashed deckId, so the
   // bytes at any given URL never change. We mark them immutable so the
@@ -134,20 +169,21 @@ async function serveDeckFile(event, deckId, filePath) {
   // browser to revalidate (i.e. consult the SW), which guarantees
   // either a live deck or a clean miss.
   const isHtml = contentType.startsWith('text/html')
-  const cacheControl = isHtml
-    ? 'no-cache'
-    : 'public, max-age=31536000, immutable'
+  const cacheControl = isHtml ? 'no-cache' : 'public, max-age=31536000, immutable'
 
   // Honor Range requests so <video>/<audio> in decks can seek.
-  const rangeHeader = request && request.headers && request.headers.get('Range')
+  const rangeHeader = request.headers.get('Range')
   if (rangeHeader) {
     const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader)
     if (match) {
       const start = match[1] === '' ? 0 : Number(match[1])
       const end = match[2] === '' ? total - 1 : Number(match[2])
       if (
-        Number.isFinite(start) && Number.isFinite(end) &&
-        start >= 0 && end >= start && start < total
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        start >= 0 &&
+        end >= start &&
+        start < total
       ) {
         const clampedEnd = Math.min(end, total - 1)
         const slice = fullBuffer.slice(start, clampedEnd + 1)
@@ -181,7 +217,7 @@ async function serveDeckFile(event, deckId, filePath) {
   })
 }
 
-const TYPES = {
+const TYPES: Record<string, string> = {
   html: 'text/html; charset=utf-8',
   htm: 'text/html; charset=utf-8',
   css: 'text/css; charset=utf-8',
@@ -210,7 +246,7 @@ const TYPES = {
   wasm: 'application/wasm',
 }
 
-function contentTypeFor(filePath) {
+function contentTypeFor(filePath: string): string {
   const dot = filePath.lastIndexOf('.')
   if (dot < 0) return 'application/octet-stream'
   const ext = filePath.slice(dot + 1).toLowerCase()
@@ -220,11 +256,8 @@ function contentTypeFor(filePath) {
 // Coalesce notifications: only message clients once per deckId per
 // "missing run". A page that gets a flurry of 404s from a single
 // missing deck registration will only be told once.
-//
-// Returns a promise so the caller can pass it to event.waitUntil() —
-// otherwise the SW may be evicted before postMessage actually delivers.
-const recentlyNotified = new Set()
-async function notifyDeckMissing(deckId) {
+const recentlyNotified = new Set<string>()
+async function notifyDeckMissing(deckId: string): Promise<void> {
   if (recentlyNotified.has(deckId)) return
   recentlyNotified.add(deckId)
   // Reset after 2 seconds — long enough to absorb a burst of subresource

@@ -20,37 +20,49 @@ export const CACHE_URL_PREFIX = '/__deck_blob__/'
 const LRU_KEY = 'deck-cache-lru-v2'
 const MAX_CACHED_DECKS = 20
 
+export interface LruEntry {
+  ts: number
+  name: string
+}
+type LruMap = Record<string, LruEntry>
+
+export interface RecentItem {
+  id: string
+  name: string
+  ts: number
+}
+
 // Reuse the same Cache object across all operations. caches.open() is
 // promise-based and cheap, but doing it once per call hits the
 // implementation's bookkeeping repeatedly for no benefit.
-let cachePromise = null
-function getCache() {
+let cachePromise: Promise<Cache> | null = null
+function getCache(): Promise<Cache> {
   if (!cachePromise) cachePromise = caches.open(CACHE_NAME)
   return cachePromise
 }
 
-function readLru() {
+function readLru(): LruMap {
   try {
     const raw = localStorage.getItem(LRU_KEY)
     if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch (_err) {
+    const parsed: unknown = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? (parsed as LruMap) : {}
+  } catch {
     return {}
   }
 }
 
-function writeLru(lru) {
+function writeLru(lru: LruMap): void {
   try {
     localStorage.setItem(LRU_KEY, JSON.stringify(lru))
-  } catch (_err) {
+  } catch {
     // Quota or disabled storage — non-fatal; eviction just won't run.
   }
 }
 
-function touchLru(deckId, name) {
+function touchLru(deckId: string, name?: string): void {
   const lru = readLru()
-  const prev = lru[deckId] || {}
+  const prev = lru[deckId] || { ts: 0, name: '' }
   lru[deckId] = {
     ts: Date.now(),
     name: name || prev.name || '',
@@ -58,7 +70,7 @@ function touchLru(deckId, name) {
   writeLru(lru)
 }
 
-async function evictIfNeeded() {
+async function evictIfNeeded(): Promise<void> {
   const cache = await getCache()
   const requests = await cache.keys()
   if (requests.length <= MAX_CACHED_DECKS) return
@@ -85,14 +97,14 @@ async function evictIfNeeded() {
   writeLru(lru)
 }
 
-export async function cachePut(deckId, blob, name) {
+export async function cachePut(deckId: string, blob: Blob, name: string): Promise<void> {
   const cache = await getCache()
   await cache.put(CACHE_URL_PREFIX + deckId, new Response(blob))
   touchLru(deckId, name)
   await evictIfNeeded()
 }
 
-export async function cacheGet(deckId) {
+export async function cacheGet(deckId: string): Promise<Blob | null> {
   const cache = await getCache()
   const res = await cache.match(CACHE_URL_PREFIX + deckId)
   if (!res) return null
@@ -100,10 +112,10 @@ export async function cacheGet(deckId) {
   return await res.blob()
 }
 
-// Backfill the deck name on an existing entry without touching its blob.
-// Used after restoring from a hash, where the manifest is only known
-// after unpacking.
-export function rememberName(deckId, name) {
+/** Backfill the deck name on an existing entry without touching its
+ *  blob. Used after restoring from a hash, where the manifest is only
+ *  known after unpacking. */
+export function rememberName(deckId: string, name: string): void {
   touchLru(deckId, name)
 }
 
@@ -113,7 +125,7 @@ export function rememberName(deckId, name) {
  * that was removed, so the caller can stash it for a possible undo.
  * Returns null if no such entry existed.
  */
-export function softDeleteDeck(deckId) {
+export function softDeleteDeck(deckId: string): LruEntry | null {
   const lru = readLru()
   const entry = lru[deckId]
   if (!entry) return null
@@ -126,7 +138,7 @@ export function softDeleteDeck(deckId) {
  * Restore a soft-deleted entry. The cached blob was never deleted, so
  * we only need to put the LRU entry back.
  */
-export function restoreDeck(deckId, entry) {
+export function restoreDeck(deckId: string, entry: LruEntry): void {
   if (!entry) return
   const lru = readLru()
   lru[deckId] = entry
@@ -145,11 +157,9 @@ export function restoreDeck(deckId, entry) {
  *
  * Idempotent — safe to call even if the cache entry is already gone.
  */
-export async function commitDeleteDeck(deckId, softEntry) {
+export async function commitDeleteDeck(deckId: string, softEntry?: LruEntry): Promise<void> {
   if (softEntry) {
     const current = readLru()[deckId]
-    // Re-activated since we soft-deleted (re-opened or restored). Skip
-    // the destructive step — the user clearly still wants this deck.
     if (current && (current.ts || 0) > (softEntry.ts || 0)) return
   }
   const cache = await getCache()
@@ -160,18 +170,11 @@ export async function commitDeleteDeck(deckId, softEntry) {
 }
 
 /**
- * Legacy hard-delete wrapped to match the old surface. New code should
- * prefer the soft + commit pair so deletes can be undone.
+ * Build the recents list from the LRU map, but only include deckIds
+ * that actually have a cached blob (drops orphans where Cache and LRU
+ * disagree, e.g. user manually cleared site data).
  */
-export async function deleteDeck(deckId) {
-  softDeleteDeck(deckId)
-  await commitDeleteDeck(deckId)
-}
-
-// Build the recents list from the LRU map, but only include deckIds that
-// actually have a cached blob (drops orphans where Cache and LRU disagree,
-// e.g. user manually cleared site data).
-export async function listRecents() {
+export async function listRecents(): Promise<RecentItem[]> {
   const lru = readLru()
   const ids = Object.keys(lru)
   if (ids.length === 0) return []
@@ -183,7 +186,7 @@ export async function listRecents() {
     }),
   )
   return checks
-    .filter(Boolean)
+    .filter((id): id is string => Boolean(id))
     .map((id) => ({ id, name: lru[id].name || '(unnamed)', ts: lru[id].ts || 0 }))
     .sort((a, b) => b.ts - a.ts)
 }
