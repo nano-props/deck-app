@@ -5,8 +5,8 @@
 // as the footer.
 
 import { useI18n, asHtml } from '#/web/lib/i18n.ts'
-import { ThemeToggle } from './ThemeToggle.tsx'
-import { LangToggle } from './LangToggle.tsx'
+import { ThemeToggle } from '#/web/home/ThemeToggle.tsx'
+import { LangToggle } from '#/web/home/LangToggle.tsx'
 
 export function Topbar() {
   const t = useI18n((s) => s.t)

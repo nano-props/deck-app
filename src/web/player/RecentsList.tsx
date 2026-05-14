@@ -6,9 +6,9 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useI18n } from '#/web/lib/i18n.ts'
-import { listRecents, type RecentItem } from './cache.ts'
+import { listRecents, type RecentItem } from '#/web/player/cache.ts'
 import { formatRelative } from '#/web/lib/time-format.ts'
-import { usePlayer } from './state.ts'
+import { usePlayer } from '#/web/player/state.ts'
 
 interface RecentsListProps {
   onOpen: (deckId: string) => void

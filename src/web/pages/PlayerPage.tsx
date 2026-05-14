@@ -12,6 +12,7 @@
 // reconciliation — they're effects on `document` / `history`.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Sparkles, Upload } from 'lucide-react'
 import { useI18n, asHtml } from '#/web/lib/i18n.ts'
 import { Loader } from '#/web/player/loader.ts'
 import { createRouter, type Router } from '#/web/player/router.ts'
@@ -191,6 +192,27 @@ export function PlayerPage() {
         </nav>
       </header>
 
+      {stageActive && (
+        <button
+          type="button"
+          onClick={() => setPaletteOpen((v) => !v)}
+          aria-label={t('paletteOpenButton')}
+          title={t('paletteOpenButton')}
+          // Top-right, offset 64px down so it clears any deck-side
+          // page numbers / chapter labels that anchor near the top
+          // edge. mix-blend-difference is on the icon (not the
+          // button) so the focus outline stays its true accent color.
+          className="group fixed right-6 top-16 z-[60] w-9 h-9 flex items-center justify-center bg-transparent border-0 p-0 cursor-pointer text-white opacity-40 hover:opacity-90 transition-opacity duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+        >
+          <Sparkles
+            size={18}
+            strokeWidth={1.8}
+            className="transition-transform duration-200 ease-out group-hover:scale-110"
+            style={{ mixBlendMode: 'difference' }}
+          />
+        </button>
+      )}
+
       <DropZone onFile={onFile}>
         <h1
           id="hero-title"
@@ -211,7 +233,7 @@ export function PlayerPage() {
           // `translate` property — NOT `transform: translateY(...)`.
           className="inline-flex items-center gap-2 px-[18px] py-2.5 bg-ink text-bg border border-ink rounded-[10px] font-medium text-[15px] cursor-pointer transition-[translate,background] duration-200 hover:bg-accent hover:border-accent hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[3px]"
         >
-          <UploadIcon />
+          <Upload size={16} strokeWidth={2} aria-hidden />
           {t('playerBrowse')}
         </button>
         <input
@@ -254,13 +276,7 @@ export function PlayerPage() {
         />
       </DropZone>
 
-      <Stage
-        ref={frameRef}
-        active={stageActive}
-        onIndicatorClick={() => {
-          if (loaderRef.current?.hasActiveDeck) setPaletteOpen((v) => !v)
-        }}
-      />
+      <Stage ref={frameRef} active={stageActive} />
 
       <Palette
         open={paletteOpen}
@@ -276,26 +292,5 @@ export function PlayerPage() {
 
       <UndoToast />
     </>
-  )
-}
-
-function UploadIcon() {
-  return (
-    <svg
-      width={16}
-      height={16}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="block"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="17 8 12 3 7 8" />
-      <line x1="12" y1="3" x2="12" y2="15" />
-    </svg>
   )
 }

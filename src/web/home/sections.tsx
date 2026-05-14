@@ -6,8 +6,8 @@
 // Class names match the vanilla CSS in `home.css` 1:1 so the visual
 // output is byte-identical (modulo React's whitespace handling).
 
-import { I18nText } from './I18nText.tsx'
-import { Reveal } from './Reveal.tsx'
+import { I18nText } from '#/web/home/I18nText.tsx'
+import { Reveal } from '#/web/home/Reveal.tsx'
 import { useI18n, asHtml } from '#/web/lib/i18n.ts'
 
 // ----- Hero -----

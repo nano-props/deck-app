@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useI18n, asHtml } from '#/web/lib/i18n.ts'
-import { listRecents, type RecentItem } from './cache.ts'
+import { listRecents, type RecentItem } from '#/web/player/cache.ts'
 import { formatRelative } from '#/web/lib/time-format.ts'
 
 export interface PaletteItem {

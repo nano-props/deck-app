@@ -2,7 +2,7 @@
 // IntersectionObserver hook. Children render through unchanged.
 
 import { type CSSProperties, type ElementType, type ReactNode } from 'react'
-import { useReveal } from './useReveal.ts'
+import { useReveal } from '#/web/home/useReveal.ts'
 import { cn } from '#/web/lib/cn.ts'
 
 interface Props {

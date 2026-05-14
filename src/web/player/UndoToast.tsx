@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useI18n } from '#/web/lib/i18n.ts'
-import { toast, useToast, TOAST_TIMEOUT_MS } from './undo-toast.ts'
+import { toast, useToast, TOAST_TIMEOUT_MS } from '#/web/player/undo-toast.ts'
 
 export function UndoToast() {
   const t = useI18n((s) => s.t)

@@ -9,14 +9,14 @@
 // in-memory file table, this is the module that re-registers from the
 // blob cache and reloads the iframe.
 
-import { cachePut, cacheGet, rememberName } from './cache.ts'
+import { cachePut, cacheGet, rememberName } from '#/web/player/cache.ts'
 import {
   hashBlob,
   unpackAndRegister,
   unregisterDeck,
   onDeckMissing,
   LoadCancelled,
-} from './sw-client.ts'
+} from '#/web/player/sw-client.ts'
 import { getT } from '#/web/lib/i18n.ts'
 
 const DECK_PREFIX = 'deck'
