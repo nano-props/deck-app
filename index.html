@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Deck</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='12' y='20' width='76' height='60' rx='6' fill='none' stroke='%232f6bff' stroke-width='6'/%3E%3Crect x='24' y='34' width='52' height='6' rx='2' fill='%232f6bff'/%3E%3Crect x='24' y='48' width='36' height='4' rx='2' fill='%23c9cbce'/%3E%3Crect x='24' y='58' width='44' height='4' rx='2' fill='%23c9cbce'/%3E%3C/svg%3E"
+    />
+    <script>
+      ;(function () {
+        try {
+          var pref = localStorage.getItem('theme')
+          var dark =
+            pref === 'dark' ||
+            (pref !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+        } catch (_e) {}
+      })()
+    </script>
+    <script type="module" crossorigin src="./assets/index-DJffLDyN.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/cn-JaaFKM7a.js">
+    <link rel="stylesheet" crossorigin href="./assets/cn-Atr-e9Qd.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-eAb6aPOb.css">
+  </head>
+  <body class="home">
+    <div id="root"></div>
+  </body>
+</html>
